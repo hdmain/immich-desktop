@@ -126,7 +126,7 @@ jobs:
             --appdir AppDir \
             --executable AppDir/usr/bin/immich \
             --desktop-file AppDir/usr/share/applications/immich.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/1024x1024/apps/immich.png \
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/immich.png \
             --plugin qt \
             --output appimage
           mv "$OUTPUT" dist/

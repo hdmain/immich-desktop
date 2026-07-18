@@ -118,8 +118,8 @@ if(UNIX AND NOT APPLE)
     install(FILES resources/immich.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
-    install(FILES resources/immich-logo.png
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/1024x1024/apps
+    install(FILES resources/immich-logo-512.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
         RENAME immich.png
     )
 endif()
