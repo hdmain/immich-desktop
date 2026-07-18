@@ -240,14 +240,27 @@ void ImmichClient::loadAssets(int page, int pageSize)
     });
 }
 
-QImage ImmichClient::decodeImage(const QByteArray &bytes) const
+QImage ImmichClient::decodeImage(const QByteArray &bytes, int maximumDimension) const
 {
     QBuffer buffer;
     buffer.setData(bytes);
     buffer.open(QIODevice::ReadOnly);
     QImageReader reader(&buffer);
     reader.setAutoTransform(true);
-    return reader.read();
+    const QSize sourceSize = reader.size();
+    if (sourceSize.isValid() &&
+        (sourceSize.width() > maximumDimension || sourceSize.height() > maximumDimension)) {
+        reader.setScaledSize(sourceSize.scaled(
+            maximumDimension, maximumDimension, Qt::KeepAspectRatio));
+    }
+
+    QImage image = reader.read();
+    if (!image.isNull() &&
+        (image.width() > maximumDimension || image.height() > maximumDimension)) {
+        image = image.scaled(maximumDimension, maximumDimension,
+                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    return image;
 }
 
 void ImmichClient::loadThumbnail(const QString &assetId)
@@ -297,13 +310,21 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         if (!self)
             return;
 
+        auto encodeThumbnail = [](const QImage &image) {
+            QByteArray bytes;
+            QBuffer buffer(&bytes);
+            if (buffer.open(QIODevice::WriteOnly))
+                image.save(&buffer, "JPG", 82);
+            return bytes;
+        };
+
         auto finishImage = [self, assetId, resultSize, pendingKey](const QImage &image,
-                                                                   const QByteArray &bytes) {
+                                                                   const QByteArray &cacheBytes) {
             if (!self)
                 return;
             QMetaObject::invokeMethod(
                 self,
-                [self, assetId, resultSize, pendingKey, image, bytes] {
+                [self, assetId, resultSize, pendingKey, image, cacheBytes] {
                     if (!self)
                         return;
                     self->m_pendingImages.remove(pendingKey);
@@ -314,7 +335,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
                         return;
                     }
                     if (resultSize == QStringLiteral("thumbnail")) {
-                        self->m_thumbnailCache.store(assetId, bytes, pixmap);
+                        self->m_thumbnailCache.store(assetId, cacheBytes, pixmap);
                         emit self->thumbnailLoaded(assetId, pixmap);
                     } else {
                         emit self->previewLoaded(assetId, pixmap);
@@ -326,9 +347,16 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         if (resultSize == QStringLiteral("thumbnail")) {
             const QByteArray cachedBytes = self->m_thumbnailCache.readDisk(assetId);
             if (!cachedBytes.isEmpty()) {
-                const QImage image = self->decodeImage(cachedBytes);
+                const QImage image = self->decodeImage(cachedBytes, 512);
                 if (!image.isNull()) {
-                    finishImage(image, {});
+                    // Rewrite old cache entries that may contain a full-size
+                    // response into a bounded, compressed thumbnail.
+                    const bool normalizedJpeg =
+                        cachedBytes.size() <= 1024 * 1024 &&
+                        cachedBytes.startsWith(QByteArray::fromHex("ffd8"));
+                    finishImage(image, normalizedJpeg
+                                           ? QByteArray()
+                                           : encodeThumbnail(image));
                     return;
                 }
             }
@@ -381,12 +409,14 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         if (bytes.isEmpty())
             return;
 
-        QImage image = decodeImage(bytes);
+        const int maximumDimension =
+            resultSize == QStringLiteral("thumbnail") ? 512 : 1920;
+        QImage image = decodeImage(bytes, maximumDimension);
         if (image.isNull()) {
             bytes = fetchSize(QStringLiteral("fullsize"), true);
             if (bytes.isEmpty())
                 return;
-            image = decodeImage(bytes);
+            image = decodeImage(bytes, maximumDimension);
         }
 
         if (image.isNull()) {
@@ -394,7 +424,10 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
             return;
         }
 
-        finishImage(image, bytes);
+        QByteArray cacheBytes;
+        if (resultSize == QStringLiteral("thumbnail"))
+            cacheBytes = encodeThumbnail(image);
+        finishImage(image, cacheBytes);
     });
 }
 

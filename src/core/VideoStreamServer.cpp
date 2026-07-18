@@ -4,9 +4,13 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QTcpServer>
 #include <QTcpSocket>
+
+#include <functional>
+#include <memory>
 
 namespace Aurora {
 
@@ -95,7 +99,9 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
 
     const QByteArray requestLine = lines.first().trimmed();
     const QList<QByteArray> parts = requestLine.split(' ');
-    if (parts.size() < 2 || parts.at(0) != "GET") {
+    const bool isGet = parts.size() >= 2 && parts.at(0) == "GET";
+    const bool isHead = parts.size() >= 2 && parts.at(0) == "HEAD";
+    if (!isGet && !isHead) {
         client->write("HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n");
         client->disconnectFromHost();
         return;
@@ -128,9 +134,12 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
     upstream.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                           QNetworkRequest::NoLessSafeRedirectPolicy);
 
-    auto *reply = m_network->get(upstream);
-    connect(reply, &QNetworkReply::metaDataChanged, this, [client, reply] {
-        if (!client || client->state() != QAbstractSocket::ConnectedState)
+    auto *reply = isHead ? m_network->head(upstream) : m_network->get(upstream);
+    reply->setReadBufferSize(512 * 1024);
+    const QPointer<QTcpSocket> guardedClient(client);
+    connect(reply, &QNetworkReply::metaDataChanged, this, [guardedClient, reply] {
+        if (!guardedClient ||
+            guardedClient->state() != QAbstractSocket::ConnectedState)
             return;
         if (reply->property("headersSent").toBool())
             return;
@@ -163,24 +172,41 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
             header += "Content-Range: " + contentRange + "\r\n";
 
         header += "\r\n";
-        client->write(header);
+        guardedClient->write(header);
         reply->setProperty("headersSent", true);
     });
 
-    connect(reply, &QNetworkReply::readyRead, this, [client, reply] {
-        if (!client || client->state() != QAbstractSocket::ConnectedState)
+    auto pump = std::make_shared<std::function<void()>>();
+    *pump = [guardedClient, reply, isHead] {
+        if (isHead || !guardedClient ||
+            guardedClient->state() != QAbstractSocket::ConnectedState)
             return;
-        client->write(reply->readAll());
-    });
+        constexpr qint64 maximumQueuedBytes = 512 * 1024;
+        constexpr qint64 chunkSize = 64 * 1024;
+        while (reply->bytesAvailable() > 0 &&
+               guardedClient->bytesToWrite() < maximumQueuedBytes) {
+            const QByteArray chunk = reply->read(chunkSize);
+            if (chunk.isEmpty())
+                break;
+            guardedClient->write(chunk);
+        }
+    };
+    connect(reply, &QNetworkReply::readyRead, this, [pump] { (*pump)(); });
+    connect(client, &QTcpSocket::bytesWritten, this,
+            [pump](qint64) { (*pump)(); });
 
-    connect(reply, &QNetworkReply::finished, this, [client, reply] {
-        if (client && client->state() == QAbstractSocket::ConnectedState) {
+    connect(reply, &QNetworkReply::finished, this,
+            [guardedClient, reply, pump, isHead] {
+        (*pump)();
+        if (guardedClient &&
+            guardedClient->state() == QAbstractSocket::ConnectedState) {
             if (!reply->property("headersSent").toBool()) {
-                client->write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
-            } else {
-                client->write(reply->readAll());
+                guardedClient->write(
+                    "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+            } else if (!isHead && reply->bytesAvailable() > 0) {
+                guardedClient->write(reply->readAll());
             }
-            client->disconnectFromHost();
+            guardedClient->disconnectFromHost();
         }
         reply->deleteLater();
     });

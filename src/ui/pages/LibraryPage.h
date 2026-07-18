@@ -5,12 +5,15 @@
 #include <QDate>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QWidget>
 
 class QLabel;
+class QHideEvent;
 class QPushButton;
 class QResizeEvent;
 class QScrollArea;
+class QShowEvent;
 class QTimer;
 
 namespace Aurora {
@@ -25,6 +28,8 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void refresh();
@@ -47,6 +52,9 @@ private:
     void clearTimeline();
     void layoutTimeline();
     void scheduleLayout();
+    void scheduleVisibleMediaUpdate();
+    void updateVisibleMedia();
+    bool isTileNearViewport(const MediaTile *tile) const;
     void updateEmptyState();
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
@@ -59,8 +67,10 @@ private:
     QPushButton *m_refreshButton;
     QPushButton *m_loadMoreButton;
     QTimer *m_layoutTimer;
+    QTimer *m_visibilityTimer;
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
+    QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
     QString m_nextPage;
     bool m_loading = false;

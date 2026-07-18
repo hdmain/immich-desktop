@@ -12,6 +12,7 @@ namespace Aurora {
 MediaTile::MediaTile(const ImmichAsset &asset, QWidget *parent)
     : QWidget(parent)
     , m_asset(asset)
+    , m_resolvedAspectRatio(asset.aspectRatio > 0.01 ? asset.aspectRatio : 1.0)
 {
     setObjectName(QStringLiteral("mediaTile"));
     setCursor(Qt::PointingHandCursor);
@@ -28,14 +29,24 @@ const ImmichAsset &MediaTile::asset() const
 
 qreal MediaTile::aspectRatio() const
 {
-    if (!m_thumbnail.isNull() && m_thumbnail.height() > 0)
-        return qreal(m_thumbnail.width()) / qreal(m_thumbnail.height());
-    return m_asset.aspectRatio > 0.01 ? m_asset.aspectRatio : 1.0;
+    return m_resolvedAspectRatio;
+}
+
+bool MediaTile::hasThumbnail() const
+{
+    return !m_thumbnail.isNull();
+}
+
+bool MediaTile::hasThumbnailError() const
+{
+    return m_hasError;
 }
 
 void MediaTile::setThumbnail(const QPixmap &thumbnail)
 {
     m_thumbnail = thumbnail;
+    if (thumbnail.height() > 0)
+        m_resolvedAspectRatio = qreal(thumbnail.width()) / qreal(thumbnail.height());
     m_hasError = false;
     m_error.clear();
     update();
@@ -46,6 +57,14 @@ void MediaTile::setThumbnailError(const QString &message)
     m_thumbnail = QPixmap();
     m_hasError = true;
     m_error = message;
+    update();
+}
+
+void MediaTile::clearThumbnail()
+{
+    if (m_thumbnail.isNull())
+        return;
+    m_thumbnail = QPixmap();
     update();
 }
 

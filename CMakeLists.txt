@@ -13,7 +13,9 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Network Svg Widgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS
+    Core Gui Multimedia MultimediaWidgets Network Svg Widgets
+)
 
 set(IMMICH_GITHUB_REPO "hdmain/immich-desktop" CACHE STRING
     "GitHub repository used for in-app update checks")
@@ -73,6 +75,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/Sidebar.h
     src/ui/widgets/TopBar.cpp
     src/ui/widgets/TopBar.h
+    src/ui/widgets/VideoPlayerDialog.cpp
+    src/ui/widgets/VideoPlayerDialog.h
     resources/resources.qrc
 )
 
@@ -106,6 +110,8 @@ target_include_directories(immich PRIVATE
 target_link_libraries(immich PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::Multimedia
+    Qt6::MultimediaWidgets
     Qt6::Network
     Qt6::Svg
     Qt6::Widgets

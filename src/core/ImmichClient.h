@@ -65,7 +65,7 @@ private:
     QString errorMessage(QNetworkReply *reply, const QByteArray &body) const;
     bool ensureConfigured(const QString &operation);
     void loadImageAsync(const QString &assetId, const QString &resultSize);
-    QImage decodeImage(const QByteArray &bytes) const;
+    QImage decodeImage(const QByteArray &bytes, int maximumDimension) const;
     void ensureStreamServer();
 
     AppSettings m_store;

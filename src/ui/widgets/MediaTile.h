@@ -19,8 +19,11 @@ public:
 
     const ImmichAsset &asset() const;
     qreal aspectRatio() const;
+    bool hasThumbnail() const;
+    bool hasThumbnailError() const;
     void setThumbnail(const QPixmap &thumbnail);
     void setThumbnailError(const QString &message);
+    void clearThumbnail();
     void setTileSize(const QSize &size);
 
 signals:
@@ -36,6 +39,7 @@ private:
 
     ImmichAsset m_asset;
     QPixmap m_thumbnail;
+    qreal m_resolvedAspectRatio;
     QString m_error;
     bool m_hasError = false;
 };

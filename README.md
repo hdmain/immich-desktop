@@ -9,8 +9,9 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 ## Included
 
 - Modular main window with sidebar, top bar, animated page transitions, and module workspace
-- Immich-style dated timeline with justified aspect-ratio rows, video badges, and previews
-- Multi-threaded thumbnail loading with persistent on-disk cache
+- Immich-style dated timeline with compact rows and grouped sparse days
+- Built-in streaming video player with seek, volume, and buffering controls
+- Viewport-based thumbnail loading with threaded decoding and persistent disk cache
 - Immich server URL and API key configuration with a built-in connection test
 - Central `ThemeManager` with live light, dark, and custom themes
 - Editable background, panel, button, and accent colors
@@ -22,7 +23,7 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 ## Requirements
 
 - CMake 3.21 or newer
-- Qt 6.2 or newer with the Widgets, SVG, and Network components
+- Qt 6.2 or newer with Widgets, SVG, Network, Multimedia, and MultimediaWidgets
 - A C++20 compiler
 
 ## Build
@@ -52,13 +53,14 @@ Install the build dependencies on Debian or Ubuntu:
 
 ```bash
 sudo apt install build-essential cmake ninja-build libgl1-mesa-dev qt6-base-dev \
-  libqt6svg6-dev qt6-image-formats-plugins
+  libqt6svg6-dev qt6-image-formats-plugins qt6-multimedia-dev
 ```
 
 On Fedora:
 
 ```bash
-sudo dnf install gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg-devel
+sudo dnf install gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg-devel \
+  qt6-qtmultimedia-devel
 ```
 
 Then build and run on X11 or Wayland:

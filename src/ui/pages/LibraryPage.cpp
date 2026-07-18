@@ -1,19 +1,23 @@
 #include "ui/pages/LibraryPage.h"
 
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/VideoPlayerDialog.h"
 
-#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QHideEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLocale>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QShowEvent>
 #include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
+
+#include <utility>
 
 namespace Aurora {
 namespace {
@@ -36,10 +40,15 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
     , m_loadMoreButton(new QPushButton(tr("Load more"), this))
     , m_layoutTimer(new QTimer(this))
+    , m_visibilityTimer(new QTimer(this))
 {
     m_layoutTimer->setSingleShot(true);
     m_layoutTimer->setInterval(40);
     connect(m_layoutTimer, &QTimer::timeout, this, &LibraryPage::layoutTimeline);
+    m_visibilityTimer->setSingleShot(true);
+    m_visibilityTimer->setInterval(60);
+    connect(m_visibilityTimer, &QTimer::timeout,
+            this, &LibraryPage::updateVisibleMedia);
     setObjectName(QStringLiteral("libraryPage"));
 
     auto *root = new QVBoxLayout(this);
@@ -69,6 +78,8 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scrollArea->setWidget(m_timelineHost);
+    connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
+            this, &LibraryPage::scheduleVisibleMediaUpdate);
 
     m_emptyState->setAlignment(Qt::AlignCenter);
     m_emptyState->setWordWrap(true);
@@ -188,7 +199,6 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         section->tiles.append(tile);
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
-        m_client->loadThumbnail(asset.id);
     }
 
     m_nextPage = nextPage;
@@ -203,10 +213,14 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
 
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)
 {
+    m_requestedThumbnails.remove(assetId);
     if (auto *tile = m_tilesById.value(assetId)) {
-        tile->setThumbnail(thumbnail);
-        scheduleLayout();
+        if (isTileNearViewport(tile)) {
+            tile->setThumbnail(thumbnail);
+            scheduleLayout();
+        }
     }
+    scheduleVisibleMediaUpdate();
 }
 
 void LibraryPage::scheduleLayout()
@@ -220,8 +234,11 @@ void LibraryPage::showThumbnailError(const QString &assetId, const QString &resu
 {
     if (resultSize != QStringLiteral("thumbnail"))
         return;
-    if (auto *tile = m_tilesById.value(assetId))
-        tile->setThumbnailError(message);
+    m_requestedThumbnails.remove(assetId);
+    if (auto *tile = m_tilesById.value(assetId)) {
+        if (isTileNearViewport(tile))
+            tile->setThumbnailError(message);
+    }
 }
 
 void LibraryPage::showRequestError(const QString &operation, const QString &message)
@@ -245,6 +262,7 @@ void LibraryPage::clearTimeline()
     }
     m_sections.clear();
     m_tilesById.clear();
+    m_requestedThumbnails.clear();
     m_assets.clear();
     m_nextPage.clear();
 }
@@ -255,7 +273,55 @@ void LibraryPage::layoutTimeline()
     const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
     int y = 8;
 
-    for (DaySection &section : m_sections) {
+    for (int sectionIndex = 0; sectionIndex < m_sections.size();) {
+        DaySection &section = m_sections[sectionIndex];
+
+        // Consecutive one-item days share one gallery row. Each item keeps its
+        // own date heading, so chronology remains clear without wasting space.
+        if (section.tiles.size() == 1) {
+            struct SparseCell {
+                DaySection *section;
+                int width;
+            };
+            QList<SparseCell> cells;
+            int occupiedWidth = 0;
+
+            while (sectionIndex < m_sections.size() &&
+                   m_sections[sectionIndex].tiles.size() == 1) {
+                DaySection &candidate = m_sections[sectionIndex];
+                const qreal ratio = candidate.tiles.first()->aspectRatio();
+                const bool hasSingletonNeighbor =
+                    !cells.isEmpty() ||
+                    (sectionIndex + 1 < m_sections.size() &&
+                     m_sections[sectionIndex + 1].tiles.size() == 1);
+                const int maximumCellWidth = hasSingletonNeighbor
+                    ? qMax(96, (availableWidth - 14) / 2)
+                    : qMin(320, availableWidth);
+                const int cellWidth = qBound(
+                    96, qRound(ratio * kTargetRowHeight),
+                    qMin(320, maximumCellWidth));
+                const int required = cellWidth + (cells.isEmpty() ? 0 : 14);
+                if (!cells.isEmpty() && occupiedWidth + required > availableWidth)
+                    break;
+
+                cells.append({&candidate, cellWidth});
+                occupiedWidth += required;
+                ++sectionIndex;
+            }
+
+            int x = kSidePad;
+            for (const SparseCell &cell : std::as_const(cells)) {
+                cell.section->header->setGeometry(x, y, cell.width, 26);
+                cell.section->header->show();
+                MediaTile *tile = cell.section->tiles.first();
+                tile->setGeometry(x, y + 30, cell.width, kTargetRowHeight);
+                tile->show();
+                x += cell.width + 14;
+            }
+            y += 30 + kTargetRowHeight + 13;
+            continue;
+        }
+
         if (section.header) {
             section.header->setGeometry(kSidePad, y, availableWidth, 26);
             section.header->show();
@@ -310,9 +376,46 @@ void LibraryPage::layoutTimeline()
         // Short trailing rows (e.g. a single photo) keep a capped natural size.
         flushRow(false);
         y += 10;
+        ++sectionIndex;
     }
 
     m_timelineHost->resize(viewportWidth, y + 16);
+    scheduleVisibleMediaUpdate();
+}
+
+void LibraryPage::scheduleVisibleMediaUpdate()
+{
+    if (!m_visibilityTimer->isActive())
+        m_visibilityTimer->start();
+}
+
+bool LibraryPage::isTileNearViewport(const MediaTile *tile) const
+{
+    if (!tile || !m_scrollArea->isVisible())
+        return false;
+    const int viewportHeight = m_scrollArea->viewport()->height();
+    const int scrollTop = m_scrollArea->verticalScrollBar()->value();
+    const QRect bufferedViewport(
+        0, qMax(0, scrollTop - viewportHeight),
+        m_timelineHost->width(), viewportHeight * 3);
+    return bufferedViewport.intersects(tile->geometry());
+}
+
+void LibraryPage::updateVisibleMedia()
+{
+    for (auto it = m_tilesById.cbegin(); it != m_tilesById.cend(); ++it) {
+        MediaTile *tile = it.value();
+        const QString assetId = it.key();
+        if (isTileNearViewport(tile)) {
+            if (!tile->hasThumbnail() && !tile->hasThumbnailError() &&
+                !m_requestedThumbnails.contains(assetId)) {
+                m_requestedThumbnails.insert(assetId);
+                m_client->loadThumbnail(assetId);
+            }
+        } else {
+            tile->clearThumbnail();
+        }
+    }
 }
 
 void LibraryPage::updateEmptyState()
@@ -332,6 +435,12 @@ void LibraryPage::updateEmptyState()
 
 void LibraryPage::openAsset(const ImmichAsset &asset)
 {
+    if (asset.isVideo()) {
+        auto *player = new VideoPlayerDialog(m_client, asset, this);
+        player->show();
+        return;
+    }
+
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
@@ -344,30 +453,7 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
     preview->setProperty("mediaPreview", true);
     layout->addWidget(preview, 1);
 
-    auto *status = new QLabel(dialog);
-    status->setProperty("subheading", true);
-    status->setVisible(false);
-    layout->addWidget(status);
-
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
-    if (asset.isVideo()) {
-        auto *playButton = buttons->addButton(tr("Play video"), QDialogButtonBox::ActionRole);
-        playButton->setProperty("primary", true);
-        auto playStream = [this, status, asset] {
-            const QUrl streamUrl = m_client->videoStreamUrl(asset.id);
-            if (!streamUrl.isValid()) {
-                status->setVisible(true);
-                status->setText(tr("Could not start video stream."));
-                return;
-            }
-            status->setVisible(true);
-            status->setText(tr("Streaming in your media player…"));
-            QDesktopServices::openUrl(streamUrl);
-        };
-        connect(playButton, &QPushButton::clicked, dialog, playStream);
-        // Videos open the stream immediately so playback can begin while buffering.
-        QTimer::singleShot(0, dialog, playStream);
-    }
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     layout->addWidget(buttons);
 
@@ -392,6 +478,19 @@ void LibraryPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     layoutTimeline();
+}
+
+void LibraryPage::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    for (MediaTile *tile : std::as_const(m_tilesById))
+        tile->clearThumbnail();
+}
+
+void LibraryPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    scheduleVisibleMediaUpdate();
 }
 
 } // namespace Aurora

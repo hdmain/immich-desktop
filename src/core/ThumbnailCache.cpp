@@ -12,7 +12,9 @@ ThumbnailCache::ThumbnailCache()
     : m_directory(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
                   QStringLiteral("/thumbnails"))
 {
-    m_memory.setMaxCost(192 * 1024);
+    // Keep only a small viewport-sized working set in RAM. The full cache lives
+    // on disk and is decoded again when an item returns to the viewport.
+    m_memory.setMaxCost(32 * 1024);
     QDir().mkpath(m_directory);
 }
 
