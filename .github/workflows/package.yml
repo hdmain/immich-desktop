@@ -88,6 +88,7 @@ jobs:
             cmake \
             file \
             libfuse2 \
+            libgl1-mesa-dev \
             libqt6svg6-dev \
             ninja-build \
             patchelf \

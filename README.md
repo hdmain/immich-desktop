@@ -46,7 +46,7 @@ executable can start without a separately configured Qt `PATH`.
 Install the build dependencies on Debian or Ubuntu:
 
 ```bash
-sudo apt install build-essential cmake ninja-build qt6-base-dev libqt6svg6-dev
+sudo apt install build-essential cmake ninja-build libgl1-mesa-dev qt6-base-dev libqt6svg6-dev
 ```
 
 On Fedora:
