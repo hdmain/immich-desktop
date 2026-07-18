@@ -34,6 +34,7 @@ protected:
 private slots:
     void refresh();
     void loadMore();
+    void maybeLoadMore();
     void showAssets(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage);
     void showThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showThumbnailError(const QString &assetId, const QString &resultSize,
@@ -65,7 +66,6 @@ private:
     QLabel *m_status;
     QLabel *m_emptyState;
     QPushButton *m_refreshButton;
-    QPushButton *m_loadMoreButton;
     QTimer *m_layoutTimer;
     QTimer *m_visibilityTimer;
     QList<DaySection> m_sections;

@@ -39,7 +39,7 @@ ImmichClient::ImmichClient(QObject *parent)
     , m_connection(m_store.loadImmichConnection())
     , m_network(new QNetworkAccessManager(this))
 {
-    m_imagePool.setMaxThreadCount(4);
+    m_imagePool.setMaxThreadCount(8);
 }
 
 ImmichClient::~ImmichClient()

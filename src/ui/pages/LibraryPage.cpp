@@ -38,7 +38,6 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     , m_status(new QLabel(this))
     , m_emptyState(new QLabel(this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
-    , m_loadMoreButton(new QPushButton(tr("Load more"), this))
     , m_layoutTimer(new QTimer(this))
     , m_visibilityTimer(new QTimer(this))
 {
@@ -80,26 +79,20 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_scrollArea->setWidget(m_timelineHost);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
             this, &LibraryPage::scheduleVisibleMediaUpdate);
+    connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
+            this, &LibraryPage::maybeLoadMore);
+    connect(m_scrollArea->verticalScrollBar(), &QScrollBar::rangeChanged,
+            this, [this](int, int) { maybeLoadMore(); });
 
     m_emptyState->setAlignment(Qt::AlignCenter);
     m_emptyState->setWordWrap(true);
     m_emptyState->setProperty("subheading", true);
     m_emptyState->setMinimumHeight(180);
-    m_loadMoreButton->setVisible(false);
-
-    auto *footer = new QHBoxLayout;
-    footer->setContentsMargins(0, 8, 0, 10);
-    footer->addStretch();
-    footer->addWidget(m_loadMoreButton);
-    footer->addStretch();
-
     root->addWidget(toolbar);
     root->addWidget(m_emptyState);
     root->addWidget(m_scrollArea, 1);
-    root->addLayout(footer);
 
     connect(m_refreshButton, &QPushButton::clicked, this, &LibraryPage::refresh);
-    connect(m_loadMoreButton, &QPushButton::clicked, this, &LibraryPage::loadMore);
     connect(m_client, &ImmichClient::assetsLoaded, this, &LibraryPage::showAssets);
     connect(m_client, &ImmichClient::thumbnailLoaded, this, &LibraryPage::showThumbnail);
     connect(m_client, &ImmichClient::imageLoadFailed,
@@ -136,6 +129,17 @@ void LibraryPage::loadMore()
         requestPage(page, true);
 }
 
+void LibraryPage::maybeLoadMore()
+{
+    if (m_loading || m_nextPage.isEmpty() || !m_scrollArea->isVisible())
+        return;
+
+    const QScrollBar *scrollBar = m_scrollArea->verticalScrollBar();
+    const int preloadDistance = qMax(500, m_scrollArea->viewport()->height());
+    if (scrollBar->maximum() - scrollBar->value() <= preloadDistance)
+        loadMore();
+}
+
 void LibraryPage::requestPage(int page, bool append)
 {
     if (!m_client->isConfigured()) {
@@ -145,7 +149,6 @@ void LibraryPage::requestPage(int page, bool append)
     m_loading = true;
     m_appendRequest = append;
     m_refreshButton->setEnabled(false);
-    m_loadMoreButton->setEnabled(false);
     m_status->setText(append ? tr("Loading more media…") : tr("Loading your library…"));
     m_client->loadAssets(page);
 }
@@ -204,8 +207,6 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
     m_nextPage = nextPage;
     m_loading = false;
     m_refreshButton->setEnabled(true);
-    m_loadMoreButton->setEnabled(true);
-    m_loadMoreButton->setVisible(!m_nextPage.isEmpty());
     m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
     scheduleLayout();
     updateEmptyState();
@@ -247,7 +248,6 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
         return;
     m_loading = false;
     m_refreshButton->setEnabled(true);
-    m_loadMoreButton->setEnabled(true);
     m_status->setText(tr("%1 failed: %2").arg(operation, message));
     updateEmptyState();
 }
@@ -381,6 +381,7 @@ void LibraryPage::layoutTimeline()
 
     m_timelineHost->resize(viewportWidth, y + 16);
     scheduleVisibleMediaUpdate();
+    QTimer::singleShot(0, this, &LibraryPage::maybeLoadMore);
 }
 
 void LibraryPage::scheduleVisibleMediaUpdate()
