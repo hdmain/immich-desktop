@@ -16,10 +16,12 @@ namespace Aurora {
 VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &asset,
                                      QWidget *parent)
     : QDialog(parent)
+    , m_asset(asset)
     , m_player(new QMediaPlayer(this))
     , m_audio(new QAudioOutput(this))
     , m_video(new QVideoWidget(this))
     , m_playButton(new QPushButton(this))
+    , m_downloadButton(new QPushButton(tr("Download"), this))
     , m_positionSlider(new QSlider(Qt::Horizontal, this))
     , m_volumeSlider(new QSlider(Qt::Horizontal, this))
     , m_timeLabel(new QLabel(QStringLiteral("0:00 / 0:00"), this))
@@ -37,6 +39,7 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
 
     m_playButton->setFixedSize(40, 36);
     m_playButton->setToolTip(tr("Play"));
+    m_downloadButton->setToolTip(tr("Download original file"));
     m_positionSlider->setRange(0, 1000);
     m_positionSlider->setEnabled(false);
     m_volumeSlider->setRange(0, 100);
@@ -54,6 +57,7 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     volumeLabel->setProperty("subheading", true);
     controls->addWidget(volumeLabel);
     controls->addWidget(m_volumeSlider);
+    controls->addWidget(m_downloadButton);
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 10, 10, 10);
@@ -64,6 +68,9 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
 
     connect(m_playButton, &QPushButton::clicked,
             this, &VideoPlayerDialog::togglePlayback);
+    connect(m_downloadButton, &QPushButton::clicked, this, [this] {
+        emit downloadRequested(m_asset);
+    });
     connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int value) {
         m_audio->setVolume(value / 100.0f);
     });

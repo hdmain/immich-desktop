@@ -27,6 +27,7 @@
         <file alias="icons/settings.svg">icons/settings.svg</file>
         <file alias="icons/server.svg">icons/server.svg</file>
         <file alias="icons/square.svg">icons/square.svg</file>
+        <file alias="icons/upload.svg">icons/upload.svg</file>
         <file alias="icons/x.svg">icons/x.svg</file>
     </qresource>
 </RCC>

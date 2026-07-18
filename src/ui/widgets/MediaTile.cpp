@@ -2,7 +2,9 @@
 
 #include "ui/IconUtils.h"
 
+#include <QContextMenuEvent>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -155,6 +157,14 @@ void MediaTile::mouseReleaseEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
         emit activated(m_asset);
     QWidget::mouseReleaseEvent(event);
+}
+
+void MediaTile::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu menu(this);
+    menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
+    menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
+    menu.exec(event->globalPos());
 }
 
 } // namespace Aurora

@@ -5,6 +5,7 @@
 #include <QPixmap>
 #include <QWidget>
 
+class QContextMenuEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
@@ -28,11 +29,13 @@ public:
 
 signals:
     void activated(const Aurora::ImmichAsset &asset);
+    void downloadRequested(const Aurora::ImmichAsset &asset);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
     static QString formatDuration(const QString &raw);

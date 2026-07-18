@@ -5,16 +5,27 @@
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QEvent>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHideEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLocale>
+#include <QMimeData>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QShowEvent>
+#include <QStandardPaths>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -27,6 +38,15 @@ constexpr int kSidePad = 12;
 constexpr int kTargetRowHeight = 132;
 constexpr int kMaxRowHeight = 148;
 constexpr int kMinRowHeight = 96;
+constexpr int kAutoCheckIntervalMs = 30 * 1000;
+
+QString mediaFileFilter()
+{
+    return QObject::tr(
+        "Media files (*.jpg *.jpeg *.png *.gif *.webp *.heic *.heif *.tif *.tiff "
+        "*.bmp *.raw *.dng *.cr2 *.nef *.arw *.mp4 *.mov *.m4v *.avi *.mkv *.webm "
+        "*.3gp);;All files (*.*)");
+}
 
 } // namespace
 
@@ -37,9 +57,12 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     , m_timelineHost(new QWidget)
     , m_status(new QLabel(this))
     , m_emptyState(new QLabel(this))
+    , m_dropOverlay(new QLabel(this))
+    , m_uploadButton(new QPushButton(tr("Upload"), this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
     , m_layoutTimer(new QTimer(this))
     , m_visibilityTimer(new QTimer(this))
+    , m_autoCheckTimer(new QTimer(this))
 {
     m_layoutTimer->setSingleShot(true);
     m_layoutTimer->setInterval(40);
@@ -48,7 +71,10 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_visibilityTimer->setInterval(60);
     connect(m_visibilityTimer, &QTimer::timeout,
             this, &LibraryPage::updateVisibleMedia);
+    m_autoCheckTimer->setInterval(kAutoCheckIntervalMs);
+    connect(m_autoCheckTimer, &QTimer::timeout, this, &LibraryPage::checkForNewPhotos);
     setObjectName(QStringLiteral("libraryPage"));
+    setAcceptDrops(true);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
@@ -69,14 +95,21 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     headingColumn->addWidget(heading);
     headingColumn->addWidget(m_status);
     toolbarLayout->addLayout(headingColumn, 1);
+    toolbarLayout->addWidget(m_uploadButton);
     toolbarLayout->addWidget(m_refreshButton);
 
     m_timelineHost->setObjectName(QStringLiteral("timelineHost"));
+    m_timelineHost->setAcceptDrops(true);
+    m_timelineHost->installEventFilter(this);
     m_scrollArea->setObjectName(QStringLiteral("libraryScroll"));
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scrollArea->setWidget(m_timelineHost);
+    m_scrollArea->setAcceptDrops(true);
+    m_scrollArea->viewport()->setAcceptDrops(true);
+    m_scrollArea->installEventFilter(this);
+    m_scrollArea->viewport()->installEventFilter(this);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
             this, &LibraryPage::scheduleVisibleMediaUpdate);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
@@ -88,26 +121,49 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_emptyState->setWordWrap(true);
     m_emptyState->setProperty("subheading", true);
     m_emptyState->setMinimumHeight(180);
+    m_emptyState->setAcceptDrops(true);
+    m_emptyState->installEventFilter(this);
+
+    m_dropOverlay->setObjectName(QStringLiteral("libraryDropOverlay"));
+    m_dropOverlay->setAlignment(Qt::AlignCenter);
+    m_dropOverlay->setText(tr("Drop photos or videos to upload"));
+    m_dropOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_dropOverlay->hide();
+    m_dropOverlay->raise();
+
     root->addWidget(toolbar);
     root->addWidget(m_emptyState);
     root->addWidget(m_scrollArea, 1);
 
+    connect(m_uploadButton, &QPushButton::clicked, this, &LibraryPage::chooseFilesToUpload);
     connect(m_refreshButton, &QPushButton::clicked, this, &LibraryPage::refresh);
     connect(m_client, &ImmichClient::assetsLoaded, this, &LibraryPage::showAssets);
+    connect(m_client, &ImmichClient::newestAssetsPolled,
+            this, &LibraryPage::handleNewestAssetsPolled);
     connect(m_client, &ImmichClient::thumbnailLoaded, this, &LibraryPage::showThumbnail);
     connect(m_client, &ImmichClient::imageLoadFailed,
             this, &LibraryPage::showThumbnailError);
     connect(m_client, &ImmichClient::requestFailed, this, &LibraryPage::showRequestError);
+    connect(m_client, &ImmichClient::uploadProgress, this, &LibraryPage::handleUploadProgress);
+    connect(m_client, &ImmichClient::assetUploaded, this, &LibraryPage::handleAssetUploaded);
+    connect(m_client, &ImmichClient::downloadProgress,
+            this, &LibraryPage::handleDownloadProgress);
+    connect(m_client, &ImmichClient::assetDownloaded,
+            this, &LibraryPage::handleAssetDownloaded);
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
+        m_uploadButton->setEnabled(configured);
         if (configured)
             refresh();
         else {
             clearTimeline();
             updateEmptyState();
         }
+        updateAutoCheckTimer();
     });
 
+    m_uploadButton->setEnabled(m_client->isConfigured());
     updateEmptyState();
+    updateAutoCheckTimer();
     QTimer::singleShot(0, this, [this] {
         if (m_client->isConfigured())
             refresh();
@@ -140,6 +196,32 @@ void LibraryPage::maybeLoadMore()
         loadMore();
 }
 
+void LibraryPage::checkForNewPhotos()
+{
+    if (!isVisible() || m_loading || m_autoRefreshPending || !m_client->isConfigured())
+        return;
+    m_client->pollNewestAssets(24);
+}
+
+void LibraryPage::handleNewestAssetsPolled(const QList<ImmichAsset> &assets)
+{
+    if (m_loading || m_autoRefreshPending)
+        return;
+
+    int newCount = 0;
+    for (const ImmichAsset &asset : assets) {
+        if (!m_tilesById.contains(asset.id))
+            ++newCount;
+    }
+    if (newCount == 0)
+        return;
+
+    m_autoRefreshPending = true;
+    m_status->setText(tr("New photo%1 found — refreshing…")
+                          .arg(newCount == 1 ? QString() : QStringLiteral("s")));
+    refresh();
+}
+
 void LibraryPage::requestPage(int page, bool append)
 {
     if (!m_client->isConfigured()) {
@@ -149,7 +231,10 @@ void LibraryPage::requestPage(int page, bool append)
     m_loading = true;
     m_appendRequest = append;
     m_refreshButton->setEnabled(false);
-    m_status->setText(append ? tr("Loading more media…") : tr("Loading your library…"));
+    if (!m_autoRefreshPending) {
+        m_status->setText(append ? tr("Loading more media…")
+                                 : tr("Loading your library…"));
+    }
     m_client->loadAssets(page);
 }
 
@@ -202,14 +287,20 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         section->tiles.append(tile);
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
+        connect(tile, &MediaTile::downloadRequested, this, &LibraryPage::downloadAsset);
     }
+
+    if (!m_appendRequest && !m_assets.isEmpty())
+        m_newestAssetId = m_assets.first().id;
 
     m_nextPage = nextPage;
     m_loading = false;
+    m_autoRefreshPending = false;
     m_refreshButton->setEnabled(true);
     m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
     scheduleLayout();
     updateEmptyState();
+    updateAutoCheckTimer();
 }
 
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)
@@ -246,7 +337,27 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
 {
     if (operation == tr("Load image"))
         return;
+    if (operation == tr("Upload")) {
+        ++m_uploadsFailed;
+        const int remaining = m_client->pendingUploadCount();
+        if (remaining == 0) {
+            const int completed = m_uploadsCompleted;
+            const int failed = m_uploadsFailed;
+            m_status->setText(
+                tr("Upload finished: %1 ok, %2 failed").arg(completed).arg(failed));
+            m_uploadsCompleted = 0;
+            m_uploadsFailed = 0;
+            m_uploadsTotal = 0;
+            if (completed > 0)
+                QTimer::singleShot(600, this, &LibraryPage::refresh);
+        } else {
+            m_status->setText(tr("Upload failed: %1 (%2 left)")
+                                  .arg(message, QString::number(remaining)));
+        }
+        return;
+    }
     m_loading = false;
+    m_autoRefreshPending = false;
     m_refreshButton->setEnabled(true);
     m_status->setText(tr("%1 failed: %2").arg(operation, message));
     updateEmptyState();
@@ -265,6 +376,7 @@ void LibraryPage::clearTimeline()
     m_requestedThumbnails.clear();
     m_assets.clear();
     m_nextPage.clear();
+    m_newestAssetId.clear();
 }
 
 void LibraryPage::layoutTimeline()
@@ -428,16 +540,28 @@ void LibraryPage::updateEmptyState()
         return;
     m_emptyState->setText(
         m_client->isConfigured()
-            ? tr("No photos or videos were returned by this Immich server.\n"
-                 "Check that the API key has asset.read and asset.view permissions.")
+            ? tr("No photos or videos yet.\n"
+                 "Drop files here or use Upload to add media.")
             : tr("Connect to your Immich server in Settings → Immich Server\n"
                  "to browse photos and videos."));
+}
+
+void LibraryPage::updateAutoCheckTimer()
+{
+    if (m_client->isConfigured() && isVisible()) {
+        if (!m_autoCheckTimer->isActive())
+            m_autoCheckTimer->start();
+    } else {
+        m_autoCheckTimer->stop();
+    }
 }
 
 void LibraryPage::openAsset(const ImmichAsset &asset)
 {
     if (asset.isVideo()) {
         auto *player = new VideoPlayerDialog(m_client, asset, this);
+        connect(player, &VideoPlayerDialog::downloadRequested, this,
+                &LibraryPage::downloadAsset);
         player->show();
         return;
     }
@@ -454,7 +578,12 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
     preview->setProperty("mediaPreview", true);
     layout->addWidget(preview, 1);
 
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    auto *buttons = new QDialogButtonBox(dialog);
+    auto *downloadButton = buttons->addButton(tr("Download"), QDialogButtonBox::ActionRole);
+    buttons->addButton(QDialogButtonBox::Close);
+    connect(downloadButton, &QPushButton::clicked, this, [this, asset] {
+        downloadAsset(asset);
+    });
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     layout->addWidget(buttons);
 
@@ -475,10 +604,240 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
     dialog->show();
 }
 
+void LibraryPage::downloadAsset(const ImmichAsset &asset)
+{
+    if (!m_client->isConfigured() || asset.id.isEmpty())
+        return;
+
+    const QString suggestedName =
+        asset.fileName.isEmpty() ? QStringLiteral("immich-%1").arg(asset.id) : asset.fileName;
+    const QString downloads =
+        QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Download media"), QStringLiteral("%1/%2").arg(downloads, suggestedName),
+        mediaFileFilter());
+    if (path.isEmpty())
+        return;
+
+    m_status->setText(tr("Downloading %1…").arg(suggestedName));
+    m_client->downloadAsset(asset.id, path, suggestedName);
+}
+
+void LibraryPage::chooseFilesToUpload()
+{
+    if (!m_client->isConfigured()) {
+        m_status->setText(tr("Connect to Immich in Settings before uploading."));
+        return;
+    }
+
+    const QStringList paths = QFileDialog::getOpenFileNames(
+        this, tr("Upload media"),
+        QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
+        mediaFileFilter());
+    enqueueUploads(paths);
+}
+
+void LibraryPage::enqueueUploads(const QStringList &paths)
+{
+    QStringList uploadable;
+    uploadable.reserve(paths.size());
+    for (const QString &path : paths) {
+        if (isUploadableFile(path))
+            uploadable.append(QFileInfo(path).absoluteFilePath());
+    }
+    if (uploadable.isEmpty()) {
+        m_status->setText(tr("No supported media files to upload."));
+        return;
+    }
+
+    m_uploadsTotal += uploadable.size();
+    m_status->setText(tr("Uploading %1 file(s)…").arg(m_client->pendingUploadCount() +
+                                                      uploadable.size()));
+    m_client->uploadAssets(uploadable);
+}
+
+void LibraryPage::handleUploadProgress(const QString &filePath, qint64 bytesSent,
+                                       qint64 bytesTotal)
+{
+    const QString name = QFileInfo(filePath).fileName();
+    if (bytesTotal > 0) {
+        const int percent = static_cast<int>((bytesSent * 100) / bytesTotal);
+        m_status->setText(tr("Uploading %1… %2% (%3 left)")
+                              .arg(name)
+                              .arg(percent)
+                              .arg(m_client->pendingUploadCount()));
+    } else {
+        m_status->setText(tr("Uploading %1…").arg(name));
+    }
+}
+
+void LibraryPage::handleAssetUploaded(const QString &filePath, const QString &assetId,
+                                      bool duplicate)
+{
+    Q_UNUSED(assetId);
+    ++m_uploadsCompleted;
+    const QString name = QFileInfo(filePath).fileName();
+    const int remaining = m_client->pendingUploadCount();
+    if (remaining == 0) {
+        const int completed = m_uploadsCompleted;
+        const int failed = m_uploadsFailed;
+        if (failed > 0) {
+            m_status->setText(
+                tr("Upload finished: %1 ok, %2 failed").arg(completed).arg(failed));
+        } else if (duplicate && completed == 1) {
+            m_status->setText(tr("Already on server: %1").arg(name));
+        } else {
+            m_status->setText(tr("Uploaded %n file(s).", nullptr, completed));
+        }
+        m_uploadsCompleted = 0;
+        m_uploadsFailed = 0;
+        m_uploadsTotal = 0;
+        if (completed > 0)
+            QTimer::singleShot(600, this, &LibraryPage::refresh);
+    } else {
+        m_status->setText(
+            duplicate ? tr("Duplicate skipped: %1 (%2 left)").arg(name).arg(remaining)
+                      : tr("Uploaded %1 (%2 left)").arg(name).arg(remaining));
+    }
+}
+
+void LibraryPage::handleDownloadProgress(const QString &assetId, qint64 bytesReceived,
+                                         qint64 bytesTotal)
+{
+    Q_UNUSED(assetId);
+    if (bytesTotal > 0) {
+        const int percent = static_cast<int>((bytesReceived * 100) / bytesTotal);
+        m_status->setText(tr("Downloading… %1%").arg(percent));
+    }
+}
+
+void LibraryPage::handleAssetDownloaded(const QString &assetId, const QString &destinationPath)
+{
+    Q_UNUSED(assetId);
+    m_status->setText(tr("Saved to %1").arg(QFileInfo(destinationPath).absoluteFilePath()));
+}
+
+bool LibraryPage::isUploadableFile(const QString &path) const
+{
+    static const QSet<QString> extensions = {
+        QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
+        QStringLiteral("gif"),  QStringLiteral("webp"), QStringLiteral("heic"),
+        QStringLiteral("heif"), QStringLiteral("tif"),  QStringLiteral("tiff"),
+        QStringLiteral("bmp"),  QStringLiteral("raw"),  QStringLiteral("dng"),
+        QStringLiteral("cr2"),  QStringLiteral("nef"),  QStringLiteral("arw"),
+        QStringLiteral("mp4"),  QStringLiteral("mov"),  QStringLiteral("m4v"),
+        QStringLiteral("avi"),  QStringLiteral("mkv"),  QStringLiteral("webm"),
+        QStringLiteral("3gp"),
+    };
+    const QFileInfo info(path);
+    return info.exists() && info.isFile() &&
+           extensions.contains(info.suffix().toLower());
+}
+
+QStringList LibraryPage::uploadableLocalPaths(const QList<QUrl> &urls) const
+{
+    QStringList paths;
+    for (const QUrl &url : urls) {
+        if (!url.isLocalFile())
+            continue;
+        const QString path = url.toLocalFile();
+        if (isUploadableFile(path))
+            paths.append(path);
+    }
+    return paths;
+}
+
+void LibraryPage::setDropHighlight(bool active)
+{
+    if (m_dropActive == active)
+        return;
+    m_dropActive = active;
+    if (!active) {
+        m_dropOverlay->hide();
+        return;
+    }
+    m_dropOverlay->setGeometry(rect());
+    m_dropOverlay->setStyleSheet(
+        QStringLiteral("QLabel#libraryDropOverlay {"
+                       "background: rgba(20, 20, 24, 180);"
+                       "color: white;"
+                       "font-size: 18px;"
+                       "font-weight: 600;"
+                       "border: 2px dashed rgba(166, 133, 226, 220);"
+                       "margin: 12px;"
+                       "}"));
+    m_dropOverlay->show();
+    m_dropOverlay->raise();
+}
+
+bool LibraryPage::handleDragEvent(QEvent *event)
+{
+    if (!m_client->isConfigured())
+        return false;
+
+    switch (event->type()) {
+    case QEvent::DragEnter:
+    case QEvent::DragMove: {
+        auto *dragEvent = static_cast<QDragMoveEvent *>(event);
+        if (!dragEvent->mimeData() || !dragEvent->mimeData()->hasUrls())
+            return false;
+        if (uploadableLocalPaths(dragEvent->mimeData()->urls()).isEmpty())
+            return false;
+        dragEvent->acceptProposedAction();
+        setDropHighlight(true);
+        return true;
+    }
+    case QEvent::DragLeave:
+        setDropHighlight(false);
+        event->accept();
+        return true;
+    case QEvent::Drop: {
+        auto *dropEvent = static_cast<QDropEvent *>(event);
+        setDropHighlight(false);
+        const QStringList paths = uploadableLocalPaths(dropEvent->mimeData()->urls());
+        if (paths.isEmpty())
+            return false;
+        dropEvent->acceptProposedAction();
+        enqueueUploads(paths);
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+bool LibraryPage::eventFilter(QObject *watched, QEvent *event)
+{
+    Q_UNUSED(watched);
+    if (handleDragEvent(event))
+        return true;
+    return QWidget::eventFilter(watched, event);
+}
+
+void LibraryPage::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (!handleDragEvent(event))
+        QWidget::dragEnterEvent(event);
+}
+
+void LibraryPage::dragLeaveEvent(QDragLeaveEvent *event)
+{
+    if (!handleDragEvent(event))
+        QWidget::dragLeaveEvent(event);
+}
+
+void LibraryPage::dropEvent(QDropEvent *event)
+{
+    if (!handleDragEvent(event))
+        QWidget::dropEvent(event);
+}
+
 void LibraryPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     layoutTimeline();
+    if (m_dropActive)
+        m_dropOverlay->setGeometry(rect());
 }
 
 void LibraryPage::hideEvent(QHideEvent *event)
@@ -486,12 +845,16 @@ void LibraryPage::hideEvent(QHideEvent *event)
     QWidget::hideEvent(event);
     for (MediaTile *tile : std::as_const(m_tilesById))
         tile->clearThumbnail();
+    setDropHighlight(false);
+    updateAutoCheckTimer();
 }
 
 void LibraryPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     scheduleVisibleMediaUpdate();
+    updateAutoCheckTimer();
+    QTimer::singleShot(0, this, &LibraryPage::checkForNewPhotos);
 }
 
 } // namespace Aurora

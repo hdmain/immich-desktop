@@ -8,8 +8,12 @@
 #include <QSet>
 #include <QWidget>
 
-class QLabel;
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDropEvent;
+class QEvent;
 class QHideEvent;
+class QLabel;
 class QPushButton;
 class QResizeEvent;
 class QScrollArea;
@@ -30,17 +34,29 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void refresh();
     void loadMore();
     void maybeLoadMore();
+    void checkForNewPhotos();
+    void chooseFilesToUpload();
+    void handleNewestAssetsPolled(const QList<Aurora::ImmichAsset> &assets);
     void showAssets(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage);
     void showThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showThumbnailError(const QString &assetId, const QString &resultSize,
                             const QString &message);
     void showRequestError(const QString &operation, const QString &message);
     void openAsset(const Aurora::ImmichAsset &asset);
+    void downloadAsset(const Aurora::ImmichAsset &asset);
+    void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
+    void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
+    void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
+    void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
 
 private:
     struct DaySection {
@@ -57,6 +73,12 @@ private:
     void updateVisibleMedia();
     bool isTileNearViewport(const MediaTile *tile) const;
     void updateEmptyState();
+    void updateAutoCheckTimer();
+    void setDropHighlight(bool active);
+    void enqueueUploads(const QStringList &paths);
+    QStringList uploadableLocalPaths(const QList<QUrl> &urls) const;
+    bool isUploadableFile(const QString &path) const;
+    bool handleDragEvent(QEvent *event);
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
 
@@ -65,16 +87,25 @@ private:
     QWidget *m_timelineHost;
     QLabel *m_status;
     QLabel *m_emptyState;
+    QLabel *m_dropOverlay;
+    QPushButton *m_uploadButton;
     QPushButton *m_refreshButton;
     QTimer *m_layoutTimer;
     QTimer *m_visibilityTimer;
+    QTimer *m_autoCheckTimer;
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
     QString m_nextPage;
+    QString m_newestAssetId;
+    int m_uploadsCompleted = 0;
+    int m_uploadsFailed = 0;
+    int m_uploadsTotal = 0;
     bool m_loading = false;
     bool m_appendRequest = false;
+    bool m_autoRefreshPending = false;
+    bool m_dropActive = false;
 };
 
 } // namespace Aurora

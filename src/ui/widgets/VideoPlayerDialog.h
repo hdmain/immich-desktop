@@ -20,16 +20,21 @@ public:
     explicit VideoPlayerDialog(ImmichClient *client, const ImmichAsset &asset,
                                QWidget *parent = nullptr);
 
+signals:
+    void downloadRequested(const Aurora::ImmichAsset &asset);
+
 private:
     void togglePlayback();
     void updatePlaybackButton();
     void updatePosition(qint64 position);
     static QString formatTime(qint64 milliseconds);
 
+    ImmichAsset m_asset;
     QMediaPlayer *m_player;
     QAudioOutput *m_audio;
     QVideoWidget *m_video;
     QPushButton *m_playButton;
+    QPushButton *m_downloadButton;
     QSlider *m_positionSlider;
     QSlider *m_volumeSlider;
     QLabel *m_timeLabel;

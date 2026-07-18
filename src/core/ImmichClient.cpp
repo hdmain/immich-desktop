@@ -4,12 +4,17 @@
 
 #include <QBuffer>
 #include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
+#include <QHttpMultiPart>
+#include <QHttpPart>
 #include <QImage>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaObject>
+#include <QMimeDatabase>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -193,8 +198,24 @@ void ImmichClient::testConnection()
 
 void ImmichClient::loadAssets(int page, int pageSize)
 {
-    if (!ensureConfigured(tr("Load library")))
+    searchAssets(page, pageSize, false);
+}
+
+void ImmichClient::pollNewestAssets(int pageSize)
+{
+    if (m_pollInFlight || !isConfigured())
         return;
+    m_pollInFlight = true;
+    searchAssets(1, pageSize, true);
+}
+
+void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly)
+{
+    if (!ensureConfigured(pollOnly ? tr("Check for new photos") : tr("Load library"))) {
+        if (pollOnly)
+            m_pollInFlight = false;
+        return;
+    }
 
     QJsonObject body;
     body.insert(QStringLiteral("page"), qMax(1, page));
@@ -207,10 +228,14 @@ void ImmichClient::loadAssets(int page, int pageSize)
     searchRequest.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     searchRequest.setRawHeader("Accept", "application/json");
     auto *reply = m_network->post(searchRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, pollOnly] {
         const QByteArray body = reply->readAll();
+        if (pollOnly)
+            m_pollInFlight = false;
+
         if (reply->error() != QNetworkReply::NoError) {
-            emit requestFailed(tr("Load library"), errorMessage(reply, body));
+            if (!pollOnly)
+                emit requestFailed(tr("Load library"), errorMessage(reply, body));
             reply->deleteLater();
             return;
         }
@@ -235,7 +260,12 @@ void ImmichClient::loadAssets(int page, int pageSize)
             if (!asset.id.isEmpty())
                 assets.append(asset);
         }
-        emit assetsLoaded(assets, assetsObject.value(QStringLiteral("nextPage")).toVariant().toString());
+
+        if (pollOnly)
+            emit newestAssetsPolled(assets);
+        else
+            emit assetsLoaded(
+                assets, assetsObject.value(QStringLiteral("nextPage")).toVariant().toString());
         reply->deleteLater();
     });
 }
@@ -279,6 +309,190 @@ void ImmichClient::loadThumbnail(const QString &assetId)
 void ImmichClient::loadPreview(const QString &assetId)
 {
     loadImageAsync(assetId, QStringLiteral("preview"));
+}
+
+bool ImmichClient::isUploading() const
+{
+    return m_uploadInFlight || !m_uploadQueue.isEmpty();
+}
+
+int ImmichClient::pendingUploadCount() const
+{
+    return m_uploadQueue.size() + (m_uploadInFlight ? 1 : 0);
+}
+
+void ImmichClient::uploadAssets(const QStringList &filePaths)
+{
+    if (!ensureConfigured(tr("Upload")))
+        return;
+
+    for (const QString &path : filePaths) {
+        const QString absolute = QFileInfo(path).absoluteFilePath();
+        if (absolute.isEmpty())
+            continue;
+        if (!m_uploadQueue.contains(absolute))
+            m_uploadQueue.append(absolute);
+    }
+    processUploadQueue();
+}
+
+void ImmichClient::processUploadQueue()
+{
+    if (m_uploadInFlight || m_uploadQueue.isEmpty())
+        return;
+    startUpload(m_uploadQueue.takeFirst());
+}
+
+void ImmichClient::startUpload(const QString &filePath)
+{
+    const QFileInfo info(filePath);
+    if (!info.exists() || !info.isFile()) {
+        emit requestFailed(tr("Upload"), tr("File not found: %1").arg(filePath));
+        processUploadQueue();
+        return;
+    }
+
+    auto *file = new QFile(filePath);
+    if (!file->open(QIODevice::ReadOnly)) {
+        const QString message = file->errorString();
+        delete file;
+        emit requestFailed(tr("Upload"),
+                           tr("Could not open %1: %2").arg(info.fileName(), message));
+        processUploadQueue();
+        return;
+    }
+
+    auto *multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    auto addTextPart = [multiPart](const QString &name, const QString &value) {
+        QHttpPart part;
+        part.setHeader(QNetworkRequest::ContentDispositionHeader,
+                       QVariant(QStringLiteral("form-data; name=\"%1\"").arg(name)));
+        part.setBody(value.toUtf8());
+        multiPart->append(part);
+    };
+
+    const QDateTime created =
+        info.birthTime().isValid() ? info.birthTime() : info.lastModified();
+    const QDateTime modified = info.lastModified().isValid()
+                                   ? info.lastModified()
+                                   : QDateTime::currentDateTime();
+    const QString deviceAssetId =
+        QStringLiteral("%1-%2-%3")
+            .arg(info.absoluteFilePath(), QString::number(info.size()),
+                 QString::number(modified.toSecsSinceEpoch()));
+
+    addTextPart(QStringLiteral("deviceAssetId"), deviceAssetId);
+    addTextPart(QStringLiteral("deviceId"), QStringLiteral("immich-desktop"));
+    addTextPart(QStringLiteral("fileCreatedAt"),
+                created.toUTC().toString(Qt::ISODateWithMs));
+    addTextPart(QStringLiteral("fileModifiedAt"),
+                modified.toUTC().toString(Qt::ISODateWithMs));
+    addTextPart(QStringLiteral("filename"), info.fileName());
+    addTextPart(QStringLiteral("isFavorite"), QStringLiteral("false"));
+
+    QHttpPart filePart;
+    const QString safeName = info.fileName().replace(QLatin1Char('"'), QLatin1Char('\''));
+    filePart.setHeader(
+        QNetworkRequest::ContentDispositionHeader,
+        QVariant(QStringLiteral("form-data; name=\"assetData\"; filename=\"%1\"")
+                     .arg(safeName)));
+    const QMimeDatabase mimeDb;
+    filePart.setHeader(QNetworkRequest::ContentTypeHeader,
+                       QVariant(mimeDb.mimeTypeForFile(info).name()));
+    filePart.setBodyDevice(file);
+    file->setParent(multiPart);
+    multiPart->append(filePart);
+
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/assets")));
+    request.setRawHeader("Accept", "application/json");
+
+    m_uploadInFlight = true;
+    auto *reply = m_network->post(request, multiPart);
+    multiPart->setParent(reply);
+
+    connect(reply, &QNetworkReply::uploadProgress, this,
+            [this, filePath](qint64 bytesSent, qint64 bytesTotal) {
+                emit uploadProgress(filePath, bytesSent, bytesTotal);
+            });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, filePath] {
+        const QByteArray body = reply->readAll();
+        m_uploadInFlight = false;
+
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Upload"),
+                               tr("%1: %2").arg(QFileInfo(filePath).fileName(),
+                                                errorMessage(reply, body)));
+        } else {
+            const QJsonObject object = QJsonDocument::fromJson(body).object();
+            const QString assetId = object.value(QStringLiteral("id")).toString();
+            const bool duplicate =
+                object.value(QStringLiteral("duplicate")).toBool() ||
+                object.value(QStringLiteral("status")).toString().compare(
+                    QStringLiteral("duplicate"), Qt::CaseInsensitive) == 0;
+            emit assetUploaded(filePath, assetId, duplicate);
+        }
+
+        reply->deleteLater();
+        processUploadQueue();
+    });
+}
+
+void ImmichClient::downloadAsset(const QString &assetId, const QString &destinationPath,
+                                 const QString &suggestedFileName)
+{
+    Q_UNUSED(suggestedFileName);
+    if (!ensureConfigured(tr("Download")) || assetId.isEmpty() || destinationPath.isEmpty())
+        return;
+
+    auto *file = new QFile(destinationPath);
+    if (!file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        const QString message = file->errorString();
+        delete file;
+        emit requestFailed(tr("Download"),
+                           tr("Could not write %1: %2").arg(destinationPath, message));
+        return;
+    }
+
+    auto *reply =
+        m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/assets/%1/original").arg(assetId))));
+    file->setParent(reply);
+
+    connect(reply, &QNetworkReply::readyRead, this, [reply, file] {
+        file->write(reply->readAll());
+    });
+    connect(reply, &QNetworkReply::downloadProgress, this,
+            [this, assetId](qint64 bytesReceived, qint64 bytesTotal) {
+                emit downloadProgress(assetId, bytesReceived, bytesTotal);
+            });
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, file, assetId, destinationPath] {
+                if (reply->bytesAvailable() > 0)
+                    file->write(reply->readAll());
+
+                if (reply->error() != QNetworkReply::NoError) {
+                    file->close();
+                    file->remove();
+                    emit requestFailed(tr("Download"),
+                                       errorMessage(reply, reply->readAll()));
+                    reply->deleteLater();
+                    return;
+                }
+
+                if (!file->flush()) {
+                    const QString message = file->errorString();
+                    file->close();
+                    file->remove();
+                    emit requestFailed(tr("Download"),
+                                       tr("Could not write %1: %2")
+                                           .arg(destinationPath, message));
+                    reply->deleteLater();
+                    return;
+                }
+
+                file->close();
+                emit assetDownloaded(assetId, destinationPath);
+                reply->deleteLater();
+            });
 }
 
 void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultSize)
