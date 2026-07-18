@@ -35,6 +35,8 @@ set(IMMICH_SOURCES
     src/core/ThemeManager.h
     src/core/UpdateManager.cpp
     src/core/UpdateManager.h
+    src/ui/FontLoader.cpp
+    src/ui/FontLoader.h
     src/ui/IconUtils.cpp
     src/ui/IconUtils.h
     src/ui/MainWindow.cpp
@@ -43,6 +45,8 @@ set(IMMICH_SOURCES
     src/ui/pages/AppearancePage.h
     src/ui/pages/DashboardPage.cpp
     src/ui/pages/DashboardPage.h
+    src/ui/pages/SettingsPage.cpp
+    src/ui/pages/SettingsPage.h
     src/ui/pages/UpdatesPage.cpp
     src/ui/pages/UpdatesPage.h
     src/ui/widgets/AnimatedButton.cpp

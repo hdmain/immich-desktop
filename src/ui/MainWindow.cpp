@@ -2,9 +2,8 @@
 
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
-#include "ui/pages/AppearancePage.h"
 #include "ui/pages/DashboardPage.h"
-#include "ui/pages/UpdatesPage.h"
+#include "ui/pages/SettingsPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
 #include "ui/widgets/Sidebar.h"
 #include "ui/widgets/TopBar.h"
@@ -36,6 +35,8 @@ public:
         : QWidget(parent)
         , m_edges(edges)
     {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAutoFillBackground(false);
         if (edges == Qt::TopEdge || edges == Qt::BottomEdge)
             setCursor(Qt::SizeVerCursor);
         else if (edges == Qt::LeftEdge || edges == Qt::RightEdge)
@@ -67,6 +68,8 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     : QMainWindow(parent)
     , m_topBar(new TopBar(themeManager, this))
     , m_pages(new AnimatedStackedWidget(this))
+    , m_settingsPage(new SettingsPage(themeManager, updateManager, this))
+    , m_sidebar(new Sidebar(themeManager, this))
     , m_updateManager(updateManager)
 {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
@@ -92,22 +95,22 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(14);
 
-    auto *sidebar = new Sidebar(themeManager, body);
-    bodyLayout->addWidget(sidebar);
+    bodyLayout->addWidget(m_sidebar);
 
     auto *workspace = new QWidget(body);
     auto *workspaceLayout = new QVBoxLayout(workspace);
     workspaceLayout->setContentsMargins(0, 0, 0, 0);
 
     m_pages->addWidget(new DashboardPage(m_pages));
-    m_pages->addWidget(new AppearancePage(themeManager, m_pages));
-    m_pages->addWidget(new UpdatesPage(updateManager, m_pages));
+    m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);
     root->addWidget(body, 1);
 
-    connect(sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
-    connect(m_topBar, &TopBar::updatesRequested, this, [this] { selectPage(2); });
+    connect(m_sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
+    connect(m_topBar, &TopBar::updatesRequested, this, [this] {
+        selectPage(2);
+    });
     connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
         m_topBar->setUpdateAvailable(true, info.version);
         notifyUpdateAvailable();
@@ -121,28 +124,37 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
             m_topBar->setUpdateAvailable(false);
     });
 
-#ifndef Q_OS_WIN
     const QList<Qt::Edges> resizeEdges = {
         Qt::TopEdge, Qt::BottomEdge, Qt::LeftEdge, Qt::RightEdge,
         Qt::TopEdge | Qt::LeftEdge, Qt::TopEdge | Qt::RightEdge,
         Qt::BottomEdge | Qt::LeftEdge, Qt::BottomEdge | Qt::RightEdge
     };
-    for (Qt::Edges edges : resizeEdges)
-        m_resizeHandles.append(new ResizeHandle(edges, this));
-#endif
+    for (Qt::Edges edges : resizeEdges) {
+        auto *handle = new ResizeHandle(edges, this);
+        handle->setAttribute(Qt::WA_StyledBackground, false);
+        m_resizeHandles.append(handle);
+    }
 }
 
 void MainWindow::selectPage(int index)
 {
-    static const QStringList titles = {
-        QStringLiteral("Overview"),
-        QStringLiteral("Appearance"),
-        QStringLiteral("Updates")
-    };
-    if (index < 0 || index >= m_pages->count())
+    if (index < 0 || index > 2)
         return;
-    m_topBar->setPageTitle(titles.value(index));
-    m_pages->setCurrentIndexAnimated(index);
+
+    if (index == 0) {
+        m_topBar->setPageTitle(QStringLiteral("Overview"));
+        m_pages->setCurrentIndexAnimated(0);
+    } else {
+        if (index == 1) {
+            m_settingsPage->showAppearance();
+            m_topBar->setPageTitle(QStringLiteral("Settings / Appearance"));
+        } else {
+            m_settingsPage->showUpdates();
+            m_topBar->setPageTitle(QStringLiteral("Settings / Update"));
+        }
+        m_pages->setCurrentIndexAnimated(1);
+    }
+    m_sidebar->setCurrentPage(index);
 }
 
 void MainWindow::scheduleAutoUpdateCheck()
@@ -157,7 +169,7 @@ void MainWindow::scheduleAutoUpdateCheck()
 
 void MainWindow::notifyUpdateAvailable()
 {
-    if (m_pages->currentIndex() == 2)
+    if (m_pages->currentIndex() == 1 && m_settingsPage->isShowingUpdates())
         return;
 
     const auto info = m_updateManager->availableUpdate();
@@ -179,21 +191,24 @@ void MainWindow::notifyUpdateAvailable()
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
 #ifdef Q_OS_WIN
-    Q_UNUSED(eventType);
+    if (eventType != "windows_generic_MSG" && eventType != "windows_dispatcher_MSG")
+        return QMainWindow::nativeEvent(eventType, message, result);
+
     auto *nativeMessage = static_cast<MSG *>(message);
-    if (nativeMessage->message == WM_NCHITTEST && !isMaximized()) {
+    if (nativeMessage->message == WM_NCCALCSIZE && nativeMessage->wParam) {
+        // Keep a frameless client area while retaining WS_THICKFRAME for resizing.
+        *result = 0;
+        return true;
+    }
+    if (nativeMessage->message == WM_NCHITTEST && !isMaximized() && !isFullScreen()) {
         const QPoint cursor(GET_X_LPARAM(nativeMessage->lParam),
                             GET_Y_LPARAM(nativeMessage->lParam));
-        const QRect bounds = frameGeometry();
+        const QPoint local = mapFromGlobal(cursor);
         constexpr int resizeBorder = 8;
-        const bool left = cursor.x() >= bounds.left() &&
-                          cursor.x() < bounds.left() + resizeBorder;
-        const bool right = cursor.x() <= bounds.right() &&
-                           cursor.x() > bounds.right() - resizeBorder;
-        const bool top = cursor.y() >= bounds.top() &&
-                         cursor.y() < bounds.top() + resizeBorder;
-        const bool bottom = cursor.y() <= bounds.bottom() &&
-                            cursor.y() > bounds.bottom() - resizeBorder;
+        const bool left = local.x() >= 0 && local.x() < resizeBorder;
+        const bool right = local.x() >= width() - resizeBorder && local.x() < width();
+        const bool top = local.y() >= 0 && local.y() < resizeBorder;
+        const bool bottom = local.y() >= height() - resizeBorder && local.y() < height();
 
         if (top && left) *result = HTTOPLEFT;
         else if (top && right) *result = HTTOPRIGHT;
@@ -206,6 +221,10 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
         else return QMainWindow::nativeEvent(eventType, message, result);
         return true;
     }
+#else
+    Q_UNUSED(eventType);
+    Q_UNUSED(message);
+    Q_UNUSED(result);
 #endif
     return QMainWindow::nativeEvent(eventType, message, result);
 }
@@ -231,9 +250,24 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
+    ensureResizableFrame();
     applyWindowCorners();
     updateResizeHandles();
     scheduleAutoUpdateCheck();
+}
+
+void MainWindow::ensureResizableFrame()
+{
+#ifdef Q_OS_WIN
+    const HWND handle = reinterpret_cast<HWND>(winId());
+    const LONG_PTR style = GetWindowLongPtr(handle, GWL_STYLE);
+    SetWindowLongPtr(handle, GWL_STYLE,
+                     style | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_CAPTION);
+    SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+#else
+    // Resize grips cover non-Windows platforms.
+#endif
 }
 
 void MainWindow::applyWindowCorners()
@@ -244,14 +278,11 @@ void MainWindow::applyWindowCorners()
     const HWND handle = reinterpret_cast<HWND>(winId());
     const int cornerPreference = squareCorners ? 1 : 2; // DoNotRound / Round
     constexpr DWORD cornerPreferenceAttribute = 33; // DWMWA_WINDOW_CORNER_PREFERENCE
-    const HRESULT result = DwmSetWindowAttribute(
-        handle, cornerPreferenceAttribute, &cornerPreference, sizeof(cornerPreference));
-    if (SUCCEEDED(result)) {
-        clearMask();
-        return;
-    }
-#endif
-
+    DwmSetWindowAttribute(handle, cornerPreferenceAttribute,
+                          &cornerPreference, sizeof(cornerPreference));
+    // Avoid QWidget::setMask on Windows — it breaks border hit-testing/resizing.
+    clearMask();
+#else
     if (squareCorners) {
         clearMask();
         return;
@@ -261,6 +292,7 @@ void MainWindow::applyWindowCorners()
     QPainterPath path;
     path.addRoundedRect(QRectF(rect()), radius, radius);
     setMask(QRegion(path.toFillPolygon().toPolygon()));
+#endif
 }
 
 void MainWindow::updateResizeHandles()

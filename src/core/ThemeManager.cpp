@@ -71,7 +71,7 @@ QString ThemeManager::buildStyleSheet() const
 
     return QStringLiteral(R"(
         * {
-            font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+            font-family: "Inter", sans-serif;
             font-size: 14px;
             color: %1;
             outline: none;

@@ -11,6 +11,8 @@ namespace Aurora {
 
 class AnimatedStackedWidget;
 class ResizeHandle;
+class SettingsPage;
+class Sidebar;
 class ThemeManager;
 class TopBar;
 class UpdateManager;
@@ -30,6 +32,7 @@ protected:
 
 private:
     void applyWindowCorners();
+    void ensureResizableFrame();
     void selectPage(int index);
     void updateResizeHandles();
     void scheduleAutoUpdateCheck();
@@ -37,6 +40,8 @@ private:
 
     TopBar *m_topBar;
     AnimatedStackedWidget *m_pages;
+    SettingsPage *m_settingsPage;
+    Sidebar *m_sidebar;
     UpdateManager *m_updateManager;
     QList<ResizeHandle *> m_resizeHandles;
     bool m_autoCheckScheduled = false;

@@ -80,8 +80,10 @@ if (-not $NoBuild) {
         throw "The Qt MinGW compiler or Ninja was not found under C:\Qt\Tools."
     }
 
-    $compiler = Join-Path $mingwRoot.FullName "bin\g++.exe"
-    $rcCompiler = Join-Path $mingwRoot.FullName "bin\windres.exe"
+    $compiler = (Join-Path $mingwRoot.FullName "bin\g++.exe") -replace '\\', '/'
+    $rcCompiler = (Join-Path $mingwRoot.FullName "bin\windres.exe") -replace '\\', '/'
+    $qtRootCmake = $qtRoot -replace '\\', '/'
+    $qtCMakeDirFwd = $qtCMakeDir -replace '\\', '/'
     $cacheFile = Join-Path $buildDirectory "CMakeCache.txt"
 
     if (Test-Path $cacheFile) {
@@ -90,7 +92,7 @@ if (-not $NoBuild) {
         $cachedQtDir = Get-CacheValue $cacheFile "Qt6_DIR"
         $needsReset = $false
 
-        if ($cachedCompiler -and -not (PathsEqual $cachedCompiler $compiler)) {
+        if ($cachedCompiler -and -not (PathsEqual $cachedCompiler ($compiler -replace '/', '\'))) {
             $needsReset = $true
         }
         if (-not $cachedPrefix -and -not $cachedQtDir) {
@@ -113,11 +115,11 @@ if (-not $NoBuild) {
     Write-Host "Configuring immich..."
     Write-Host "Using Qt: $qtRoot"
     & cmake -S $projectRoot -B $buildDirectory -G Ninja `
-        "-DCMAKE_PREFIX_PATH=$qtRoot" `
-        "-DQt6_DIR=$qtCMakeDir" `
+        "-DCMAKE_PREFIX_PATH=$qtRootCmake" `
+        "-DQt6_DIR=$qtCMakeDirFwd" `
         "-DCMAKE_CXX_COMPILER=$compiler" `
         "-DCMAKE_RC_COMPILER=$rcCompiler" `
-        "-DCMAKE_MAKE_PROGRAM=$ninja"
+        "-DCMAKE_MAKE_PROGRAM=$($ninja -replace '\\', '/')"
     Assert-LastCommand "CMake configuration failed"
 
     Write-Host "Building and deploying Qt runtime..."
