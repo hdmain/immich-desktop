@@ -1,5 +1,6 @@
 #include "AppVersion.h"
 #include "core/ThemeManager.h"
+#include "core/UpdateManager.h"
 #include "ui/MainWindow.h"
 
 #include <QApplication>
@@ -20,7 +21,9 @@ int main(int argc, char *argv[])
     Aurora::ThemeManager themeManager;
     themeManager.initialize();
 
-    Aurora::MainWindow window(&themeManager);
+    Aurora::UpdateManager updateManager;
+
+    Aurora::MainWindow window(&themeManager, &updateManager);
     window.show();
 
     return application.exec();

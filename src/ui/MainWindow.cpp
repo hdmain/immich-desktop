@@ -1,8 +1,10 @@
 #include "ui/MainWindow.h"
 
 #include "core/ThemeManager.h"
+#include "core/UpdateManager.h"
 #include "ui/pages/AppearancePage.h"
 #include "ui/pages/DashboardPage.h"
+#include "ui/pages/UpdatesPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
 #include "ui/widgets/Sidebar.h"
 #include "ui/widgets/TopBar.h"
@@ -10,11 +12,13 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainterPath>
 #include <QRegion>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -59,10 +63,11 @@ private:
     Qt::Edges m_edges;
 };
 
-MainWindow::MainWindow(ThemeManager *themeManager, QWidget *parent)
+MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager, QWidget *parent)
     : QMainWindow(parent)
     , m_topBar(new TopBar(themeManager, this))
     , m_pages(new AnimatedStackedWidget(this))
+    , m_updateManager(updateManager)
 {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
                    Qt::WindowMinMaxButtonsHint | Qt::WindowSystemMenuHint);
@@ -95,11 +100,25 @@ MainWindow::MainWindow(ThemeManager *themeManager, QWidget *parent)
 
     m_pages->addWidget(new DashboardPage(m_pages));
     m_pages->addWidget(new AppearancePage(themeManager, m_pages));
+    m_pages->addWidget(new UpdatesPage(updateManager, m_pages));
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);
     root->addWidget(body, 1);
 
     connect(sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
+    connect(m_topBar, &TopBar::updatesRequested, this, [this] { selectPage(2); });
+    connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
+        m_topBar->setUpdateAvailable(true, info.version);
+        notifyUpdateAvailable();
+    });
+    connect(m_updateManager, &UpdateManager::upToDate, this, [this] {
+        m_topBar->setUpdateAvailable(false);
+    });
+    connect(m_updateManager, &UpdateManager::stateChanged, this, [this](UpdateState state) {
+        if (state != UpdateState::Available && state != UpdateState::ReadyToInstall &&
+            state != UpdateState::Downloading)
+            m_topBar->setUpdateAvailable(false);
+    });
 
 #ifndef Q_OS_WIN
     const QList<Qt::Edges> resizeEdges = {
@@ -116,12 +135,44 @@ void MainWindow::selectPage(int index)
 {
     static const QStringList titles = {
         QStringLiteral("Overview"),
-        QStringLiteral("Appearance")
+        QStringLiteral("Appearance"),
+        QStringLiteral("Updates")
     };
     if (index < 0 || index >= m_pages->count())
         return;
     m_topBar->setPageTitle(titles.value(index));
     m_pages->setCurrentIndexAnimated(index);
+}
+
+void MainWindow::scheduleAutoUpdateCheck()
+{
+    if (m_autoCheckScheduled || !m_updateManager->shouldAutoCheck())
+        return;
+    m_autoCheckScheduled = true;
+    QTimer::singleShot(2500, this, [this] {
+        m_updateManager->checkForUpdates(true);
+    });
+}
+
+void MainWindow::notifyUpdateAvailable()
+{
+    if (m_pages->currentIndex() == 2)
+        return;
+
+    const auto info = m_updateManager->availableUpdate();
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(tr("Update available"));
+    box.setText(tr("immich desktop v%1 is available.").arg(info.version));
+    box.setInformativeText(
+        tr("Open the Updates page to download and install the package for this platform."));
+    box.addButton(tr("Open Updates"), QMessageBox::AcceptRole);
+    box.addButton(tr("Later"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() &&
+        box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole) {
+        selectPage(2);
+    }
 }
 
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
@@ -181,6 +232,7 @@ void MainWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
     applyWindowCorners();
     updateResizeHandles();
+    scheduleAutoUpdateCheck();
 }
 
 void MainWindow::applyWindowCorners()

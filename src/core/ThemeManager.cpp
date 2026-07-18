@@ -127,6 +127,24 @@ QString ThemeManager::buildStyleSheet() const
             border: 1px solid %4;
         }
         QCheckBox::indicator:checked { background: %7; border-color: %7; }
+        QProgressBar {
+            background: %6;
+            border: 1px solid %4;
+            border-radius: 8px;
+            text-align: center;
+            min-height: 18px;
+        }
+        QProgressBar::chunk {
+            background: %7;
+            border-radius: 7px;
+        }
+        QTextEdit {
+            background: %6;
+            border: 1px solid %4;
+            border-radius: 12px;
+            padding: 10px;
+            selection-background-color: %7;
+        }
         QScrollArea { border: none; background: transparent; }
         QScrollArea > QWidget > QWidget { background: transparent; }
         QToolTip {

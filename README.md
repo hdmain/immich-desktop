@@ -12,12 +12,13 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 - Central `ThemeManager` with live light, dark, and custom themes
 - Editable background, panel, button, and accent colors
 - Local `QSettings` persistence for theme and custom palette
+- Automatic update detection from GitHub Releases with platform-aware installation
 - Reusable animated navigation and color controls
 
 ## Requirements
 
 - CMake 3.21 or newer
-- Qt 6.2 or newer with the Widgets and SVG components
+- Qt 6.2 or newer with the Widgets, SVG, and Network components
 - A C++20 compiler
 
 ## Build
@@ -89,6 +90,19 @@ git push origin v0.1.0
 
 Keep the tag synchronized with the version declared by
 `project(immich VERSION ...)` in `CMakeLists.txt`.
+
+## Updates
+
+The in-app updater checks
+[`hdmain/immich-desktop`](https://github.com/hdmain/immich-desktop) GitHub
+Releases and selects the matching package automatically:
+
+- Windows: NSIS `.exe`, with `.msi` as fallback
+- Linux AppImage builds: replace the running AppImage and relaunch
+- Other Linux installs: Debian `.deb` (via elevated `dpkg`), with AppImage fallback
+
+Automatic checks run once per day on startup and can be toggled on the Updates
+page. Download, skip, and install-and-restart are available there as well.
 
 ## Structure
 

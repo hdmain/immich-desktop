@@ -52,4 +52,27 @@ void AppSettings::saveAppearance(const AppearanceSettings &appearance)
     m_settings.sync();
 }
 
+UpdateSettings AppSettings::loadUpdate() const
+{
+    UpdateSettings result;
+    result.autoCheck = m_settings.value(QStringLiteral("updates/autoCheck"), true).toBool();
+    result.skippedVersion =
+        m_settings.value(QStringLiteral("updates/skippedVersion")).toString();
+    const auto lastCheck = m_settings.value(QStringLiteral("updates/lastCheckUtc")).toString();
+    if (!lastCheck.isEmpty())
+        result.lastCheckUtc = QDateTime::fromString(lastCheck, Qt::ISODate);
+    return result;
+}
+
+void AppSettings::saveUpdate(const UpdateSettings &update)
+{
+    m_settings.setValue(QStringLiteral("updates/autoCheck"), update.autoCheck);
+    m_settings.setValue(QStringLiteral("updates/skippedVersion"), update.skippedVersion);
+    m_settings.setValue(QStringLiteral("updates/lastCheckUtc"),
+                        update.lastCheckUtc.isValid()
+                            ? update.lastCheckUtc.toString(Qt::ISODate)
+                            : QString());
+    m_settings.sync();
+}
+
 } // namespace Aurora

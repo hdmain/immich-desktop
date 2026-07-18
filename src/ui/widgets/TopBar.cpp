@@ -17,6 +17,7 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     : QWidget(parent)
     , m_themeManager(themeManager)
     , m_title(new QLabel(QStringLiteral("Overview"), this))
+    , m_updateButton(new QPushButton(this))
     , m_minimizeButton(new QPushButton(this))
     , m_maximizeButton(new QPushButton(this))
     , m_closeButton(new QPushButton(this))
@@ -42,6 +43,14 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     layout->addWidget(m_title);
     layout->addStretch();
 
+    m_updateButton->setObjectName(QStringLiteral("updateButton"));
+    m_updateButton->setProperty("windowControl", true);
+    m_updateButton->setCursor(Qt::PointingHandCursor);
+    m_updateButton->setFixedHeight(36);
+    m_updateButton->setIconSize(QSize(18, 18));
+    m_updateButton->setVisible(false);
+    layout->addWidget(m_updateButton);
+
     auto prepareControl = [layout](QPushButton *button, const QString &name) {
         button->setObjectName(name);
         button->setProperty("windowControl", true);
@@ -55,6 +64,7 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     prepareControl(m_maximizeButton, QStringLiteral("maximizeButton"));
     prepareControl(m_closeButton, QStringLiteral("closeButton"));
 
+    connect(m_updateButton, &QPushButton::clicked, this, &TopBar::updatesRequested);
     connect(m_minimizeButton, &QPushButton::clicked, this, [this] { window()->showMinimized(); });
     connect(m_maximizeButton, &QPushButton::clicked, this, &TopBar::toggleMaximized);
     connect(m_closeButton, &QPushButton::clicked, this, [this] { window()->close(); });
@@ -65,6 +75,18 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
 void TopBar::setPageTitle(const QString &title)
 {
     m_title->setText(title);
+}
+
+void TopBar::setUpdateAvailable(bool available, const QString &version)
+{
+    m_updateButton->setVisible(available);
+    if (available) {
+        m_updateButton->setText(version.isEmpty()
+                                    ? tr("  Update available")
+                                    : tr("  Update to v%1").arg(version));
+        m_updateButton->setToolTip(tr("Open the Updates page"));
+    }
+    refreshIcons();
 }
 
 void TopBar::mouseDoubleClickEvent(QMouseEvent *event)
@@ -97,6 +119,9 @@ void TopBar::refreshIcons()
 {
     const QColor color = m_themeManager->palette().text;
     const qreal scale = devicePixelRatioF();
+    m_updateButton->setIcon(QIcon(renderSvgIcon(
+        QStringLiteral(":/icons/download.svg"), m_themeManager->palette().accent,
+        QSize(18, 18), scale)));
     m_minimizeButton->setIcon(QIcon(renderSvgIcon(
         QStringLiteral(":/icons/minus.svg"), color, QSize(18, 18), scale)));
     m_maximizeButton->setIcon(QIcon(renderSvgIcon(

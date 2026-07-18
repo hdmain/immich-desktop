@@ -42,6 +42,7 @@ Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
     auto *dashboard = addNavigation(
         QStringLiteral("Overview"), QStringLiteral(":/icons/layout-dashboard.svg"), 0);
     addNavigation(QStringLiteral("Appearance"), QStringLiteral(":/icons/palette.svg"), 1);
+    addNavigation(QStringLiteral("Updates"), QStringLiteral(":/icons/refresh-cw.svg"), 2);
     dashboard->setChecked(true);
 
     layout->addStretch();

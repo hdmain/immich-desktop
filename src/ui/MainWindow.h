@@ -13,12 +13,14 @@ class AnimatedStackedWidget;
 class ResizeHandle;
 class ThemeManager;
 class TopBar;
+class UpdateManager;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit MainWindow(ThemeManager *themeManager, QWidget *parent = nullptr);
+    explicit MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
+                        QWidget *parent = nullptr);
 
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
@@ -30,10 +32,14 @@ private:
     void applyWindowCorners();
     void selectPage(int index);
     void updateResizeHandles();
+    void scheduleAutoUpdateCheck();
+    void notifyUpdateAvailable();
 
     TopBar *m_topBar;
     AnimatedStackedWidget *m_pages;
+    UpdateManager *m_updateManager;
     QList<ResizeHandle *> m_resizeHandles;
+    bool m_autoCheckScheduled = false;
 };
 
 } // namespace Aurora

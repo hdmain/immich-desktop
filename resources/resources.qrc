@@ -2,10 +2,15 @@
     <qresource prefix="/">
         <file alias="branding/immich-logo-inline-light.png">immich-logo-inline-light.png</file>
         <file alias="branding/immich-logo.png">immich-logo.png</file>
+        <file alias="icons/circle-alert.svg">icons/circle-alert.svg</file>
+        <file alias="icons/circle-check.svg">icons/circle-check.svg</file>
+        <file alias="icons/cloud-download.svg">icons/cloud-download.svg</file>
         <file alias="icons/copy.svg">icons/copy.svg</file>
+        <file alias="icons/download.svg">icons/download.svg</file>
         <file alias="icons/layout-dashboard.svg">icons/layout-dashboard.svg</file>
         <file alias="icons/minus.svg">icons/minus.svg</file>
         <file alias="icons/palette.svg">icons/palette.svg</file>
+        <file alias="icons/refresh-cw.svg">icons/refresh-cw.svg</file>
         <file alias="icons/square.svg">icons/square.svg</file>
         <file alias="icons/x.svg">icons/x.svg</file>
     </qresource>

@@ -3,5 +3,6 @@
 namespace Aurora::Config {
 
 inline constexpr char ApplicationVersion[] = "@PROJECT_VERSION@";
+inline constexpr char GitHubRepository[] = "@IMMICH_GITHUB_REPO@";
 
 } // namespace Aurora::Config

@@ -13,7 +13,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Svg Widgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Network Svg Widgets)
+
+set(IMMICH_GITHUB_REPO "hdmain/immich-desktop" CACHE STRING
+    "GitHub repository used for in-app update checks")
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 configure_file(
@@ -31,6 +34,8 @@ qt_add_executable(immich
     src/core/Theme.h
     src/core/ThemeManager.cpp
     src/core/ThemeManager.h
+    src/core/UpdateManager.cpp
+    src/core/UpdateManager.h
     src/ui/IconUtils.cpp
     src/ui/IconUtils.h
     src/ui/MainWindow.cpp
@@ -39,6 +44,8 @@ qt_add_executable(immich
     src/ui/pages/AppearancePage.h
     src/ui/pages/DashboardPage.cpp
     src/ui/pages/DashboardPage.h
+    src/ui/pages/UpdatesPage.cpp
+    src/ui/pages/UpdatesPage.h
     src/ui/widgets/AnimatedButton.cpp
     src/ui/widgets/AnimatedButton.h
     src/ui/widgets/AnimatedStackedWidget.cpp
@@ -56,7 +63,13 @@ target_include_directories(immich PRIVATE
     src
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
-target_link_libraries(immich PRIVATE Qt6::Core Qt6::Gui Qt6::Svg Qt6::Widgets)
+target_link_libraries(immich PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Network
+    Qt6::Svg
+    Qt6::Widgets
+)
 
 if(WIN32)
     target_link_libraries(immich PRIVATE dwmapi)
