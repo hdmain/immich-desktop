@@ -13,7 +13,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Svg Widgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Svg Widgets)
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 configure_file(
@@ -85,6 +85,35 @@ install(TARGETS immich
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+if(WIN32)
+    install(CODE "
+        set(runtime_dir \"$<TARGET_FILE_DIR:immich>\")
+        file(GLOB runtime_dlls \"\${runtime_dir}/*.dll\")
+        if(runtime_dlls)
+            file(INSTALL
+                DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\"
+                TYPE FILE
+                FILES \${runtime_dlls}
+            )
+        endif()
+
+        file(GLOB runtime_children LIST_DIRECTORIES true \"\${runtime_dir}/*\")
+        foreach(child IN LISTS runtime_children)
+            if(IS_DIRECTORY \"\${child}\")
+                file(GLOB plugin_dlls \"\${child}/*.dll\")
+                if(plugin_dlls)
+                    get_filename_component(plugin_name \"\${child}\" NAME)
+                    file(INSTALL
+                        DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/\${plugin_name}\"
+                        TYPE FILE
+                        FILES \${plugin_dlls}
+                    )
+                endif()
+            endif()
+        endforeach()
+    ")
+endif()
+
 if(UNIX AND NOT APPLE)
     install(FILES resources/immich.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
@@ -94,3 +123,34 @@ if(UNIX AND NOT APPLE)
         RENAME immich.png
     )
 endif()
+
+set(CPACK_PACKAGE_NAME "immich-desktop")
+set(CPACK_PACKAGE_VENDOR "Immich Desktop Community")
+set(CPACK_PACKAGE_CONTACT "Immich Desktop Community")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Unofficial fan-made desktop client for Immich"
+)
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "immich desktop")
+set(CPACK_PACKAGE_EXECUTABLES "immich" "immich")
+set(CPACK_CREATE_DESKTOP_LINKS "immich")
+set(CPACK_PACKAGE_FILE_NAME
+    "immich-desktop-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}"
+)
+
+if(WIN32)
+    set(CPACK_GENERATOR "NSIS;WIX")
+    set(CPACK_NSIS_DISPLAY_NAME "immich desktop")
+    set(CPACK_NSIS_PACKAGE_NAME "immich desktop")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_WIX_VERSION 3)
+    set(CPACK_WIX_UPGRADE_GUID "A62C0898-DA73-47EB-A640-6FC2F37DFA1F")
+elseif(UNIX AND NOT APPLE)
+    set(CPACK_GENERATOR "DEB")
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Immich Desktop Community")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "graphics")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+endif()
+
+include(CPack)

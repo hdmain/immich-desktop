@@ -17,7 +17,7 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 ## Requirements
 
 - CMake 3.21 or newer
-- Qt 6.5 or newer with the Widgets and SVG components
+- Qt 6.2 or newer with the Widgets and SVG components
 - A C++20 compiler
 
 ## Build
@@ -68,6 +68,27 @@ desktop entry, and application icon:
 ```bash
 cmake --install build-linux --prefix ~/.local
 ```
+
+## Installers and releases
+
+The `Build installers` GitHub Actions workflow automatically creates:
+
+- Windows NSIS installer (`.exe`)
+- Windows WiX installer (`.msi`)
+- Debian/Ubuntu package (`.deb`)
+- Portable Linux AppImage (`.AppImage`)
+
+Every push to `main` or `master`, every pull request, and every manual workflow
+run produces downloadable workflow artifacts. Pushing a version tag also
+creates a GitHub Release and attaches all four installers:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Keep the tag synchronized with the version declared by
+`project(immich VERSION ...)` in `CMakeLists.txt`.
 
 ## Structure
 

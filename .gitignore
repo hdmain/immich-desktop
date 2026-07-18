@@ -1,4 +1,6 @@
 /build*/
+/AppDir/
+/dist/
 /out/
 /.vs/
 /.vscode/
@@ -7,3 +9,6 @@
 *.suo
 *.pdb
 *.ilk
+*.AppImage
+*.deb
+*.msi
