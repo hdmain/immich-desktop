@@ -70,7 +70,8 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     , m_updateManager(updateManager)
 {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
-                   Qt::WindowMinMaxButtonsHint | Qt::WindowSystemMenuHint);
+                   Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint |
+                   Qt::WindowSystemMenuHint);
     setWindowTitle(QStringLiteral("immich"));
     setWindowIcon(QIcon(QStringLiteral(":/branding/immich-logo.png")));
     setMinimumSize(900, 620);

@@ -25,8 +25,7 @@ configure_file(
     @ONLY
 )
 
-qt_add_executable(immich
-    WIN32
+set(IMMICH_SOURCES
     src/main.cpp
     src/core/AppSettings.cpp
     src/core/AppSettings.h
@@ -57,6 +56,29 @@ qt_add_executable(immich
     src/ui/widgets/TopBar.cpp
     src/ui/widgets/TopBar.h
     resources/resources.qrc
+)
+
+if(WIN32)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        get_filename_component(_immich_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        set(_immich_windres "${_immich_compiler_dir}/windres.exe")
+        if(EXISTS "${_immich_windres}")
+            set(CMAKE_RC_COMPILER "${_immich_windres}" CACHE FILEPATH "Path to windres")
+        endif()
+    endif()
+
+    configure_file(
+        resources/immich.ico
+        "${CMAKE_CURRENT_BINARY_DIR}/immich.ico"
+        COPYONLY
+    )
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/immich.rc" "IDI_ICON1 ICON \"immich.ico\"\n")
+    list(APPEND IMMICH_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/immich.rc")
+endif()
+
+qt_add_executable(immich
+    WIN32
+    ${IMMICH_SOURCES}
 )
 
 target_include_directories(immich PRIVATE
@@ -96,6 +118,9 @@ include(GNUInstallDirs)
 install(TARGETS immich
     BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(FILES LICENSE.txt
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
 )
 
 if(WIN32)
@@ -147,6 +172,7 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "immich desktop")
 set(CPACK_PACKAGE_EXECUTABLES "immich" "immich")
 set(CPACK_CREATE_DESKTOP_LINKS "immich")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
 set(CPACK_PACKAGE_FILE_NAME
     "immich-desktop-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}"
 )
@@ -156,8 +182,14 @@ if(WIN32)
     set(CPACK_NSIS_DISPLAY_NAME "immich desktop")
     set(CPACK_NSIS_PACKAGE_NAME "immich desktop")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\immich.exe")
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")
+    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")
+    set(CPACK_PACKAGE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources\\\\immich-installer.bmp")
     set(CPACK_WIX_VERSION 3)
     set(CPACK_WIX_UPGRADE_GUID "A62C0898-DA73-47EB-A640-6FC2F37DFA1F")
+    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")
+    set(CPACK_WIX_LICENSE_RTF "${CMAKE_CURRENT_SOURCE_DIR}/resources/LICENSE.rtf")
 elseif(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)

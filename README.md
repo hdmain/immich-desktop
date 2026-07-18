@@ -14,6 +14,7 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 - Local `QSettings` persistence for theme and custom palette
 - Automatic update detection from GitHub Releases with platform-aware installation
 - Reusable animated navigation and color controls
+- Windows installers with application icon and license agreement
 
 ## Requirements
 
