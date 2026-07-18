@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=immich
+Comment=Immich desktop application
+Exec=immich
+Icon=immich
+Terminal=false
+Categories=Graphics;Photography;
+StartupWMClass=immich

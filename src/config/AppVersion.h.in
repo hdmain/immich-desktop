@@ -1,0 +1,7 @@
+#pragma once
+
+namespace Aurora::Config {
+
+inline constexpr char ApplicationVersion[] = "@PROJECT_VERSION@";
+
+} // namespace Aurora::Config
