@@ -1,12 +1,13 @@
 #include "AppVersion.h"
+#include "core/ImmichClient.h"
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
+#include "ui/AppIcon.h"
 #include "ui/FontLoader.h"
 #include "ui/MainWindow.h"
 
 #include <QApplication>
 #include <QFont>
-#include <QIcon>
 #include <QStyleFactory>
 
 int main(int argc, char *argv[])
@@ -17,7 +18,7 @@ int main(int argc, char *argv[])
     application.setApplicationName(QStringLiteral("immich"));
     application.setApplicationVersion(
         QString::fromLatin1(Aurora::Config::ApplicationVersion));
-    application.setWindowIcon(QIcon(QStringLiteral(":/branding/immich-logo.png")));
+    application.setWindowIcon(Aurora::applicationIcon());
     application.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 
     const QStringList fontFamilies = Aurora::loadApplicationFonts();
@@ -33,8 +34,9 @@ int main(int argc, char *argv[])
     themeManager.initialize();
 
     Aurora::UpdateManager updateManager;
+    Aurora::ImmichClient immichClient;
 
-    Aurora::MainWindow window(&themeManager, &updateManager);
+    Aurora::MainWindow window(&themeManager, &updateManager, &immichClient);
     window.show();
 
     return application.exec();

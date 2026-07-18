@@ -1,8 +1,10 @@
 #include "ui/MainWindow.h"
 
+#include "core/ImmichClient.h"
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
-#include "ui/pages/DashboardPage.h"
+#include "ui/AppIcon.h"
+#include "ui/pages/LibraryPage.h"
 #include "ui/pages/SettingsPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
 #include "ui/widgets/Sidebar.h"
@@ -64,11 +66,12 @@ private:
     Qt::Edges m_edges;
 };
 
-MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager, QWidget *parent)
+MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
+                       ImmichClient *immichClient, QWidget *parent)
     : QMainWindow(parent)
     , m_topBar(new TopBar(themeManager, this))
     , m_pages(new AnimatedStackedWidget(this))
-    , m_settingsPage(new SettingsPage(themeManager, updateManager, this))
+    , m_settingsPage(new SettingsPage(themeManager, updateManager, immichClient, this))
     , m_sidebar(new Sidebar(themeManager, this))
     , m_updateManager(updateManager)
 {
@@ -76,7 +79,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
                    Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint |
                    Qt::WindowSystemMenuHint);
     setWindowTitle(QStringLiteral("immich"));
-    setWindowIcon(QIcon(QStringLiteral(":/branding/immich-logo.png")));
+    setWindowIcon(applicationIcon());
     setMinimumSize(900, 620);
     resize(1180, 760);
 
@@ -101,7 +104,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     auto *workspaceLayout = new QVBoxLayout(workspace);
     workspaceLayout->setContentsMargins(0, 0, 0, 0);
 
-    m_pages->addWidget(new DashboardPage(m_pages));
+    m_pages->addWidget(new LibraryPage(immichClient, m_pages));
     m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);
@@ -109,7 +112,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
 
     connect(m_sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
     connect(m_topBar, &TopBar::updatesRequested, this, [this] {
-        selectPage(2);
+        selectPage(3);
     });
     connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
         m_topBar->setUpdateAvailable(true, info.version);
@@ -138,14 +141,17 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
 
 void MainWindow::selectPage(int index)
 {
-    if (index < 0 || index > 2)
+    if (index < 0 || index > 3)
         return;
 
     if (index == 0) {
-        m_topBar->setPageTitle(QStringLiteral("Overview"));
+        m_topBar->setPageTitle(QStringLiteral("Library"));
         m_pages->setCurrentIndexAnimated(0);
     } else {
         if (index == 1) {
+            m_settingsPage->showConnection();
+            m_topBar->setPageTitle(QStringLiteral("Settings / Immich Server"));
+        } else if (index == 2) {
             m_settingsPage->showAppearance();
             m_topBar->setPageTitle(QStringLiteral("Settings / Appearance"));
         } else {
@@ -184,7 +190,7 @@ void MainWindow::notifyUpdateAvailable()
     box.exec();
     if (box.clickedButton() &&
         box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole) {
-        selectPage(2);
+        selectPage(3);
     }
 }
 

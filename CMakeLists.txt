@@ -29,12 +29,20 @@ set(IMMICH_SOURCES
     src/main.cpp
     src/core/AppSettings.cpp
     src/core/AppSettings.h
+    src/core/ImmichClient.cpp
+    src/core/ImmichClient.h
     src/core/Theme.cpp
     src/core/Theme.h
     src/core/ThemeManager.cpp
     src/core/ThemeManager.h
+    src/core/ThumbnailCache.cpp
+    src/core/ThumbnailCache.h
     src/core/UpdateManager.cpp
     src/core/UpdateManager.h
+    src/core/VideoStreamServer.cpp
+    src/core/VideoStreamServer.h
+    src/ui/AppIcon.cpp
+    src/ui/AppIcon.h
     src/ui/FontLoader.cpp
     src/ui/FontLoader.h
     src/ui/IconUtils.cpp
@@ -43,8 +51,12 @@ set(IMMICH_SOURCES
     src/ui/MainWindow.h
     src/ui/pages/AppearancePage.cpp
     src/ui/pages/AppearancePage.h
+    src/ui/pages/ConnectionPage.cpp
+    src/ui/pages/ConnectionPage.h
     src/ui/pages/DashboardPage.cpp
     src/ui/pages/DashboardPage.h
+    src/ui/pages/LibraryPage.cpp
+    src/ui/pages/LibraryPage.h
     src/ui/pages/SettingsPage.cpp
     src/ui/pages/SettingsPage.h
     src/ui/pages/UpdatesPage.cpp
@@ -55,6 +67,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/AnimatedStackedWidget.h
     src/ui/widgets/ColorButton.cpp
     src/ui/widgets/ColorButton.h
+    src/ui/widgets/MediaTile.cpp
+    src/ui/widgets/MediaTile.h
     src/ui/widgets/Sidebar.cpp
     src/ui/widgets/Sidebar.h
     src/ui/widgets/TopBar.cpp

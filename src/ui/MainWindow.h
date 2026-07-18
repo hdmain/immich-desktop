@@ -10,6 +10,7 @@ class QShowEvent;
 namespace Aurora {
 
 class AnimatedStackedWidget;
+class ImmichClient;
 class ResizeHandle;
 class SettingsPage;
 class Sidebar;
@@ -22,6 +23,7 @@ class MainWindow final : public QMainWindow {
 
 public:
     explicit MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
+                        ImmichClient *immichClient,
                         QWidget *parent = nullptr);
 
 protected:

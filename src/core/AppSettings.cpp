@@ -75,4 +75,19 @@ void AppSettings::saveUpdate(const UpdateSettings &update)
     m_settings.sync();
 }
 
+ImmichConnectionSettings AppSettings::loadImmichConnection() const
+{
+    ImmichConnectionSettings result;
+    result.serverUrl = m_settings.value(QStringLiteral("immich/serverUrl")).toString();
+    result.apiKey = m_settings.value(QStringLiteral("immich/apiKey")).toString();
+    return result;
+}
+
+void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connection)
+{
+    m_settings.setValue(QStringLiteral("immich/serverUrl"), connection.serverUrl.trimmed());
+    m_settings.setValue(QStringLiteral("immich/apiKey"), connection.apiKey.trimmed());
+    m_settings.sync();
+}
+
 } // namespace Aurora

@@ -19,6 +19,16 @@ struct UpdateSettings {
     QDateTime lastCheckUtc;
 };
 
+struct ImmichConnectionSettings {
+    QString serverUrl;
+    QString apiKey;
+
+    bool isConfigured() const
+    {
+        return !serverUrl.trimmed().isEmpty() && !apiKey.trimmed().isEmpty();
+    }
+};
+
 class AppSettings final {
 public:
     AppSettings();
@@ -28,6 +38,9 @@ public:
 
     UpdateSettings loadUpdate() const;
     void saveUpdate(const UpdateSettings &update);
+
+    ImmichConnectionSettings loadImmichConnection() const;
+    void saveImmichConnection(const ImmichConnectionSettings &connection);
 
 private:
     mutable QSettings m_settings;

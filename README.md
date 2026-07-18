@@ -9,6 +9,9 @@ A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
 ## Included
 
 - Modular main window with sidebar, top bar, animated page transitions, and module workspace
+- Immich-style dated timeline with justified aspect-ratio rows, video badges, and previews
+- Multi-threaded thumbnail loading with persistent on-disk cache
+- Immich server URL and API key configuration with a built-in connection test
 - Central `ThemeManager` with live light, dark, and custom themes
 - Editable background, panel, button, and accent colors
 - Local `QSettings` persistence for theme and custom palette
@@ -48,7 +51,8 @@ executable can start without a separately configured Qt `PATH`.
 Install the build dependencies on Debian or Ubuntu:
 
 ```bash
-sudo apt install build-essential cmake ninja-build libgl1-mesa-dev qt6-base-dev libqt6svg6-dev
+sudo apt install build-essential cmake ninja-build libgl1-mesa-dev qt6-base-dev \
+  libqt6svg6-dev qt6-image-formats-plugins
 ```
 
 On Fedora:
@@ -114,3 +118,6 @@ page. Download, skip, and install-and-restart are available there as well.
 - `resources` — application assets and future fonts/icons
 
 Appearance settings are stored in the current user's platform-specific settings location.
+Immich connection details are stored in the same local settings store. Create an API
+key in Immich with `user.read`, `asset.read`, and `asset.view` permissions, then enter
+the server URL and key under **Settings → Immich Server**.

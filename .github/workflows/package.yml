@@ -31,6 +31,7 @@ jobs:
         with:
           version: "6.8.3"
           arch: win64_msvc2022_64
+          modules: qtimageformats
           cache: true
 
       - name: Install installer toolchains
@@ -94,6 +95,7 @@ jobs:
             patchelf \
             qt6-base-dev \
             qt6-base-dev-tools \
+            qt6-image-formats-plugins \
             wget
 
       - name: Configure

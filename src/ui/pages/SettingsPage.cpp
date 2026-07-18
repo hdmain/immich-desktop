@@ -2,6 +2,7 @@
 
 #include "core/ThemeManager.h"
 #include "ui/pages/AppearancePage.h"
+#include "ui/pages/ConnectionPage.h"
 #include "ui/pages/UpdatesPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
 
@@ -11,6 +12,7 @@
 namespace Aurora {
 
 SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateManager,
+                           ImmichClient *immichClient,
                            QWidget *parent)
     : QWidget(parent)
     , m_sections(new AnimatedStackedWidget(this))
@@ -27,6 +29,7 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     root->addWidget(heading);
     root->addWidget(subheading);
 
+    m_sections->addWidget(new ConnectionPage(immichClient, m_sections));
     m_sections->addWidget(new AppearancePage(themeManager, m_sections));
     m_sections->addWidget(new UpdatesPage(updateManager, m_sections));
     root->addWidget(m_sections, 1);
@@ -34,17 +37,22 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
 
 bool SettingsPage::isShowingUpdates() const
 {
-    return m_sections->currentIndex() == 1;
+    return m_sections->currentIndex() == 2;
 }
 
-void SettingsPage::showAppearance()
+void SettingsPage::showConnection()
 {
     m_sections->setCurrentIndexAnimated(0);
 }
 
-void SettingsPage::showUpdates()
+void SettingsPage::showAppearance()
 {
     m_sections->setCurrentIndexAnimated(1);
+}
+
+void SettingsPage::showUpdates()
+{
+    m_sections->setCurrentIndexAnimated(2);
 }
 
 } // namespace Aurora

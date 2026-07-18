@@ -82,6 +82,23 @@ QString ThemeManager::buildStyleSheet() const
             border: 1px solid %4;
             border-radius: 16px;
         }
+        QLabel[mediaPreview="true"] {
+            background: %2;
+            border: 1px solid %4;
+            border-radius: 11px;
+            color: %5;
+        }
+        QWidget#libraryPage, QWidget#timelineHost, QScrollArea#libraryScroll {
+            background: %2;
+        }
+        QWidget#libraryToolbar { background: transparent; }
+        QLabel#timelineDayHeader {
+            color: %1;
+            font-size: 15px;
+            font-weight: 600;
+            background: transparent;
+            border: none;
+        }
         QLabel[heading="true"] { font-size: 26px; font-weight: 700; }
         QLabel[subheading="true"] { color: %5; font-size: 13px; }
         QLabel[section="true"] { font-size: 16px; font-weight: 600; }
@@ -104,14 +121,16 @@ QString ThemeManager::buildStyleSheet() const
         }
         QPushButton[windowControl="true"]:hover { background: %6; }
         QPushButton#closeButton:hover { background: #E5484D; color: white; }
-        QComboBox {
+        QComboBox, QLineEdit {
             background: %6;
             border: 1px solid %4;
             border-radius: 10px;
             padding: 9px 12px;
             min-width: 150px;
         }
-        QComboBox:hover, QComboBox:focus { border-color: %7; }
+        QComboBox:hover, QComboBox:focus, QLineEdit:hover, QLineEdit:focus {
+            border-color: %7;
+        }
         QComboBox::drop-down { border: none; width: 28px; }
         QComboBox QAbstractItemView {
             background: %3;
@@ -147,6 +166,15 @@ QString ThemeManager::buildStyleSheet() const
         }
         QScrollArea { border: none; background: transparent; }
         QScrollArea > QWidget > QWidget { background: transparent; }
+        QScrollBar:vertical {
+            background: transparent; width: 10px; margin: 2px;
+        }
+        QScrollBar::handle:vertical {
+            background: %6; border-radius: 4px; min-height: 28px;
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0;
+        }
         QToolTip {
             background: %3; color: %1; border: 1px solid %4;
             border-radius: 6px; padding: 6px;
