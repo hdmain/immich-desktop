@@ -1,6 +1,6 @@
 name: immich-desktop
 base: core24
-version: '0.1.5'
+adopt-info: immich
 summary: Unofficial Immich desktop client
 description: |
   Unofficial Qt desktop client for Immich. Connect with an API key to browse
