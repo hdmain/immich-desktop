@@ -1,0 +1,26 @@
+#!/bin/bash
+# Re-assert Qt6 plugin/library paths after the GNOME desktop-launch chain.
+# Without Wayland QPA plugins, Qt aborts on WAYLAND_DISPLAY sessions.
+set -euo pipefail
+
+arch_triplet="$(uname -m)-linux-gnu"
+case "$(uname -m)" in
+  x86_64) arch_triplet="x86_64-linux-gnu" ;;
+  aarch64) arch_triplet="aarch64-linux-gnu" ;;
+esac
+
+qt_plugins="${SNAP}/usr/lib/${arch_triplet}/qt6/plugins"
+qt_libs="${SNAP}/usr/lib/${arch_triplet}"
+
+export QT_PLUGIN_PATH="${qt_plugins}${QT_PLUGIN_PATH:+:${QT_PLUGIN_PATH}}"
+export QT_QPA_PLATFORM_PLUGIN_PATH="${qt_plugins}/platforms"
+export LD_LIBRARY_PATH="${qt_libs}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+# Prefer Wayland when available; otherwise fall back to X11/XWayland.
+if [ -n "${WAYLAND_DISPLAY:-}" ] && compgen -G "${qt_plugins}/platforms/libqwayland*.so" > /dev/null; then
+  export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
+elif [ -z "${QT_QPA_PLATFORM:-}" ]; then
+  export QT_QPA_PLATFORM="xcb"
+fi
+
+exec "${SNAP}/usr/bin/immich" "$@"

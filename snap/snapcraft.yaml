@@ -3,11 +3,10 @@ base: core24
 version: '0.1.4'
 summary: Unofficial Immich desktop client
 description: |
-  Unofficial fan-made Qt desktop client for Immich, a self-hosted photo and
-  video management platform.
-
-  Connect to your Immich server with an API key to browse your library,
-  explore people and places, upload and download media, and stream videos.
+  Unofficial Qt desktop client for Immich. Connect with an API key to browse
+  your library, search, explore people and places, upload and download photos
+  and videos, stream media, and keep working offline with a local cache.
+  Includes system tray, autostart, and single-instance support.
 
   This project is not affiliated with, maintained by, or endorsed by the
   official Immich project.
@@ -30,7 +29,7 @@ apps:
       - gnome
     common-id: com.github.hdmain.immich-desktop
     desktop: usr/share/applications/immich.desktop
-    command: usr/bin/immich
+    command: bin/immich-launch
     plugs:
       - audio-playback
       - home
@@ -42,8 +41,22 @@ apps:
       QT_PLUGIN_PATH: $SNAP/usr/lib/x86_64-linux-gnu/qt6/plugins
       QT_QPA_PLATFORM_PLUGIN_PATH: $SNAP/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms
       LIBGL_DRIVERS_PATH: $SNAP/usr/lib/x86_64-linux-gnu/dri
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 parts:
+  launcher:
+    plugin: dump
+    source: snap/local
+    organize:
+      immich-launch: bin/immich-launch
+    override-prime: |
+      craftctl default
+      chmod +x "$CRAFT_PRIME/bin/immich-launch"
+    stage:
+      - bin/immich-launch
+    prime:
+      - bin/immich-launch
+
   immich:
     plugin: cmake
     source: .
@@ -75,6 +88,7 @@ parts:
       - libqt6multimedia6
       - libqt6multimediawidgets6
       - qt6-qpa-plugins
+      - qt6-wayland
       - qt6-gtk-platformtheme
       - qt6-image-formats-plugins
       - gstreamer1.0-plugins-base
@@ -87,8 +101,11 @@ parts:
       - libswresample4
       - libswscale7
       - libgl1
+      - libegl1
       - libglib2.0-0t64
       - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libx11-xcb1
       - libxcb-cursor0
       - libxcb-icccm4
       - libxcb-image0
@@ -98,6 +115,10 @@ parts:
       - libxcb-xinerama0
       - libxcb-xinput0
       - libxcb-xfixes0
+      - libxcb-util1
+      - libice6
+      - libsm6
+
     override-pull: |
       craftctl default
       VERSION="$(sed -n 's/^project(immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p' CMakeLists.txt | head -n1)"
