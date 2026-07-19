@@ -77,7 +77,6 @@ parts:
       - qt6-qpa-plugins
       - qt6-gtk-platformtheme
       - qt6-image-formats-plugins
-      - qt6-svg-plugins
       - gstreamer1.0-plugins-base
       - gstreamer1.0-plugins-good
       - gstreamer1.0-libav
