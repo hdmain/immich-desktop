@@ -1,6 +1,6 @@
 name: immich-desktop
 base: core24
-version: '0.1.4'
+version: '0.1.5'
 summary: Unofficial Immich desktop client
 description: |
   Unofficial Qt desktop client for Immich. Connect with an API key to browse
@@ -123,7 +123,7 @@ parts:
 
     override-pull: |
       craftctl default
-      VERSION="$(sed -n 's/^project(immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p' CMakeLists.txt | head -n1)"
+      VERSION="$(tr '\n' ' ' < CMakeLists.txt | sed -n 's/.*project([[:space:]]*immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p')"
       if [ -n "$VERSION" ]; then
         craftctl set version="$VERSION"
       fi
