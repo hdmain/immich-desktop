@@ -51,6 +51,8 @@ parts:
       immich-launch: bin/immich-launch
     override-prime: |
       craftctl default
+      # Guaranteed LF shebang even if the source tree was checked out on Windows.
+      sed -i 's/\r$//' "$CRAFT_PRIME/bin/immich-launch"
       chmod +x "$CRAFT_PRIME/bin/immich-launch"
     stage:
       - bin/immich-launch
