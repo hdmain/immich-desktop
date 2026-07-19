@@ -1,18 +1,30 @@
+# Build outputs
 /build*/
 /AppDir/
 /dist/
+/dist-snap*/
 /out/
+*.AppImage
+*.deb
+*.msi
+*.snap
+*.exe
+
+# IDEs / tooling
 /.vs/
 /.vscode/
+/.idea/
 /CMakeUserPresets.json
 *.user
 *.suo
 *.pdb
 *.ilk
-*.AppImage
-*.deb
-*.msi
+*.autosave
+.DS_Store
+Thumbs.db
 
+# Snap Store secrets (never commit)
 .snapcraft-store-credentials.json
-*.snap
-
+.snapcraft-store-credentials.b64
+.snapcraft-store-credentials*
+*.export-login

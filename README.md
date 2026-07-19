@@ -1,153 +1,103 @@
-# immich desktop
+<p align="center">
+  <img src="resources/immich-logo-512.png" alt="immich desktop" width="128" height="128">
+</p>
 
-A scalable Qt 6 Widgets foundation for a modern commercial desktop application.
+<h1 align="center">immich desktop</h1>
 
-> **Unofficial project:** This is a fan-made desktop client and is not
-> affiliated with, maintained by, or endorsed by the official Immich project.
-> Immich and its logo belong to their respective owners.
+<p align="center">
+  <strong>Unofficial Qt desktop client for Immich</strong><br>
+  Browse, search, upload, download, and stream your self-hosted photo library.
+</p>
 
-## Included
+<p align="center">
+  <a href="https://github.com/hdmain/immich-desktop/releases/latest"><img src="https://img.shields.io/github/v/release/hdmain/immich-desktop?style=flat-square&label=release" alt="Release"></a>
+  <a href="https://github.com/hdmain/immich-desktop/stargazers"><img src="https://img.shields.io/github/stars/hdmain/immich-desktop?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/hdmain/immich-desktop/network/members"><img src="https://img.shields.io/github/forks/hdmain/immich-desktop?style=flat-square" alt="Forks"></a>
+  <a href="https://github.com/hdmain/immich-desktop/issues"><img src="https://img.shields.io/github/issues/hdmain/immich-desktop?style=flat-square" alt="Issues"></a>
+  <a href="https://github.com/hdmain/immich-desktop/releases"><img src="https://img.shields.io/github/downloads/hdmain/immich-desktop/total?style=flat-square" alt="Downloads"></a>
+  <a href="https://snapcraft.io/immich-desktop"><img src="https://img.shields.io/badge/snap-immich--desktop-E95420?style=flat-square&logo=snapcraft&logoColor=white" alt="Snap"></a>
+  <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
+</p>
 
-- Modular main window with sidebar, top bar, animated page transitions, and module workspace
-- Immich-style dated timeline with compact rows and grouped sparse days
-- Built-in streaming video player with seek, volume, and buffering controls
-- Viewport-based thumbnail loading with threaded decoding and persistent disk cache
-- Immich server URL and API key configuration with a built-in connection test
-- Central `ThemeManager` with live light, dark, and custom themes
-- Editable background, panel, button, and accent colors
-- Local `QSettings` persistence for theme and custom palette
-- Automatic update detection from GitHub Releases with platform-aware installation
-- Reusable animated navigation and color controls
-- Windows installers with application icon and license agreement
+> **Unofficial project.** Fan-made desktop client — not affiliated with, maintained by, or endorsed by the official Immich project. Immich and its logo belong to their respective owners.
 
-## Requirements
+## Showcase
 
-- CMake 3.21 or newer
-- Qt 6.2 or newer with Widgets, SVG, Network, Multimedia, and MultimediaWidgets
-- A C++20 compiler
+![Library view](docs/screenshots/immich-desktop-library.png)
 
-## Build
+## Features
 
-On Windows, use the included launcher. It detects the installed Qt MinGW kit,
-builds the project, deploys the required Qt DLLs, and starts the application:
+- **Library** — Immich-style timeline with compact rows and grouped days
+- **Explore** — people, places, and discovery views
+- **Search** — find photos and videos across your library
+- **Upload & download** — send media to the server or save it locally
+- **Video streaming** — built-in player with seek, volume, and buffering
+- **Offline mode** — keep browsing with a local thumbnail/disk cache
+- **Themes** — light, dark, and custom palettes
+- **Desktop extras** — system tray, close-to-tray, autostart, single-instance
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\run.ps1
-```
+## Install
 
-After the first build, `.\run.ps1 -NoBuild` skips compilation.
-
-For other toolchains, configure Qt's location manually:
-
-```powershell
-cmake -S . -B build -DCMAKE_PREFIX_PATH="C:/Qt/6.8.0/msvc2022_64"
-cmake --build build --config Release
-```
-
-The CMake Windows build automatically runs `windeployqt`, so the generated
-executable can start without a separately configured Qt `PATH`.
-
-### Linux
-
-Install the build dependencies on Debian or Ubuntu:
-
-```bash
-sudo apt install build-essential cmake ninja-build libgl1-mesa-dev qt6-base-dev \
-  libqt6svg6-dev qt6-image-formats-plugins qt6-multimedia-dev
-```
-
-On Fedora:
-
-```bash
-sudo dnf install gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg-devel \
-  qt6-qtmultimedia-devel
-```
-
-Then build and run on X11 or Wayland:
-
-```bash
-chmod +x run.sh
-./run.sh
-```
-
-Use `./run.sh --no-build` after the first build. To install the executable,
-desktop entry, and application icon:
-
-```bash
-cmake --install build-linux --prefix ~/.local
-```
-
-## Installers and releases
-
-The `Build installers` GitHub Actions workflow automatically creates:
-
-- Windows NSIS installer (`.exe`)
-- Windows WiX installer (`.msi`)
-- Debian/Ubuntu package (`.deb`)
-- Portable Linux AppImage (`.AppImage`)
-- Linux Snap package (`.snap`)
-
-Every push to `main` or `master`, every pull request, and every manual workflow
-run produces downloadable workflow artifacts. Pushing a version tag also
-creates a GitHub Release and attaches the installers:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Keep the tag synchronized with the version declared by
-`project(immich VERSION ...)` in `CMakeLists.txt`.
-
-### Snap Store
-
-Builds publish to the Snap Store when the repository secret
-`SNAPCRAFT_STORE_CREDENTIALS` is configured:
-
-1. Install Snapcraft and log in: `snapcraft login`
-2. Register the name once: `snapcraft register immich-desktop`
-3. Export credentials: `snapcraft export-login --snaps=immich-desktop --acls package_access,package_push,package_update,package_release -`
-4. Add the exported blob as the GitHub Actions secret `SNAPCRAFT_STORE_CREDENTIALS`
-
-- Pushes to `main` / `master` → **edge** channel
-- Version tags `v*` → **stable** channel
-
-Install from the store:
+### Linux (Snap)
 
 ```bash
 sudo snap install immich-desktop
 ```
 
-Or build locally:
+<p align="center">
+  <a href="https://snapcraft.io/immich-desktop">
+    <img alt="Get it from the Snap Store" src="https://snapcraft.io/static/images/badges/en/snap-store-black.svg">
+  </a>
+</p>
+
+<iframe src="https://snapcraft.io/immich-desktop/embedded?button=black" frameborder="0" width="100%" height="380px" style="border: 1px solid #CCC; border-radius: 2px;"></iframe>
+
+> GitHub’s README viewer strips iframes; the embed works on sites that allow HTML. On GitHub, use the badge above or open [snapcraft.io/immich-desktop](https://snapcraft.io/immich-desktop).
+
+### Other packages
+
+Grab Windows (`.exe` / `.msi`), Linux `.deb`, or AppImage from the
+[latest release](https://github.com/hdmain/immich-desktop/releases/latest).
+
+## How to run
+
+1. Install Immich Desktop from Snap or a [GitHub release](https://github.com/hdmain/immich-desktop/releases/latest).
+2. Open the app and go to **Settings → Immich Server**.
+3. Enter your Immich server URL and an API key with at least `user.read`, `asset.read`, and `asset.view`.
+4. Test the connection, save, then browse **Library** or **Explore**.
 
 ```bash
-snapcraft
-sudo snap install *.snap --dangerous
+# Snap
+immich-desktop
+
+# AppImage
+chmod +x immich-desktop-x86_64.AppImage
+./immich-desktop-x86_64.AppImage
 ```
 
-## Updates
+## Roadmap
 
-The in-app updater checks
-[`hdmain/immich-desktop`](https://github.com/hdmain/immich-desktop) GitHub
-Releases and selects the matching package automatically:
+| Status | Item |
+| --- | --- |
+| Done | Library timeline, search, upload / download |
+| Done | Explore (people & places) |
+| Done | Video streaming player |
+| Done | Offline / disk cache |
+| Done | Themes, tray, autostart, single-instance |
+| Done | Snap Store packaging |
+| Next | Album management & sharing actions |
+| Next | Faster sync and smarter offline queue |
+| Next | Richer Explore filters and map polish |
+| Later | Mobile-adjacent workflows & multi-account |
+| Later | Deeper Immich feature parity (faces, memories, etc.) |
 
-- Windows: NSIS `.exe`, with `.msi` as fallback
-- Linux AppImage builds: replace the running AppImage and relaunch
-- Linux Snap builds: refresh via `snap refresh`
-- Other Linux installs: Debian `.deb` (via elevated `dpkg`), with AppImage fallback
+## Project layout
 
-Automatic checks run once per day on startup and can be toggled on the Updates
-page. Download, skip, and install-and-restart are available there as well.
+- `src/core` — settings, Immich client, updates, tray helpers
+- `src/ui` — shell, pages, and widgets
+- `resources` — icons, fonts, desktop metadata
+- `snap` — Snap packaging
 
-## Structure
+## License
 
-- `src/core` — palettes, settings persistence, and centralized appearance management
-- `src/ui` — application shell and composition
-- `src/ui/pages` — independently extensible application pages
-- `src/ui/widgets` — reusable modern controls
-- `resources` — application assets and future fonts/icons
-
-Appearance settings are stored in the current user's platform-specific settings location.
-Immich connection details are stored in the same local settings store. Create an API
-key in Immich with `user.read`, `asset.read`, and `asset.view` permissions, then enter
-the server URL and key under **Settings → Immich Server**.
+MIT — see [LICENSE.txt](LICENSE.txt).
