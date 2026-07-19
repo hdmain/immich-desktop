@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 
+#include "core/AppSettings.h"
 #include "core/ImmichClient.h"
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
@@ -11,15 +12,19 @@
 #include "ui/widgets/Sidebar.h"
 #include "ui/widgets/TopBar.h"
 
+#include <QApplication>
+#include <QCloseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainterPath>
 #include <QRegion>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -139,6 +144,75 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
         handle->setAttribute(Qt::WA_StyledBackground, false);
         m_resizeHandles.append(handle);
     }
+
+    setupTrayIcon();
+}
+
+void MainWindow::setupTrayIcon()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+
+    QApplication::setQuitOnLastWindowClosed(false);
+
+    m_trayIcon = new QSystemTrayIcon(applicationIcon(), this);
+    m_trayIcon->setToolTip(tr("immich"));
+
+    auto *menu = new QMenu(this);
+    menu->addAction(tr("Show immich"), this, &MainWindow::raiseToFront);
+    menu->addSeparator();
+    menu->addAction(tr("Quit"), this, &MainWindow::quitApplication);
+    m_trayIcon->setContextMenu(menu);
+
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::Trigger ||
+                    reason == QSystemTrayIcon::DoubleClick)
+                    raiseToFront();
+            });
+
+    m_trayIcon->show();
+}
+
+void MainWindow::raiseToFront()
+{
+    if (isMinimized() || !isVisible())
+        setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+    show();
+    showNormal();
+    raise();
+    activateWindow();
+
+#ifdef Q_OS_WIN
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    if (hwnd) {
+        if (IsIconic(hwnd))
+            ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+        BringWindowToTop(hwnd);
+    }
+#endif
+}
+
+void MainWindow::quitApplication()
+{
+    m_forceQuit = true;
+    QApplication::quit();
+}
+
+bool MainWindow::closeToTrayEnabled() const
+{
+    return AppSettings().loadWindow().closeToTray;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (!m_forceQuit && closeToTrayEnabled() && m_trayIcon && m_trayIcon->isVisible()) {
+        hide();
+        event->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::selectPage(int index)
@@ -184,6 +258,14 @@ void MainWindow::notifyUpdateAvailable()
         return;
 
     const auto info = m_updateManager->availableUpdate();
+    if (!isVisible() && m_trayIcon && m_trayIcon->isVisible()) {
+        m_trayIcon->showMessage(
+            tr("Update available"),
+            tr("immich desktop v%1 is available.").arg(info.version),
+            QSystemTrayIcon::Information, 8000);
+        return;
+    }
+
     QMessageBox box(this);
     box.setIcon(QMessageBox::Information);
     box.setWindowTitle(tr("Update available"));

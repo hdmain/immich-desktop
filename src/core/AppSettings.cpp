@@ -94,4 +94,18 @@ void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connectio
     m_settings.sync();
 }
 
+WindowSettings AppSettings::loadWindow() const
+{
+    WindowSettings result;
+    result.closeToTray =
+        m_settings.value(QStringLiteral("window/closeToTray"), true).toBool();
+    return result;
+}
+
+void AppSettings::saveWindow(const WindowSettings &window)
+{
+    m_settings.setValue(QStringLiteral("window/closeToTray"), window.closeToTray);
+    m_settings.sync();
+}
+
 } // namespace Aurora

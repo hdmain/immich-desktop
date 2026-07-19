@@ -3,9 +3,11 @@
 #include <QList>
 #include <QMainWindow>
 
+class QCloseEvent;
 class QEvent;
 class QResizeEvent;
 class QShowEvent;
+class QSystemTrayIcon;
 
 namespace Aurora {
 
@@ -26,13 +28,20 @@ public:
                         ImmichClient *immichClient,
                         QWidget *parent = nullptr);
 
+    void raiseToFront();
+
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void changeEvent(QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void showEvent(QShowEvent *event) override;
 
 private:
+    void setupTrayIcon();
+    void quitApplication();
+    bool closeToTrayEnabled() const;
+
     void applyWindowCorners();
     void ensureResizableFrame();
     void selectPage(int index);
@@ -45,8 +54,10 @@ private:
     SettingsPage *m_settingsPage;
     Sidebar *m_sidebar;
     UpdateManager *m_updateManager;
+    QSystemTrayIcon *m_trayIcon = nullptr;
     QList<ResizeHandle *> m_resizeHandles;
     bool m_autoCheckScheduled = false;
+    bool m_forceQuit = false;
 };
 
 } // namespace Aurora

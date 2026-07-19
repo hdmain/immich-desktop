@@ -32,6 +32,10 @@ struct ImmichConnectionSettings {
     bool hasLocalServerUrl() const { return !localServerUrl.trimmed().isEmpty(); }
 };
 
+struct WindowSettings {
+    bool closeToTray = true;
+};
+
 class AppSettings final {
 public:
     AppSettings();
@@ -44,6 +48,9 @@ public:
 
     ImmichConnectionSettings loadImmichConnection() const;
     void saveImmichConnection(const ImmichConnectionSettings &connection);
+
+    WindowSettings loadWindow() const;
+    void saveWindow(const WindowSettings &window);
 
 private:
     mutable QSettings m_settings;

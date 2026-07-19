@@ -1,8 +1,10 @@
 #include "ui/pages/AppearancePage.h"
 
+#include "core/AppSettings.h"
 #include "core/ThemeManager.h"
 #include "ui/widgets/ColorButton.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
 #include <QGridLayout>
@@ -10,6 +12,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
+#include <QSystemTrayIcon>
 #include <QVBoxLayout>
 
 namespace Aurora {
@@ -42,6 +45,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     : QWidget(parent)
     , m_themeManager(themeManager)
     , m_themeCombo(new QComboBox(this))
+    , m_closeToTray(new QCheckBox(tr("Close to system tray"), this))
 {
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(4, 6, 4, 4);
@@ -99,6 +103,19 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     paletteLayout->addWidget(reset, 0, Qt::AlignLeft);
     contentRoot->addWidget(paletteCard);
 
+    QVBoxLayout *desktopLayout = nullptr;
+    auto *desktopCard = sectionCard(
+        tr("Desktop"),
+        tr("Keep immich running in the background when you close the window."),
+        content, &desktopLayout);
+    m_closeToTray->setCursor(Qt::PointingHandCursor);
+    const bool trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
+    m_closeToTray->setEnabled(trayAvailable);
+    if (!trayAvailable)
+        m_closeToTray->setToolTip(tr("System tray is not available on this desktop."));
+    desktopLayout->addWidget(m_closeToTray);
+    contentRoot->addWidget(desktopCard);
+
     contentRoot->addStretch();
 
     scroll->setWidget(content);
@@ -110,9 +127,17 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     });
     connect(reset, &QPushButton::clicked,
             m_themeManager, &ThemeManager::resetCustomPalette);
+    connect(m_closeToTray, &QCheckBox::toggled, this, &AppearancePage::saveCloseToTray);
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { syncControls(); });
     syncControls();
+}
+
+void AppearancePage::saveCloseToTray(bool enabled)
+{
+    WindowSettings window = AppSettings().loadWindow();
+    window.closeToTray = enabled;
+    AppSettings().saveWindow(window);
 }
 
 void AppearancePage::syncControls()
@@ -120,6 +145,9 @@ void AppearancePage::syncControls()
     const QSignalBlocker comboBlocker(m_themeCombo);
     const int index = m_themeCombo->findData(static_cast<int>(m_themeManager->preset()));
     m_themeCombo->setCurrentIndex(index);
+
+    const QSignalBlocker trayBlocker(m_closeToTray);
+    m_closeToTray->setChecked(AppSettings().loadWindow().closeToTray);
 }
 
 } // namespace Aurora

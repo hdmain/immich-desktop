@@ -2,6 +2,7 @@
 
 #include <QWidget>
 
+class QCheckBox;
 class QComboBox;
 
 namespace Aurora {
@@ -16,9 +17,11 @@ public:
 
 private:
     void syncControls();
+    void saveCloseToTray(bool enabled);
 
     ThemeManager *m_themeManager;
     QComboBox *m_themeCombo;
+    QCheckBox *m_closeToTray;
 };
 
 } // namespace Aurora

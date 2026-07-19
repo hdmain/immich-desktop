@@ -1,5 +1,6 @@
 #include "AppVersion.h"
 #include "core/ImmichClient.h"
+#include "core/SingleInstance.h"
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
 #include "ui/AppIcon.h"
@@ -21,6 +22,10 @@ int main(int argc, char *argv[])
     application.setWindowIcon(Aurora::applicationIcon());
     application.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 
+    Aurora::SingleInstance singleInstance(QStringLiteral("immich-desktop"));
+    if (singleInstance.activateExistingInstance())
+        return 0;
+
     const QStringList fontFamilies = Aurora::loadApplicationFonts();
     QFont appFont(fontFamilies.contains(QStringLiteral("Inter"))
                       ? QStringLiteral("Inter")
@@ -37,6 +42,8 @@ int main(int argc, char *argv[])
     Aurora::ImmichClient immichClient;
 
     Aurora::MainWindow window(&themeManager, &updateManager, &immichClient);
+    QObject::connect(&singleInstance, &Aurora::SingleInstance::activationRequested, &window,
+                     &Aurora::MainWindow::raiseToFront);
     window.show();
 
     return application.exec();

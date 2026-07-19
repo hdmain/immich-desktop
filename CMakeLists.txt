@@ -36,6 +36,8 @@ set(IMMICH_SOURCES
     src/core/ImmichTypes.h
     src/core/OfflineStore.cpp
     src/core/OfflineStore.h
+    src/core/SingleInstance.cpp
+    src/core/SingleInstance.h
     src/core/Theme.cpp
     src/core/Theme.h
     src/core/ThemeManager.cpp
