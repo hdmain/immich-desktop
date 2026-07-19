@@ -50,10 +50,6 @@ sudo snap install immich-desktop
   </a>
 </p>
 
-<iframe src="https://snapcraft.io/immich-desktop/embedded?button=black" frameborder="0" width="100%" height="380px" style="border: 1px solid #CCC; border-radius: 2px;"></iframe>
-
-> GitHub’s README viewer strips iframes; the embed works on sites that allow HTML. On GitHub, use the badge above or open [snapcraft.io/immich-desktop](https://snapcraft.io/immich-desktop).
-
 ### Other packages
 
 Grab Windows (`.exe` / `.msi`), Linux `.deb`, or AppImage from the
@@ -77,19 +73,41 @@ chmod +x immich-desktop-x86_64.AppImage
 
 ## Roadmap
 
-| Status | Item |
-| --- | --- |
-| Done | Library timeline, search, upload / download |
-| Done | Explore (people & places) |
-| Done | Video streaming player |
-| Done | Offline / disk cache |
-| Done | Themes, tray, autostart, single-instance |
-| Done | Snap Store packaging |
-| Next | Album management & sharing actions |
-| Next | Faster sync and smarter offline queue |
-| Next | Richer Explore filters and map polish |
-| Later | Mobile-adjacent workflows & multi-account |
-| Later | Deeper Immich feature parity (faces, memories, etc.) |
+Plans can shift — track progress and ideas in
+[Issues](https://github.com/hdmain/immich-desktop/issues).
+
+### Shipped
+
+- Library timeline with search, preview, trash, upload & download
+- Explore: people and places
+- Video streaming player
+- Offline browsing via local disk cache + queued uploads when offline
+- Themes (light / dark / custom), system tray, autostart, single-instance
+- Packaging: Windows installers, `.deb`, AppImage, Snap Store
+
+### Near term
+
+- **Albums** — browse, create, add/remove assets, cover photos
+- **Bulk actions** — multi-select favorite, archive, download, trash, album assign
+- **Upload reliability** — pause/resume, per-file progress, clearer failure recovery
+- **Explore polish** — map improvements, people naming/merge hooks, better empty states
+- **Keyboard & UX** — shortcuts, smoother timeline scrolling, denser grid options
+
+### Next
+
+- **Sharing** — album links, partner sharing, copy public URLs from the desktop
+- **Memories & faces** — Immich memories feed and richer face/person management
+- **Smart library tools** — duplicates, archive views, advanced filters (type, camera, date)
+- **Notifications** — tray alerts for finished uploads and available updates
+- **Sync health** — connection status, last sync time, cache size controls
+
+### Later
+
+- Multi-account / multi-server profiles
+- Full-resolution offline packs for selected albums
+- External editor / “open with” workflows
+- Wider Immich API parity as the server evolves
+- Broader packaging (Flatpak / more architectures) as demand appears
 
 ## Project layout
 
