@@ -270,6 +270,7 @@ QString UpdatesPage::packageLabel(const UpdateInfo &info)
     case InstallKind::WindowsMsi: kind = QStringLiteral("Windows installer (.msi)"); break;
     case InstallKind::LinuxDeb: kind = QStringLiteral("Debian package (.deb)"); break;
     case InstallKind::LinuxAppImage: kind = QStringLiteral("Linux AppImage"); break;
+    case InstallKind::LinuxSnap: kind = QStringLiteral("Snap package"); break;
     case InstallKind::Unknown: kind = QStringLiteral("Package"); break;
     }
     if (info.sizeBytes > 0)

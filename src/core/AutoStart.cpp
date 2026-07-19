@@ -31,12 +31,14 @@ QString AutoStart::registryValueName()
 
 QString AutoStart::launchCommand()
 {
-    const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
-#ifdef Q_OS_WIN
-    return QStringLiteral("\"%1\" --autostart").arg(exe);
-#else
-    return QStringLiteral("\"%1\" --autostart").arg(exe);
+#ifndef Q_OS_WIN
+    // Prefer the stable snap launcher over the revision-specific binary path.
+    const QString snapName = qEnvironmentVariable("SNAP_NAME");
+    if (!snapName.isEmpty())
+        return QStringLiteral("/snap/bin/%1 --autostart").arg(snapName);
 #endif
+    const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    return QStringLiteral("\"%1\" --autostart").arg(exe);
 }
 
 QString AutoStart::desktopFilePath()
@@ -121,14 +123,15 @@ bool AutoStart::setEnabled(bool enabled)
         return false;
     }
 
-    const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString exePath = launchCommand();
+
     QTextStream out(&file);
     out << QStringLiteral("[Desktop Entry]\n");
     out << QStringLiteral("Type=Application\n");
     out << QStringLiteral("Version=1.0\n");
-    out << QStringLiteral("Name=immich\n");
+    out << QStringLiteral("Name=immich desktop\n");
     out << QStringLiteral("Comment=Immich desktop client\n");
-    out << QStringLiteral("Exec=\"%1\" --autostart\n").arg(exe);
+    out << QStringLiteral("Exec=%1\n").arg(exePath);
     out << QStringLiteral("Terminal=false\n");
     out << QStringLiteral("Categories=Graphics;Photography;\n");
     out << QStringLiteral("X-GNOME-Autostart-enabled=true\n");

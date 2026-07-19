@@ -85,10 +85,11 @@ The `Build installers` GitHub Actions workflow automatically creates:
 - Windows WiX installer (`.msi`)
 - Debian/Ubuntu package (`.deb`)
 - Portable Linux AppImage (`.AppImage`)
+- Linux Snap package (`.snap`)
 
 Every push to `main` or `master`, every pull request, and every manual workflow
 run produces downloadable workflow artifacts. Pushing a version tag also
-creates a GitHub Release and attaches all four installers:
+creates a GitHub Release and attaches the installers:
 
 ```bash
 git tag v0.1.0
@@ -98,6 +99,32 @@ git push origin v0.1.0
 Keep the tag synchronized with the version declared by
 `project(immich VERSION ...)` in `CMakeLists.txt`.
 
+### Snap Store
+
+Builds publish to the Snap Store when the repository secret
+`SNAPCRAFT_STORE_CREDENTIALS` is configured:
+
+1. Install Snapcraft and log in: `snapcraft login`
+2. Register the name once: `snapcraft register immich-desktop`
+3. Export credentials: `snapcraft export-login --snaps=immich-desktop --acls package_access,package_push,package_update,package_release -`
+4. Add the exported blob as the GitHub Actions secret `SNAPCRAFT_STORE_CREDENTIALS`
+
+- Pushes to `main` / `master` → **edge** channel
+- Version tags `v*` → **stable** channel
+
+Install from the store:
+
+```bash
+sudo snap install immich-desktop
+```
+
+Or build locally:
+
+```bash
+snapcraft
+sudo snap install *.snap --dangerous
+```
+
 ## Updates
 
 The in-app updater checks
@@ -106,6 +133,7 @@ Releases and selects the matching package automatically:
 
 - Windows: NSIS `.exe`, with `.msi` as fallback
 - Linux AppImage builds: replace the running AppImage and relaunch
+- Linux Snap builds: refresh via `snap refresh`
 - Other Linux installs: Debian `.deb` (via elevated `dpkg`), with AppImage fallback
 
 Automatic checks run once per day on startup and can be toggled on the Updates

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.hdmain.immich-desktop</id>
+  <name>immich desktop</name>
+  <summary>Unofficial Immich desktop client</summary>
+  <developer_name>Immich Desktop Community</developer_name>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Unofficial fan-made Qt desktop client for Immich, a self-hosted photo and
+      video management platform. Browse your library, explore people and places,
+      upload and download media, and stream videos from your own server.
+    </p>
+    <p>
+      This project is not affiliated with, maintained by, or endorsed by the
+      official Immich project.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/hdmain/immich-desktop</url>
+  <url type="bugtracker">https://github.com/hdmain/immich-desktop/issues</url>
+  <launchable type="desktop-id">immich.desktop</launchable>
+  <provides>
+    <binary>immich</binary>
+  </provides>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+</component>

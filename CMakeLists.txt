@@ -191,6 +191,9 @@ if(UNIX AND NOT APPLE)
     install(FILES resources/immich.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
+    install(FILES resources/immich-desktop.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo
+    )
     install(FILES resources/immich-logo-512.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
         RENAME immich.png

@@ -112,6 +112,14 @@ void UpdateManager::downloadUpdate()
         m_state != UpdateState::Failed) {
         return;
     }
+
+    if (m_update.installKind == InstallKind::LinuxSnap) {
+        m_error.clear();
+        m_downloadPath.clear();
+        setState(UpdateState::ReadyToInstall);
+        return;
+    }
+
     if (!m_update.downloadUrl.isValid()) {
         fail(tr("No downloadable update package was found for this platform."));
         return;
@@ -147,6 +155,18 @@ void UpdateManager::downloadUpdate()
 
 void UpdateManager::installUpdate()
 {
+    if (m_update.installKind == InstallKind::LinuxSnap) {
+        setState(UpdateState::Installing);
+        emit installStarted();
+        if (!launchInstaller(QString(), InstallKind::LinuxSnap)) {
+            fail(tr("Unable to refresh the Snap package. Try: snap refresh %1")
+                     .arg(qEnvironmentVariable("SNAP_NAME", QStringLiteral("immich-desktop"))));
+            return;
+        }
+        QTimer::singleShot(400, qApp, &QCoreApplication::quit);
+        return;
+    }
+
     if (m_downloadPath.isEmpty() || !QFileInfo::exists(m_downloadPath)) {
         fail(tr("The update package has not been downloaded yet."));
         return;
@@ -275,6 +295,14 @@ bool UpdateManager::parseReleasePayload(const QByteArray &payload, UpdateInfo *i
     }
 
     const InstallKind preferred = preferredInstallKind();
+    if (preferred == InstallKind::LinuxSnap) {
+        info->installKind = InstallKind::LinuxSnap;
+        info->assetName = QStringLiteral("Snap Store");
+        info->downloadUrl = QUrl(QStringLiteral("https://snapcraft.io/immich-desktop"));
+        info->sizeBytes = 0;
+        return true;
+    }
+
     const auto assets = root.value(QStringLiteral("assets")).toArray();
 
     QJsonObject chosen;
@@ -339,6 +367,8 @@ InstallKind UpdateManager::preferredInstallKind() const
 #ifdef Q_OS_WIN
     return InstallKind::WindowsExe;
 #else
+    if (!qEnvironmentVariableIsEmpty("SNAP"))
+        return InstallKind::LinuxSnap;
     if (!qEnvironmentVariableIsEmpty("APPIMAGE"))
         return InstallKind::LinuxAppImage;
     return InstallKind::LinuxDeb;
@@ -359,6 +389,9 @@ bool UpdateManager::assetMatches(const QString &name, InstallKind kind) const
                name.contains(QStringLiteral("immich"), Qt::CaseInsensitive);
     case InstallKind::LinuxAppImage:
         return name.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive) &&
+               name.contains(QStringLiteral("immich"), Qt::CaseInsensitive);
+    case InstallKind::LinuxSnap:
+        return name.endsWith(QStringLiteral(".snap"), Qt::CaseInsensitive) &&
                name.contains(QStringLiteral("immich"), Qt::CaseInsensitive);
     case InstallKind::Unknown:
         break;
@@ -401,6 +434,17 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
     return QProcess::startDetached(QStringLiteral("cmd.exe"),
                                    {QStringLiteral("/C"), helperPath});
 #else
+    if (kind == InstallKind::LinuxSnap) {
+        const QString snapName =
+            qEnvironmentVariable("SNAP_NAME", QStringLiteral("immich-desktop"));
+        if (QProcess::startDetached(QStringLiteral("snap"),
+                                    {QStringLiteral("refresh"), snapName})) {
+            return true;
+        }
+        return QDesktopServices::openUrl(
+            QUrl(QStringLiteral("snap://%1").arg(snapName)));
+    }
+
     if (kind == InstallKind::LinuxAppImage) {
         const QString currentAppImage = qEnvironmentVariable("APPIMAGE");
         QString target = currentAppImage;

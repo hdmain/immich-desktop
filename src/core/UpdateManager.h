@@ -26,7 +26,8 @@ enum class InstallKind {
     WindowsExe,
     WindowsMsi,
     LinuxDeb,
-    LinuxAppImage
+    LinuxAppImage,
+    LinuxSnap
 };
 
 struct UpdateInfo {

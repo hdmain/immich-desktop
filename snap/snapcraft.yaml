@@ -1,0 +1,91 @@
+name: immich-desktop
+base: core24
+version: '0.1.4'
+summary: Unofficial Immich desktop client
+description: |
+  Unofficial fan-made Qt desktop client for Immich, a self-hosted photo and
+  video management platform.
+
+  Connect to your Immich server with an API key to browse your library,
+  explore people and places, upload and download media, and stream videos.
+
+  This project is not affiliated with, maintained by, or endorsed by the
+  official Immich project.
+grade: stable
+confinement: strict
+license: MIT
+
+icon: resources/immich-logo-512.png
+website: https://github.com/hdmain/immich-desktop
+source-code: https://github.com/hdmain/immich-desktop
+issues: https://github.com/hdmain/immich-desktop/issues
+contact: https://github.com/hdmain/immich-desktop/issues
+
+platforms:
+  amd64:
+
+apps:
+  immich-desktop:
+    extensions:
+      - kde-neon-6
+    common-id: com.github.hdmain.immich-desktop
+    desktop: usr/share/applications/immich.desktop
+    command: usr/bin/immich
+    plugs:
+      - audio-playback
+      - home
+      - network
+      - network-bind
+      - opengl
+      - removable-media
+      - unity7
+
+parts:
+  immich:
+    plugin: cmake
+    source: .
+    cmake-parameters:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -GNinja
+    parse-info:
+      - usr/share/metainfo/immich-desktop.metainfo.xml
+    build-snaps:
+      - kde-qt6-core24-sdk
+      - kf6-core24-sdk
+    build-packages:
+      - cmake
+      - ninja-build
+      - pkg-config
+      - libgl1-mesa-dev
+    stage-packages:
+      - libxcb-cursor0
+    build-environment:
+      - PATH: /snap/kde-qt6-core24-sdk/current/usr/bin${PATH:+:$PATH}
+      - CMAKE_PREFIX_PATH: /snap/kde-qt6-core24-sdk/current/usr:/snap/kf6-core24-sdk/current/usr
+      - PKG_CONFIG_PATH: /snap/kde-qt6-core24-sdk/current/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pkgconfig:/snap/kf6-core24-sdk/current/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}
+    override-pull: |
+      craftctl default
+      VERSION="$(sed -n 's/^project(immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p' CMakeLists.txt | head -n1)"
+      if [ -n "$VERSION" ]; then
+        craftctl set version="$VERSION"
+      fi
+    prime:
+      - -usr/include
+      - -usr/lib/*/cmake
+      - -usr/lib/*/pkgconfig
+      - -usr/share/doc/*/changelog*
+      - -usr/share/man
+
+  cleanup:
+    after:
+      - immich
+    plugin: nil
+    build-snaps:
+      - core24
+      - kf6-core24
+    override-prime: |
+      set -eux
+      for snap in "core24" "kf6-core24"; do
+        cd "/snap/$snap/current" && find . -type f,l -exec rm -rf "${CRAFT_PRIME}/{}" \;
+      done

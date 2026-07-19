@@ -1,9 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=immich
-Comment=Immich desktop application
+Name=immich desktop
+GenericName=Photo library
+Comment=Unofficial Immich desktop client
 Exec=immich
 Icon=immich
 Terminal=false
-Categories=Graphics;Photography;
+Categories=Graphics;Photography;Qt;
+Keywords=immich;photos;videos;gallery;
 StartupWMClass=immich
+X-GNOME-UsesNotifications=true
