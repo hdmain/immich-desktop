@@ -46,7 +46,7 @@ Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
 
 void Sidebar::setCurrentPage(int index)
 {
-    if (index == 0)
+    if (index <= 1)
         showMainNavigation();
     else
         showSettingsNavigation();
@@ -96,8 +96,10 @@ void Sidebar::showMainNavigation()
     clearNavigation();
     addNavigation(QStringLiteral("Library"),
                   QStringLiteral(":/icons/images.svg"), 0);
+    addNavigation(QStringLiteral("Explore"),
+                  QStringLiteral(":/icons/layout-dashboard.svg"), 1);
     addNavigation(QStringLiteral("Settings"),
-                  QStringLiteral(":/icons/settings.svg"), 1);
+                  QStringLiteral(":/icons/settings.svg"), 2);
     if (auto *libraryButton = m_navigationGroup->button(0))
         libraryButton->setChecked(true);
 }
@@ -111,11 +113,11 @@ void Sidebar::showSettingsNavigation()
     m_navigationLabel->setText(QStringLiteral("SETTINGS"));
     clearNavigation();
     addNavigation(QStringLiteral("Immich Server"),
-                  QStringLiteral(":/icons/server.svg"), 1);
+                  QStringLiteral(":/icons/server.svg"), 2);
     addNavigation(QStringLiteral("Appearance"),
-                  QStringLiteral(":/icons/palette.svg"), 2);
+                  QStringLiteral(":/icons/palette.svg"), 3);
     addNavigation(QStringLiteral("Update"),
-                  QStringLiteral(":/icons/refresh-cw.svg"), 3);
+                  QStringLiteral(":/icons/refresh-cw.svg"), 4);
     addNavigation(QStringLiteral("Back"),
                   QStringLiteral(":/icons/arrow-left.svg"), 0, false);
 }

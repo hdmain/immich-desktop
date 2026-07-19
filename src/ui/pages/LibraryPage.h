@@ -49,7 +49,7 @@ private slots:
     void chooseFilesToUpload();
     void handleNewestAssetsPolled(const QList<Aurora::ImmichAsset> &assets);
     void showAssets(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage,
-                    const QString &query);
+                    const QString &query, bool fromCache);
     void showThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showThumbnailError(const QString &assetId, const QString &resultSize,
                             const QString &message);
@@ -64,6 +64,8 @@ private slots:
     void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
     void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
+    void handleOnlineChanged(bool online);
+    void handleUploadQueueChanged(int pendingCount);
 
 private:
     struct DaySection {
@@ -119,6 +121,7 @@ private:
     bool m_appendRequest = false;
     bool m_autoRefreshPending = false;
     bool m_dropActive = false;
+    bool m_showingCached = false;
 };
 
 } // namespace Aurora

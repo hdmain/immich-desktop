@@ -16,6 +16,7 @@
 #include <QMetaObject>
 #include <QMimeDatabase>
 #include <QNetworkAccessManager>
+#include <QNetworkInformation>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
@@ -38,6 +39,39 @@ qreal aspectRatioFromObject(const QJsonObject &object)
     return 1.0;
 }
 
+ImmichAsset assetFromObject(const QJsonObject &object)
+{
+    ImmichAsset asset;
+    asset.id = object.value(QStringLiteral("id")).toString();
+    asset.type = object.value(QStringLiteral("type")).toString();
+    asset.fileName = object.value(QStringLiteral("originalFileName")).toString();
+    asset.duration = object.value(QStringLiteral("duration")).toString();
+    asset.favorite = object.value(QStringLiteral("isFavorite")).toBool();
+    asset.aspectRatio = aspectRatioFromObject(object);
+    const QString takenAt = object.value(QStringLiteral("localDateTime")).toString(
+        object.value(QStringLiteral("fileCreatedAt")).toString());
+    asset.takenAt = QDateTime::fromString(takenAt, Qt::ISODate);
+    return asset;
+}
+
+QList<ImmichAsset> assetsFromSearchBody(const QByteArray &body, QString *nextPage)
+{
+    const QJsonObject assetsObject =
+        QJsonDocument::fromJson(body).object().value(QStringLiteral("assets")).toObject();
+    if (nextPage)
+        *nextPage = assetsObject.value(QStringLiteral("nextPage")).toVariant().toString();
+
+    QList<ImmichAsset> assets;
+    const QJsonArray items = assetsObject.value(QStringLiteral("items")).toArray();
+    assets.reserve(items.size());
+    for (const QJsonValue &value : items) {
+        ImmichAsset asset = assetFromObject(value.toObject());
+        if (!asset.id.isEmpty())
+            assets.append(asset);
+    }
+    return assets;
+}
+
 } // namespace
 
 ImmichClient::ImmichClient(QObject *parent)
@@ -46,18 +80,35 @@ ImmichClient::ImmichClient(QObject *parent)
     , m_activeServerUrl(normalizeServerUrl(m_connection.serverUrl))
     , m_network(new QNetworkAccessManager(this))
     , m_endpointProbeTimer(new QTimer(this))
+    , m_reachabilityTimer(new QTimer(this))
 {
     m_imagePool.setMaxThreadCount(8);
     m_endpointProbeTimer->setInterval(12 * 1000);
     connect(m_endpointProbeTimer, &QTimer::timeout, this, &ImmichClient::probeEndpoints);
+    m_reachabilityTimer->setInterval(15 * 1000);
+    connect(m_reachabilityTimer, &QTimer::timeout, this, &ImmichClient::probeReachability);
+    setupNetworkMonitoring();
+    restoreUploadQueue();
     if (isConfigured()) {
         m_endpointProbeTimer->start();
+        m_reachabilityTimer->start();
         QTimer::singleShot(0, this, &ImmichClient::probeEndpoints);
+        QTimer::singleShot(0, this, &ImmichClient::probeReachability);
+        QTimer::singleShot(2000, this, &ImmichClient::processUploadQueue);
     }
 }
 
 ImmichClient::~ImmichClient()
 {
+    m_endpointProbeTimer->stop();
+    m_reachabilityTimer->stop();
+    if (m_network) {
+        const auto replies = m_network->findChildren<QNetworkReply *>();
+        for (QNetworkReply *reply : replies) {
+            QObject::disconnect(reply, nullptr, this, nullptr);
+            reply->abort();
+        }
+    }
     m_imagePool.waitForDone();
 }
 
@@ -107,6 +158,61 @@ bool ImmichClient::usingLocalEndpoint() const
     return m_usingLocalEndpoint;
 }
 
+bool ImmichClient::isOnline() const
+{
+    return m_online;
+}
+
+void ImmichClient::setupNetworkMonitoring()
+{
+    if (!QNetworkInformation::loadDefaultBackend())
+        return;
+    if (auto *info = QNetworkInformation::instance()) {
+        connect(info, &QNetworkInformation::reachabilityChanged, this,
+                [this](QNetworkInformation::Reachability reachability) {
+                    if (reachability == QNetworkInformation::Reachability::Disconnected)
+                        setOnline(false);
+                    else
+                        probeReachability();
+                });
+        if (info->reachability() == QNetworkInformation::Reachability::Disconnected)
+            m_online = false;
+    }
+}
+
+void ImmichClient::setOnline(bool online)
+{
+    if (m_online == online)
+        return;
+    m_online = online;
+    emit onlineChanged(m_online);
+    if (m_online)
+        processUploadQueue();
+}
+
+bool ImmichClient::isTransientNetworkError(QNetworkReply *reply)
+{
+    if (!reply)
+        return false;
+    switch (reply->error()) {
+    case QNetworkReply::ConnectionRefusedError:
+    case QNetworkReply::RemoteHostClosedError:
+    case QNetworkReply::HostNotFoundError:
+    case QNetworkReply::TimeoutError:
+    case QNetworkReply::TemporaryNetworkFailureError:
+    case QNetworkReply::NetworkSessionFailedError:
+    case QNetworkReply::UnknownNetworkError:
+    case QNetworkReply::ProxyConnectionRefusedError:
+    case QNetworkReply::ProxyConnectionClosedError:
+    case QNetworkReply::ProxyNotFoundError:
+    case QNetworkReply::ProxyTimeoutError:
+    case QNetworkReply::OperationCanceledError:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void ImmichClient::setConnection(const ImmichConnectionSettings &connection, bool persist)
 {
     ImmichConnectionSettings normalized = connection;
@@ -126,9 +232,13 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
     if (isConfigured()) {
         if (!m_endpointProbeTimer->isActive())
             m_endpointProbeTimer->start();
+        if (!m_reachabilityTimer->isActive())
+            m_reachabilityTimer->start();
         probeEndpoints();
+        probeReachability();
     } else {
         m_endpointProbeTimer->stop();
+        m_reachabilityTimer->stop();
     }
 
     if (changed) {
@@ -191,15 +301,46 @@ void ImmichClient::probeEndpoints()
                    body.contains("pong");
         }
 
-        if (reachable && pong)
+        if (reachable && pong) {
             setActiveServerUrl(m_connection.localServerUrl, true);
-        else
+            setOnline(true);
+        } else {
             setActiveServerUrl(m_connection.serverUrl, false);
+        }
 
         reply->deleteLater();
 
         if (m_connectionTestPending)
             finishConnectionTest();
+    });
+}
+
+void ImmichClient::probeReachability()
+{
+    if (!isConfigured() || m_reachabilityProbeInFlight)
+        return;
+
+    m_reachabilityProbeInFlight = true;
+    QNetworkRequest request(apiUrl(QStringLiteral("/server/ping")));
+    request.setRawHeader("Accept", "application/json");
+    request.setTransferTimeout(2500);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        m_reachabilityProbeInFlight = false;
+        const QByteArray body = reply->readAll();
+        const bool reachable = reply->error() == QNetworkReply::NoError &&
+                               (body.contains("pong") ||
+                                QJsonDocument::fromJson(body)
+                                        .object()
+                                        .value(QStringLiteral("res"))
+                                        .toString()
+                                        .compare(QStringLiteral("pong"),
+                                                 Qt::CaseInsensitive) == 0);
+        setOnline(reachable);
+        reply->deleteLater();
     });
 }
 
@@ -343,6 +484,14 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
     const QString trimmedQuery = query.trimmed();
     const bool smartSearch = !pollOnly && !trimmedQuery.isEmpty();
 
+    if (!pollOnly && !m_online) {
+        if (page <= 1 && emitCachedLibrary(trimmedQuery))
+            return;
+        emit requestFailed(smartSearch ? tr("Search") : tr("Load library"),
+                           tr("You are offline and no cached library is available."));
+        return;
+    }
+
     QJsonObject body;
     body.insert(QStringLiteral("page"), qMax(1, page));
     body.insert(QStringLiteral("size"), qBound(1, pageSize, 250));
@@ -359,15 +508,22 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
     QNetworkRequest searchRequest = authenticatedRequest(apiUrl(endpoint));
     searchRequest.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     searchRequest.setRawHeader("Accept", "application/json");
+    searchRequest.setTransferTimeout(20000);
     auto *reply = m_network->post(searchRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, pollOnly, smartSearch, trimmedQuery] {
+            [this, reply, pollOnly, smartSearch, trimmedQuery, page] {
         const QByteArray body = reply->readAll();
         if (pollOnly)
             m_pollInFlight = false;
 
         if (reply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(reply))
+                setOnline(false);
             if (!pollOnly) {
+                if (page <= 1 && emitCachedLibrary(trimmedQuery)) {
+                    reply->deleteLater();
+                    return;
+                }
                 emit requestFailed(smartSearch ? tr("Search") : tr("Load library"),
                                    errorMessage(reply, body));
             }
@@ -375,33 +531,277 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
             return;
         }
 
-        const QJsonObject assetsObject =
-            QJsonDocument::fromJson(body).object().value(QStringLiteral("assets")).toObject();
-        QList<ImmichAsset> assets;
-        const QJsonArray items = assetsObject.value(QStringLiteral("items")).toArray();
-        assets.reserve(items.size());
-        for (const QJsonValue &value : items) {
-            const QJsonObject object = value.toObject();
-            ImmichAsset asset;
-            asset.id = object.value(QStringLiteral("id")).toString();
-            asset.type = object.value(QStringLiteral("type")).toString();
-            asset.fileName = object.value(QStringLiteral("originalFileName")).toString();
-            asset.duration = object.value(QStringLiteral("duration")).toString();
-            asset.favorite = object.value(QStringLiteral("isFavorite")).toBool();
-            asset.aspectRatio = aspectRatioFromObject(object);
-            const QString takenAt = object.value(QStringLiteral("localDateTime")).toString(
-                object.value(QStringLiteral("fileCreatedAt")).toString());
-            asset.takenAt = QDateTime::fromString(takenAt, Qt::ISODate);
-            if (!asset.id.isEmpty())
-                assets.append(asset);
-        }
+        setOnline(true);
+        QString nextPage;
+        QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage);
 
-        if (pollOnly)
+        if (pollOnly) {
             emit newestAssetsPolled(assets);
-        else
-            emit assetsLoaded(
-                assets, assetsObject.value(QStringLiteral("nextPage")).toVariant().toString(),
-                trimmedQuery);
+        } else {
+            if (!smartSearch) {
+                if (page <= 1)
+                    m_offlineStore.saveLibrary(m_connection.serverUrl, assets, trimmedQuery);
+                else
+                    m_offlineStore.mergeLibrary(m_connection.serverUrl, assets);
+            }
+            emit assetsLoaded(assets, nextPage, trimmedQuery, false);
+        }
+        reply->deleteLater();
+    });
+}
+
+bool ImmichClient::emitCachedLibrary(const QString &query)
+{
+    if (!query.isEmpty())
+        return false;
+    QList<ImmichAsset> assets;
+    if (!m_offlineStore.loadLibrary(m_connection.serverUrl, &assets))
+        return false;
+    emit assetsLoaded(assets, {}, query, true);
+    return true;
+}
+
+void ImmichClient::loadExplore()
+{
+    if (!ensureConfigured(tr("Load explore")))
+        return;
+    if (m_explorePeoplePending || m_exploreDataPending)
+        return;
+
+    if (!m_online) {
+        if (emitCachedExplore())
+            return;
+        emit requestFailed(tr("Load explore"),
+                           tr("You are offline and no cached explore data is available."));
+        return;
+    }
+
+    m_exploreBuffer = ImmichExploreData{};
+    m_explorePeoplePending = true;
+    m_exploreDataPending = true;
+
+    QUrl peopleUrl = apiUrl(QStringLiteral("/people"));
+    QUrlQuery peopleQuery;
+    peopleQuery.addQueryItem(QStringLiteral("withHidden"), QStringLiteral("false"));
+    peopleQuery.addQueryItem(QStringLiteral("page"), QStringLiteral("1"));
+    peopleQuery.addQueryItem(QStringLiteral("size"), QStringLiteral("100"));
+    peopleUrl.setQuery(peopleQuery);
+
+    QNetworkRequest peopleRequest = authenticatedRequest(peopleUrl);
+    peopleRequest.setRawHeader("Accept", "application/json");
+    auto *peopleReply = m_network->get(peopleRequest);
+    connect(peopleReply, &QNetworkReply::finished, this, [this, peopleReply] {
+        const QByteArray body = peopleReply->readAll();
+        QString error;
+        if (peopleReply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(peopleReply))
+                setOnline(false);
+            error = errorMessage(peopleReply, body);
+        } else {
+            const QJsonObject object = QJsonDocument::fromJson(body).object();
+            const QJsonArray people = object.value(QStringLiteral("people")).toArray();
+            m_exploreBuffer.people.reserve(people.size());
+            for (const QJsonValue &value : people) {
+                const QJsonObject personObject = value.toObject();
+                ImmichPerson person;
+                person.id = personObject.value(QStringLiteral("id")).toString();
+                person.name = personObject.value(QStringLiteral("name")).toString();
+                person.favorite = personObject.value(QStringLiteral("isFavorite")).toBool();
+                person.hidden = personObject.value(QStringLiteral("isHidden")).toBool();
+                if (!person.id.isEmpty() && !person.hidden)
+                    m_exploreBuffer.people.append(person);
+            }
+        }
+        peopleReply->deleteLater();
+        finishExploreLoad(true, false, error);
+    });
+
+    QNetworkRequest exploreRequest =
+        authenticatedRequest(apiUrl(QStringLiteral("/search/explore")));
+    exploreRequest.setRawHeader("Accept", "application/json");
+    auto *exploreReply = m_network->get(exploreRequest);
+    connect(exploreReply, &QNetworkReply::finished, this, [this, exploreReply] {
+        const QByteArray body = exploreReply->readAll();
+        QString error;
+        if (exploreReply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(exploreReply))
+                setOnline(false);
+            error = errorMessage(exploreReply, body);
+        } else {
+            const QJsonArray sections = QJsonDocument::fromJson(body).array();
+            for (const QJsonValue &sectionValue : sections) {
+                const QJsonObject section = sectionValue.toObject();
+                const QString field = section.value(QStringLiteral("fieldName")).toString();
+                const QJsonArray items = section.value(QStringLiteral("items")).toArray();
+                if (field == QStringLiteral("exifInfo.city")) {
+                    for (const QJsonValue &itemValue : items) {
+                        const QJsonObject item = itemValue.toObject();
+                        ImmichPlace place;
+                        place.city = item.value(QStringLiteral("value")).toString();
+                        place.sampleAsset =
+                            assetFromObject(item.value(QStringLiteral("data")).toObject());
+                        if (!place.city.isEmpty() && !place.sampleAsset.id.isEmpty())
+                            m_exploreBuffer.places.append(place);
+                    }
+                } else if (field == QStringLiteral("createdAt")) {
+                    for (const QJsonValue &itemValue : items) {
+                        const QJsonObject item = itemValue.toObject();
+                        ImmichAsset asset =
+                            assetFromObject(item.value(QStringLiteral("data")).toObject());
+                        if (!asset.id.isEmpty())
+                            m_exploreBuffer.recentAssets.append(asset);
+                    }
+                }
+            }
+        }
+        exploreReply->deleteLater();
+        finishExploreLoad(false, true, error);
+    });
+}
+
+void ImmichClient::finishExploreLoad(bool peopleDone, bool exploreDone, const QString &error)
+{
+    if (peopleDone)
+        m_explorePeoplePending = false;
+    if (exploreDone)
+        m_exploreDataPending = false;
+
+    if (m_explorePeoplePending || m_exploreDataPending)
+        return;
+
+    const bool empty = m_exploreBuffer.people.isEmpty() && m_exploreBuffer.places.isEmpty() &&
+                       m_exploreBuffer.recentAssets.isEmpty();
+    if (!error.isEmpty() && empty) {
+        if (emitCachedExplore())
+            return;
+        emit requestFailed(tr("Load explore"), error);
+        return;
+    }
+
+    if (!empty) {
+        setOnline(true);
+        m_offlineStore.saveExplore(m_connection.serverUrl, m_exploreBuffer);
+    }
+    emit exploreLoaded(m_exploreBuffer, false);
+}
+
+bool ImmichClient::emitCachedExplore()
+{
+    ImmichExploreData data;
+    if (!m_offlineStore.loadExplore(m_connection.serverUrl, &data))
+        return false;
+    emit exploreLoaded(data, true);
+    return true;
+}
+
+void ImmichClient::loadAssetsForPerson(const QString &personId, int page, int pageSize)
+{
+    searchFilteredAssets(QStringLiteral("person"), personId, page, pageSize);
+}
+
+void ImmichClient::loadAssetsForCity(const QString &city, int page, int pageSize)
+{
+    searchFilteredAssets(QStringLiteral("city"), city, page, pageSize);
+}
+
+void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString &filterValue,
+                                        int page, int pageSize)
+{
+    if (!ensureConfigured(tr("Load explore")) || filterValue.trimmed().isEmpty())
+        return;
+
+    QJsonObject body;
+    body.insert(QStringLiteral("page"), qMax(1, page));
+    body.insert(QStringLiteral("size"), qBound(1, pageSize, 250));
+    body.insert(QStringLiteral("order"), QStringLiteral("desc"));
+    body.insert(QStringLiteral("withExif"), true);
+    body.insert(QStringLiteral("withStacked"), true);
+    if (filterKind == QStringLiteral("person")) {
+        QJsonArray personIds;
+        personIds.append(filterValue);
+        body.insert(QStringLiteral("personIds"), personIds);
+    } else if (filterKind == QStringLiteral("city")) {
+        body.insert(QStringLiteral("city"), filterValue);
+    } else {
+        return;
+    }
+
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/search/metadata")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, filterKind, filterValue] {
+                const QByteArray body = reply->readAll();
+                if (reply->error() != QNetworkReply::NoError) {
+                    emit requestFailed(tr("Load explore"), errorMessage(reply, body));
+                    reply->deleteLater();
+                    return;
+                }
+                QString nextPage;
+                const QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage);
+                emit filteredAssetsLoaded(filterKind, filterValue, assets, nextPage);
+                reply->deleteLater();
+            });
+}
+
+void ImmichClient::loadPersonThumbnail(const QString &personId)
+{
+    if (!ensureConfigured(tr("Load image")) || personId.isEmpty())
+        return;
+
+    const QString cacheKey = QStringLiteral("person:") + personId;
+    if (const QPixmap cached = m_thumbnailCache.memoryPixmap(cacheKey); !cached.isNull()) {
+        emit personThumbnailLoaded(personId, cached);
+        return;
+    }
+    const QByteArray diskBytes = m_thumbnailCache.readDisk(cacheKey);
+    if (!diskBytes.isEmpty()) {
+        const QImage image = decodeImage(diskBytes, 256);
+        if (!image.isNull()) {
+            const QPixmap pixmap = QPixmap::fromImage(image);
+            m_thumbnailCache.store(cacheKey, {}, pixmap);
+            emit personThumbnailLoaded(personId, pixmap);
+            return;
+        }
+    }
+
+    if (!m_online) {
+        emit imageLoadFailed(personId, QStringLiteral("person"),
+                             tr("Offline — person photo not cached."));
+        return;
+    }
+
+    if (m_pendingPersonImages.contains(personId))
+        return;
+    m_pendingPersonImages.insert(personId);
+
+    auto *reply =
+        m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/people/%1/thumbnail").arg(personId))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, personId, cacheKey] {
+        m_pendingPersonImages.remove(personId);
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(reply))
+                setOnline(false);
+            emit imageLoadFailed(personId, QStringLiteral("person"),
+                                 errorMessage(reply, body));
+            reply->deleteLater();
+            return;
+        }
+        const QImage image = decodeImage(body, 256);
+        if (image.isNull()) {
+            emit imageLoadFailed(personId, QStringLiteral("person"),
+                                 tr("Unsupported image format."));
+        } else {
+            const QPixmap pixmap = QPixmap::fromImage(image);
+            QByteArray encoded;
+            QBuffer buffer(&encoded);
+            if (buffer.open(QIODevice::WriteOnly))
+                image.save(&buffer, "JPG", 82);
+            m_thumbnailCache.store(cacheKey, encoded, pixmap);
+            emit personThumbnailLoaded(personId, pixmap);
+        }
         reply->deleteLater();
     });
 }
@@ -462,40 +862,119 @@ void ImmichClient::uploadAssets(const QStringList &filePaths)
     if (!ensureConfigured(tr("Upload")))
         return;
 
+    QStringList added;
     for (const QString &path : filePaths) {
         const QString absolute = QFileInfo(path).absoluteFilePath();
-        if (absolute.isEmpty())
+        if (absolute.isEmpty() || !QFileInfo::exists(absolute))
             continue;
-        if (!m_uploadQueue.contains(absolute))
+        if (!m_uploadQueue.contains(absolute) && absolute != m_uploadInFlightPath) {
             m_uploadQueue.append(absolute);
+            added.append(absolute);
+        }
     }
+    if (added.isEmpty() && filePaths.isEmpty())
+        return;
+
+    persistUploadQueue();
+    emit uploadQueueChanged(pendingUploadCount());
+
+    if (!m_online)
+        return;
     processUploadQueue();
+}
+
+void ImmichClient::persistUploadQueue()
+{
+    QStringList all = m_uploadQueue;
+    if (!m_uploadInFlightPath.isEmpty() && !all.contains(m_uploadInFlightPath))
+        all.prepend(m_uploadInFlightPath);
+    m_uploadQueueStore.save(all);
+}
+
+void ImmichClient::restoreUploadQueue()
+{
+    const QStringList stored = m_uploadQueueStore.load();
+    for (const QString &path : stored) {
+        if (!m_uploadQueue.contains(path))
+            m_uploadQueue.append(path);
+    }
+    if (!m_uploadQueue.isEmpty())
+        emit uploadQueueChanged(pendingUploadCount());
+}
+
+void ImmichClient::requeueUpload(const QString &filePath, bool toFront)
+{
+    const QString absolute = QFileInfo(filePath).absoluteFilePath();
+    if (absolute.isEmpty())
+        return;
+    m_uploadQueue.removeAll(absolute);
+    if (toFront)
+        m_uploadQueue.prepend(absolute);
+    else
+        m_uploadQueue.append(absolute);
+    persistUploadQueue();
+    emit uploadQueueChanged(pendingUploadCount());
+}
+
+void ImmichClient::scheduleUploadRetry(int delayMs)
+{
+    if (m_uploadRetryScheduled)
+        return;
+    m_uploadRetryScheduled = true;
+    QTimer::singleShot(delayMs, this, [this] {
+        m_uploadRetryScheduled = false;
+        processUploadQueue();
+    });
 }
 
 void ImmichClient::processUploadQueue()
 {
-    if (m_uploadInFlight || m_uploadQueue.isEmpty())
+    if (m_processingUploadQueue || m_uploadInFlight || !m_online)
         return;
-    startUpload(m_uploadQueue.takeFirst());
+
+    m_processingUploadQueue = true;
+    while (!m_uploadInFlight && !m_uploadQueue.isEmpty() && m_online) {
+        const QString next = m_uploadQueue.takeFirst();
+        if (!startUpload(next))
+            continue;
+    }
+    m_processingUploadQueue = false;
+    persistUploadQueue();
+    emit uploadQueueChanged(pendingUploadCount());
 }
 
-void ImmichClient::startUpload(const QString &filePath)
+bool ImmichClient::startUpload(const QString &filePath)
 {
     const QFileInfo info(filePath);
     if (!info.exists() || !info.isFile()) {
+        m_uploadRetryCounts.remove(filePath);
+        m_uploadQueueStore.remove(filePath);
         emit requestFailed(tr("Upload"), tr("File not found: %1").arg(filePath));
-        processUploadQueue();
-        return;
+        return false;
     }
 
     auto *file = new QFile(filePath);
     if (!file->open(QIODevice::ReadOnly)) {
         const QString message = file->errorString();
         delete file;
-        emit requestFailed(tr("Upload"),
-                           tr("Could not open %1: %2").arg(info.fileName(), message));
-        processUploadQueue();
-        return;
+        const int attempts = ++m_uploadRetryCounts[filePath];
+        if (attempts >= 5) {
+            m_uploadRetryCounts.remove(filePath);
+            m_uploadQueueStore.remove(filePath);
+            emit requestFailed(
+                tr("Upload"),
+                tr("Could not open %1 after several tries: %2")
+                    .arg(info.fileName(), message));
+        } else {
+            // Defer retry — never recurse into processUploadQueue here.
+            requeueUpload(filePath, false);
+            scheduleUploadRetry(2000 * attempts);
+            emit requestFailed(
+                tr("Upload"),
+                tr("Could not open %1: %2 (will retry)")
+                    .arg(info.fileName(), message));
+        }
+        return false;
     }
 
     auto *multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
@@ -543,6 +1022,8 @@ void ImmichClient::startUpload(const QString &filePath)
     request.setRawHeader("Accept", "application/json");
 
     m_uploadInFlight = true;
+    m_uploadInFlightPath = filePath;
+    persistUploadQueue();
     auto *reply = m_network->post(request, multiPart);
     multiPart->setParent(reply);
 
@@ -553,12 +1034,29 @@ void ImmichClient::startUpload(const QString &filePath)
     connect(reply, &QNetworkReply::finished, this, [this, reply, filePath] {
         const QByteArray body = reply->readAll();
         m_uploadInFlight = false;
+        m_uploadInFlightPath.clear();
 
         if (reply->error() != QNetworkReply::NoError) {
-            emit requestFailed(tr("Upload"),
-                               tr("%1: %2").arg(QFileInfo(filePath).fileName(),
-                                                errorMessage(reply, body)));
+            if (isTransientNetworkError(reply)) {
+                setOnline(false);
+                requeueUpload(filePath, true);
+                emit requestFailed(
+                    tr("Upload"),
+                    tr("%1 interrupted — queued for retry when online.")
+                        .arg(QFileInfo(filePath).fileName()));
+            } else {
+                m_uploadRetryCounts.remove(filePath);
+                m_uploadQueueStore.remove(filePath);
+                persistUploadQueue();
+                emit requestFailed(tr("Upload"),
+                                   tr("%1: %2").arg(QFileInfo(filePath).fileName(),
+                                                    errorMessage(reply, body)));
+            }
+            emit uploadQueueChanged(pendingUploadCount());
         } else {
+            m_uploadRetryCounts.remove(filePath);
+            m_uploadQueueStore.remove(filePath);
+            persistUploadQueue();
             const QJsonObject object = QJsonDocument::fromJson(body).object();
             const QString assetId = object.value(QStringLiteral("id")).toString();
             const bool duplicate =
@@ -566,11 +1064,18 @@ void ImmichClient::startUpload(const QString &filePath)
                 object.value(QStringLiteral("status")).toString().compare(
                     QStringLiteral("duplicate"), Qt::CaseInsensitive) == 0;
             emit assetUploaded(filePath, assetId, duplicate);
+            emit uploadQueueChanged(pendingUploadCount());
+            if (!m_online)
+                setOnline(true);
+            else
+                processUploadQueue();
         }
 
         reply->deleteLater();
-        processUploadQueue();
+        if (reply->error() != QNetworkReply::NoError)
+            processUploadQueue();
     });
+    return true;
 }
 
 void ImmichClient::downloadAsset(const QString &assetId, const QString &destinationPath,

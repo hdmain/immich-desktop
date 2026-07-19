@@ -33,6 +33,9 @@ set(IMMICH_SOURCES
     src/core/AppSettings.h
     src/core/ImmichClient.cpp
     src/core/ImmichClient.h
+    src/core/ImmichTypes.h
+    src/core/OfflineStore.cpp
+    src/core/OfflineStore.h
     src/core/Theme.cpp
     src/core/Theme.h
     src/core/ThemeManager.cpp
@@ -41,6 +44,8 @@ set(IMMICH_SOURCES
     src/core/ThumbnailCache.h
     src/core/UpdateManager.cpp
     src/core/UpdateManager.h
+    src/core/UploadQueueStore.cpp
+    src/core/UploadQueueStore.h
     src/core/VideoStreamServer.cpp
     src/core/VideoStreamServer.h
     src/ui/AppIcon.cpp
@@ -57,6 +62,8 @@ set(IMMICH_SOURCES
     src/ui/pages/ConnectionPage.h
     src/ui/pages/DashboardPage.cpp
     src/ui/pages/DashboardPage.h
+    src/ui/pages/ExplorePage.cpp
+    src/ui/pages/ExplorePage.h
     src/ui/pages/LibraryPage.cpp
     src/ui/pages/LibraryPage.h
     src/ui/pages/SettingsPage.cpp

@@ -4,6 +4,7 @@
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
 #include "ui/AppIcon.h"
+#include "ui/pages/ExplorePage.h"
 #include "ui/pages/LibraryPage.h"
 #include "ui/pages/SettingsPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
@@ -105,6 +106,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     workspaceLayout->setContentsMargins(0, 0, 0, 0);
 
     m_pages->addWidget(new LibraryPage(immichClient, m_pages));
+    m_pages->addWidget(new ExplorePage(immichClient, m_pages));
     m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);
@@ -112,7 +114,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
 
     connect(m_sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
     connect(m_topBar, &TopBar::updatesRequested, this, [this] {
-        selectPage(3);
+        selectPage(4);
     });
     connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
         m_topBar->setUpdateAvailable(true, info.version);
@@ -141,24 +143,27 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
 
 void MainWindow::selectPage(int index)
 {
-    if (index < 0 || index > 3)
+    if (index < 0 || index > 4)
         return;
 
     if (index == 0) {
         m_topBar->setPageTitle(QStringLiteral("Library"));
         m_pages->setCurrentIndexAnimated(0);
+    } else if (index == 1) {
+        m_topBar->setPageTitle(QStringLiteral("Explore"));
+        m_pages->setCurrentIndexAnimated(1);
     } else {
-        if (index == 1) {
+        if (index == 2) {
             m_settingsPage->showConnection();
             m_topBar->setPageTitle(QStringLiteral("Settings / Immich Server"));
-        } else if (index == 2) {
+        } else if (index == 3) {
             m_settingsPage->showAppearance();
             m_topBar->setPageTitle(QStringLiteral("Settings / Appearance"));
         } else {
             m_settingsPage->showUpdates();
             m_topBar->setPageTitle(QStringLiteral("Settings / Update"));
         }
-        m_pages->setCurrentIndexAnimated(1);
+        m_pages->setCurrentIndexAnimated(2);
     }
     m_sidebar->setCurrentPage(index);
 }
@@ -175,7 +180,7 @@ void MainWindow::scheduleAutoUpdateCheck()
 
 void MainWindow::notifyUpdateAvailable()
 {
-    if (m_pages->currentIndex() == 1 && m_settingsPage->isShowingUpdates())
+    if (m_pages->currentIndex() == 2 && m_settingsPage->isShowingUpdates())
         return;
 
     const auto info = m_updateManager->availableUpdate();
@@ -190,7 +195,7 @@ void MainWindow::notifyUpdateAvailable()
     box.exec();
     if (box.clickedButton() &&
         box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole) {
-        selectPage(3);
+        selectPage(4);
     }
 }
 

@@ -19,6 +19,7 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
@@ -174,6 +175,9 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
     connect(m_client, &ImmichClient::activeEndpointChanged,
             this, &LibraryPage::handleActiveEndpointChanged);
+    connect(m_client, &ImmichClient::onlineChanged, this, &LibraryPage::handleOnlineChanged);
+    connect(m_client, &ImmichClient::uploadQueueChanged, this,
+            &LibraryPage::handleUploadQueueChanged);
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
         m_uploadButton->setEnabled(configured);
         m_searchField->setEnabled(configured);
@@ -316,11 +320,12 @@ QString LibraryPage::formatDayHeader(const QDate &date) const
 }
 
 void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &nextPage,
-                             const QString &query)
+                             const QString &query, bool fromCache)
 {
     if (query != m_searchQuery)
         return;
 
+    m_showingCached = fromCache;
     if (!m_appendRequest)
         clearTimeline();
 
@@ -343,13 +348,15 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
     if (!m_appendRequest && !m_assets.isEmpty())
         m_newestAssetId = m_assets.first().id;
 
-    m_nextPage = nextPage;
+    m_nextPage = fromCache ? QString() : nextPage;
     m_loading = false;
     m_autoRefreshPending = false;
     m_refreshButton->setEnabled(true);
     if (!m_searchQuery.isEmpty()) {
         m_status->setText(tr("%n result(s) for “%1”", nullptr, m_assets.size())
                               .arg(m_searchQuery));
+    } else if (fromCache) {
+        m_status->setText(tr("%n cached item(s) · offline", nullptr, m_assets.size()));
     } else {
         m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
         updateEndpointHint();
@@ -362,11 +369,10 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)
 {
     m_requestedThumbnails.remove(assetId);
-    if (auto *tile = m_tilesById.value(assetId)) {
-        if (isTileNearViewport(tile)) {
-            tile->setThumbnail(thumbnail);
-            scheduleLayout();
-        }
+    const QPointer<MediaTile> tile = m_tilesById.value(assetId);
+    if (tile && m_tilesById.value(assetId) == tile.data() && isTileNearViewport(tile)) {
+        tile->setThumbnail(thumbnail);
+        scheduleLayout();
     }
     scheduleVisibleMediaUpdate();
 }
@@ -383,10 +389,9 @@ void LibraryPage::showThumbnailError(const QString &assetId, const QString &resu
     if (resultSize != QStringLiteral("thumbnail"))
         return;
     m_requestedThumbnails.remove(assetId);
-    if (auto *tile = m_tilesById.value(assetId)) {
-        if (isTileNearViewport(tile))
-            tile->setThumbnailError(message);
-    }
+    const QPointer<MediaTile> tile = m_tilesById.value(assetId);
+    if (tile && m_tilesById.value(assetId) == tile.data() && isTileNearViewport(tile))
+        tile->setThumbnailError(message);
 }
 
 void LibraryPage::showRequestError(const QString &operation, const QString &message)
@@ -394,9 +399,13 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
     if (operation == tr("Load image"))
         return;
     if (operation == tr("Upload")) {
-        ++m_uploadsFailed;
+        const bool willRetry = message.contains(QStringLiteral("will retry"), Qt::CaseInsensitive) ||
+                               message.contains(QStringLiteral("queued for retry"),
+                                                Qt::CaseInsensitive);
+        if (!willRetry)
+            ++m_uploadsFailed;
         const int remaining = m_client->pendingUploadCount();
-        if (remaining == 0) {
+        if (remaining == 0 && !willRetry) {
             const int completed = m_uploadsCompleted;
             const int failed = m_uploadsFailed;
             m_status->setText(
@@ -407,8 +416,10 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
             if (completed > 0)
                 QTimer::singleShot(600, this, &LibraryPage::refresh);
         } else {
-            m_status->setText(tr("Upload failed: %1 (%2 left)")
-                                  .arg(message, QString::number(remaining)));
+            m_status->setText(willRetry
+                                  ? tr("%1 (%2 left)").arg(message, QString::number(remaining))
+                                  : tr("Upload failed: %1 (%2 left)")
+                                        .arg(message, QString::number(remaining)));
         }
         return;
     }
@@ -643,6 +654,28 @@ void LibraryPage::handleActiveEndpointChanged(bool usingLocal, const QString &ac
     updateEndpointHint();
 }
 
+void LibraryPage::handleOnlineChanged(bool online)
+{
+    if (online) {
+        if (m_showingCached || m_client->pendingUploadCount() > 0) {
+            m_status->setText(m_client->pendingUploadCount() > 0
+                                  ? tr("Back online — resuming uploads…")
+                                  : tr("Back online — refreshing…"));
+            if (m_showingCached)
+                refresh();
+        }
+    } else if (!m_showingCached && !m_assets.isEmpty()) {
+        m_status->setText(tr("%n item(s) · offline", nullptr, m_assets.size()));
+    }
+}
+
+void LibraryPage::handleUploadQueueChanged(int pendingCount)
+{
+    if (pendingCount <= 0 || m_client->isOnline())
+        return;
+    m_status->setText(tr("%n file(s) waiting to upload", nullptr, pendingCount));
+}
+
 void LibraryPage::openAsset(const ImmichAsset &asset)
 {
     if (asset.isVideo()) {
@@ -851,8 +884,13 @@ void LibraryPage::enqueueUploads(const QStringList &paths)
     }
 
     m_uploadsTotal += uploadable.size();
-    m_status->setText(tr("Uploading %1 file(s)…").arg(m_client->pendingUploadCount() +
-                                                      uploadable.size()));
+    if (!m_client->isOnline()) {
+        m_status->setText(
+            tr("Queued %n file(s) for upload when online.", nullptr, uploadable.size()));
+    } else {
+        m_status->setText(tr("Uploading %1 file(s)…").arg(m_client->pendingUploadCount() +
+                                                          uploadable.size()));
+    }
     m_client->uploadAssets(uploadable);
 }
 
