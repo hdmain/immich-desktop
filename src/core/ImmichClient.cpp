@@ -165,7 +165,14 @@ bool ImmichClient::isOnline() const
 
 void ImmichClient::setupNetworkMonitoring()
 {
-    if (!QNetworkInformation::loadDefaultBackend())
+    // loadDefaultBackend() arrived in Qt 6.3; CI/Linux packages are often 6.2.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+    const bool loaded = QNetworkInformation::loadDefaultBackend();
+#else
+    const bool loaded =
+        QNetworkInformation::load(QNetworkInformation::Feature::Reachability);
+#endif
+    if (!loaded)
         return;
     if (auto *info = QNetworkInformation::instance()) {
         connect(info, &QNetworkInformation::reachabilityChanged, this,
