@@ -12,3 +12,7 @@
 *.AppImage
 *.deb
 *.msi
+
+.snapcraft-store-credentials.json
+*.snap
+
