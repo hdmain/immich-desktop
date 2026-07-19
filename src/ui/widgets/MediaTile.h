@@ -30,6 +30,8 @@ public:
 signals:
     void activated(const Aurora::ImmichAsset &asset);
     void downloadRequested(const Aurora::ImmichAsset &asset);
+    void trashRequested(const Aurora::ImmichAsset &asset);
+    void deleteRequested(const Aurora::ImmichAsset &asset);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

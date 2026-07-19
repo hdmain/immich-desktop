@@ -79,6 +79,8 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
 {
     ImmichConnectionSettings result;
     result.serverUrl = m_settings.value(QStringLiteral("immich/serverUrl")).toString();
+    result.localServerUrl =
+        m_settings.value(QStringLiteral("immich/localServerUrl")).toString();
     result.apiKey = m_settings.value(QStringLiteral("immich/apiKey")).toString();
     return result;
 }
@@ -86,6 +88,8 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
 void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connection)
 {
     m_settings.setValue(QStringLiteral("immich/serverUrl"), connection.serverUrl.trimmed());
+    m_settings.setValue(QStringLiteral("immich/localServerUrl"),
+                        connection.localServerUrl.trimmed());
     m_settings.setValue(QStringLiteral("immich/apiKey"), connection.apiKey.trimmed());
     m_settings.sync();
 }

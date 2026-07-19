@@ -15,7 +15,9 @@
 #include <QHideEvent>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QLocale>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -39,6 +41,7 @@ constexpr int kTargetRowHeight = 132;
 constexpr int kMaxRowHeight = 148;
 constexpr int kMinRowHeight = 96;
 constexpr int kAutoCheckIntervalMs = 30 * 1000;
+constexpr int kSearchDebounceMs = 350;
 
 QString mediaFileFilter()
 {
@@ -58,11 +61,13 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     , m_status(new QLabel(this))
     , m_emptyState(new QLabel(this))
     , m_dropOverlay(new QLabel(this))
+    , m_searchField(new QLineEdit(this))
     , m_uploadButton(new QPushButton(tr("Upload"), this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
     , m_layoutTimer(new QTimer(this))
     , m_visibilityTimer(new QTimer(this))
     , m_autoCheckTimer(new QTimer(this))
+    , m_searchDebounce(new QTimer(this))
 {
     m_layoutTimer->setSingleShot(true);
     m_layoutTimer->setInterval(40);
@@ -73,6 +78,9 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
             this, &LibraryPage::updateVisibleMedia);
     m_autoCheckTimer->setInterval(kAutoCheckIntervalMs);
     connect(m_autoCheckTimer, &QTimer::timeout, this, &LibraryPage::checkForNewPhotos);
+    m_searchDebounce->setSingleShot(true);
+    m_searchDebounce->setInterval(kSearchDebounceMs);
+    connect(m_searchDebounce, &QTimer::timeout, this, &LibraryPage::applySearch);
     setObjectName(QStringLiteral("libraryPage"));
     setAcceptDrops(true);
 
@@ -95,6 +103,12 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     headingColumn->addWidget(heading);
     headingColumn->addWidget(m_status);
     toolbarLayout->addLayout(headingColumn, 1);
+
+    m_searchField->setPlaceholderText(tr("Search photos and videos…"));
+    m_searchField->setClearButtonEnabled(true);
+    m_searchField->setMinimumWidth(220);
+    m_searchField->setMaximumWidth(360);
+    toolbarLayout->addWidget(m_searchField);
     toolbarLayout->addWidget(m_uploadButton);
     toolbarLayout->addWidget(m_refreshButton);
 
@@ -137,6 +151,13 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
 
     connect(m_uploadButton, &QPushButton::clicked, this, &LibraryPage::chooseFilesToUpload);
     connect(m_refreshButton, &QPushButton::clicked, this, &LibraryPage::refresh);
+    connect(m_searchField, &QLineEdit::textChanged, this, [this] {
+        m_searchDebounce->start();
+    });
+    connect(m_searchField, &QLineEdit::returnPressed, this, [this] {
+        m_searchDebounce->stop();
+        applySearch();
+    });
     connect(m_client, &ImmichClient::assetsLoaded, this, &LibraryPage::showAssets);
     connect(m_client, &ImmichClient::newestAssetsPolled,
             this, &LibraryPage::handleNewestAssetsPolled);
@@ -150,8 +171,12 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
             this, &LibraryPage::handleDownloadProgress);
     connect(m_client, &ImmichClient::assetDownloaded,
             this, &LibraryPage::handleAssetDownloaded);
+    connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
+    connect(m_client, &ImmichClient::activeEndpointChanged,
+            this, &LibraryPage::handleActiveEndpointChanged);
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
         m_uploadButton->setEnabled(configured);
+        m_searchField->setEnabled(configured);
         if (configured)
             refresh();
         else {
@@ -159,11 +184,14 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
             updateEmptyState();
         }
         updateAutoCheckTimer();
+        updateEndpointHint();
     });
 
     m_uploadButton->setEnabled(m_client->isConfigured());
+    m_searchField->setEnabled(m_client->isConfigured());
     updateEmptyState();
     updateAutoCheckTimer();
+    updateEndpointHint();
     QTimer::singleShot(0, this, [this] {
         if (m_client->isConfigured())
             refresh();
@@ -198,14 +226,25 @@ void LibraryPage::maybeLoadMore()
 
 void LibraryPage::checkForNewPhotos()
 {
-    if (!isVisible() || m_loading || m_autoRefreshPending || !m_client->isConfigured())
+    if (!isVisible() || m_loading || m_autoRefreshPending || !m_client->isConfigured() ||
+        !m_searchQuery.isEmpty())
         return;
     m_client->pollNewestAssets(24);
 }
 
+void LibraryPage::applySearch()
+{
+    const QString query = m_searchField->text().trimmed();
+    if (query == m_searchQuery)
+        return;
+    m_searchQuery = query;
+    updateAutoCheckTimer();
+    requestPage(1, false);
+}
+
 void LibraryPage::handleNewestAssetsPolled(const QList<ImmichAsset> &assets)
 {
-    if (m_loading || m_autoRefreshPending)
+    if (m_loading || m_autoRefreshPending || !m_searchQuery.isEmpty())
         return;
 
     int newCount = 0;
@@ -232,10 +271,15 @@ void LibraryPage::requestPage(int page, bool append)
     m_appendRequest = append;
     m_refreshButton->setEnabled(false);
     if (!m_autoRefreshPending) {
-        m_status->setText(append ? tr("Loading more media…")
-                                 : tr("Loading your library…"));
+        if (!m_searchQuery.isEmpty()) {
+            m_status->setText(append ? tr("Loading more results…")
+                                     : tr("Searching for “%1”…").arg(m_searchQuery));
+        } else {
+            m_status->setText(append ? tr("Loading more media…")
+                                     : tr("Loading your library…"));
+        }
     }
-    m_client->loadAssets(page);
+    m_client->loadAssets(page, 80, m_searchQuery);
 }
 
 LibraryPage::DaySection *LibraryPage::sectionForDate(const QDate &date)
@@ -271,8 +315,12 @@ QString LibraryPage::formatDayHeader(const QDate &date) const
     return locale.toString(date, QStringLiteral("dddd, MMMM d, yyyy"));
 }
 
-void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &nextPage)
+void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &nextPage,
+                             const QString &query)
 {
+    if (query != m_searchQuery)
+        return;
+
     if (!m_appendRequest)
         clearTimeline();
 
@@ -288,6 +336,8 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
         connect(tile, &MediaTile::downloadRequested, this, &LibraryPage::downloadAsset);
+        connect(tile, &MediaTile::trashRequested, this, &LibraryPage::trashAsset);
+        connect(tile, &MediaTile::deleteRequested, this, &LibraryPage::deleteAssetPermanently);
     }
 
     if (!m_appendRequest && !m_assets.isEmpty())
@@ -297,7 +347,13 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
     m_loading = false;
     m_autoRefreshPending = false;
     m_refreshButton->setEnabled(true);
-    m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
+    if (!m_searchQuery.isEmpty()) {
+        m_status->setText(tr("%n result(s) for “%1”", nullptr, m_assets.size())
+                              .arg(m_searchQuery));
+    } else {
+        m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
+        updateEndpointHint();
+    }
     scheduleLayout();
     updateEmptyState();
     updateAutoCheckTimer();
@@ -538,22 +594,53 @@ void LibraryPage::updateEmptyState()
     m_scrollArea->setVisible(!empty);
     if (!empty)
         return;
+    if (!m_client->isConfigured()) {
+        m_emptyState->setText(
+            tr("Connect to your Immich server in Settings → Immich Server\n"
+               "to browse photos and videos."));
+        return;
+    }
+    if (!m_searchQuery.isEmpty()) {
+        m_emptyState->setText(
+            tr("No results for “%1”.\nTry a different search.").arg(m_searchQuery));
+        return;
+    }
     m_emptyState->setText(
-        m_client->isConfigured()
-            ? tr("No photos or videos yet.\n"
-                 "Drop files here or use Upload to add media.")
-            : tr("Connect to your Immich server in Settings → Immich Server\n"
-                 "to browse photos and videos."));
+        tr("No photos or videos yet.\n"
+           "Drop files here or use Upload to add media."));
 }
 
 void LibraryPage::updateAutoCheckTimer()
 {
-    if (m_client->isConfigured() && isVisible()) {
+    if (m_client->isConfigured() && isVisible() && m_searchQuery.isEmpty()) {
         if (!m_autoCheckTimer->isActive())
             m_autoCheckTimer->start();
     } else {
         m_autoCheckTimer->stop();
     }
+}
+
+void LibraryPage::updateEndpointHint()
+{
+    if (!m_client->isConfigured() || m_loading || !m_searchQuery.isEmpty())
+        return;
+    if (!m_client->connection().hasLocalServerUrl())
+        return;
+    if (m_assets.isEmpty())
+        return;
+
+    const QString count = tr("%n item(s)", nullptr, m_assets.size());
+    m_status->setText(
+        m_client->usingLocalEndpoint()
+            ? tr("%1 · local").arg(count)
+            : tr("%1 · remote").arg(count));
+}
+
+void LibraryPage::handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl)
+{
+    Q_UNUSED(usingLocal);
+    Q_UNUSED(activeUrl);
+    updateEndpointHint();
 }
 
 void LibraryPage::openAsset(const ImmichAsset &asset)
@@ -562,6 +649,14 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
         auto *player = new VideoPlayerDialog(m_client, asset, this);
         connect(player, &VideoPlayerDialog::downloadRequested, this,
                 &LibraryPage::downloadAsset);
+        connect(player, &VideoPlayerDialog::trashRequested, this, &LibraryPage::trashAsset);
+        connect(player, &VideoPlayerDialog::deleteRequested, this,
+                &LibraryPage::deleteAssetPermanently);
+        connect(m_client, &ImmichClient::assetsDeleted, player,
+                [player, id = asset.id](const QStringList &ids, bool) {
+                    if (ids.contains(id))
+                        player->close();
+                });
         player->show();
         return;
     }
@@ -580,11 +675,25 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
 
     auto *buttons = new QDialogButtonBox(dialog);
     auto *downloadButton = buttons->addButton(tr("Download"), QDialogButtonBox::ActionRole);
+    auto *trashButton = buttons->addButton(tr("Move to trash"), QDialogButtonBox::ActionRole);
+    auto *deleteButton =
+        buttons->addButton(tr("Delete permanently"), QDialogButtonBox::DestructiveRole);
     buttons->addButton(QDialogButtonBox::Close);
     connect(downloadButton, &QPushButton::clicked, this, [this, asset] {
         downloadAsset(asset);
     });
+    connect(trashButton, &QPushButton::clicked, this, [this, asset] {
+        trashAsset(asset);
+    });
+    connect(deleteButton, &QPushButton::clicked, this, [this, asset] {
+        deleteAssetPermanently(asset);
+    });
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(m_client, &ImmichClient::assetsDeleted, dialog,
+            [dialog, id = asset.id](const QStringList &ids, bool) {
+                if (ids.contains(id))
+                    dialog->close();
+            });
     layout->addWidget(buttons);
 
     connect(m_client, &ImmichClient::previewLoaded, dialog,
@@ -621,6 +730,97 @@ void LibraryPage::downloadAsset(const ImmichAsset &asset)
 
     m_status->setText(tr("Downloading %1…").arg(suggestedName));
     m_client->downloadAsset(asset.id, path, suggestedName);
+}
+
+void LibraryPage::trashAsset(const ImmichAsset &asset)
+{
+    confirmAndDelete(asset, false);
+}
+
+void LibraryPage::deleteAssetPermanently(const ImmichAsset &asset)
+{
+    confirmAndDelete(asset, true);
+}
+
+void LibraryPage::confirmAndDelete(const ImmichAsset &asset, bool permanent)
+{
+    if (!m_client->isConfigured() || asset.id.isEmpty())
+        return;
+
+    const QString name =
+        asset.fileName.isEmpty() ? tr("this item") : QStringLiteral("“%1”").arg(asset.fileName);
+    const QString title = permanent ? tr("Delete permanently") : tr("Move to trash");
+    const QString text =
+        permanent ? tr("Permanently delete %1? This cannot be undone.").arg(name)
+                  : tr("Move %1 to trash? You can restore it later from Immich.").arg(name);
+
+    QMessageBox box(this);
+    box.setIcon(permanent ? QMessageBox::Warning : QMessageBox::Question);
+    box.setWindowTitle(title);
+    box.setText(text);
+    auto *confirm = box.addButton(permanent ? tr("Delete permanently") : tr("Move to trash"),
+                                  QMessageBox::DestructiveRole);
+    box.addButton(QMessageBox::Cancel);
+    box.exec();
+    if (box.clickedButton() != confirm)
+        return;
+
+    m_status->setText(permanent ? tr("Deleting…") : tr("Moving to trash…"));
+    m_client->deleteAssets({asset.id}, permanent);
+}
+
+void LibraryPage::handleAssetsDeleted(const QStringList &assetIds, bool permanent)
+{
+    removeAssetsFromTimeline(assetIds);
+    m_status->setText(permanent ? tr("Deleted %n item(s).", nullptr, assetIds.size())
+                                : tr("Moved %n item(s) to trash.", nullptr, assetIds.size()));
+    updateEndpointHint();
+}
+
+void LibraryPage::removeAssetsFromTimeline(const QStringList &assetIds)
+{
+    if (assetIds.isEmpty())
+        return;
+
+    const QSet<QString> ids(assetIds.begin(), assetIds.end());
+    for (auto it = m_assets.begin(); it != m_assets.end();) {
+        if (ids.contains(it->id))
+            it = m_assets.erase(it);
+        else
+            ++it;
+    }
+
+    for (const QString &id : ids) {
+        m_requestedThumbnails.remove(id);
+        if (MediaTile *tile = m_tilesById.take(id))
+            tile->deleteLater();
+    }
+
+    for (auto sectionIt = m_sections.begin(); sectionIt != m_sections.end();) {
+        DaySection &section = *sectionIt;
+        QList<MediaTile *> remaining;
+        remaining.reserve(section.tiles.size());
+        for (MediaTile *tile : section.tiles) {
+            if (tile && m_tilesById.contains(tile->asset().id))
+                remaining.append(tile);
+        }
+        section.tiles = remaining;
+        if (section.tiles.isEmpty()) {
+            if (section.header)
+                section.header->deleteLater();
+            sectionIt = m_sections.erase(sectionIt);
+        } else {
+            ++sectionIt;
+        }
+    }
+
+    if (!m_assets.isEmpty())
+        m_newestAssetId = m_assets.first().id;
+    else
+        m_newestAssetId.clear();
+
+    scheduleLayout();
+    updateEmptyState();
 }
 
 void LibraryPage::chooseFilesToUpload()

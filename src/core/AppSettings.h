@@ -21,12 +21,15 @@ struct UpdateSettings {
 
 struct ImmichConnectionSettings {
     QString serverUrl;
+    QString localServerUrl;
     QString apiKey;
 
     bool isConfigured() const
     {
         return !serverUrl.trimmed().isEmpty() && !apiKey.trimmed().isEmpty();
     }
+
+    bool hasLocalServerUrl() const { return !localServerUrl.trimmed().isEmpty(); }
 };
 
 class AppSettings final {

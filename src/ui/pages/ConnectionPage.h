@@ -19,10 +19,12 @@ public:
 private slots:
     void saveAndTest();
     void showConnectionResult(bool success, const QString &message);
+    void showActiveEndpoint(bool usingLocal, const QString &activeUrl);
 
 private:
     ImmichClient *m_client;
     QLineEdit *m_serverUrl;
+    QLineEdit *m_localServerUrl;
     QLineEdit *m_apiKey;
     QLabel *m_status;
     QPushButton *m_saveButton;

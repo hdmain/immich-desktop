@@ -17,6 +17,7 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
     , m_serverUrl(new QLineEdit(this))
+    , m_localServerUrl(new QLineEdit(this))
     , m_apiKey(new QLineEdit(this))
     , m_status(new QLabel(this))
     , m_saveButton(new QPushButton(tr("Save & test connection"), this))
@@ -35,7 +36,9 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     title->setProperty("section", true);
     auto *description = new QLabel(
         tr("Connect this desktop client to your Immich instance. The API key needs "
-           "user.read, asset.read, and asset.view permissions."),
+           "user.read, asset.read, asset.view, asset.upload, asset.download, and "
+           "asset.delete permissions. An optional local URL is preferred automatically "
+           "when reachable."),
         card);
     description->setProperty("subheading", true);
     description->setWordWrap(true);
@@ -44,6 +47,10 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     m_serverUrl->setText(current.serverUrl);
     m_serverUrl->setPlaceholderText(QStringLiteral("https://photos.example.com"));
     m_serverUrl->setClearButtonEnabled(true);
+    m_localServerUrl->setText(current.localServerUrl);
+    m_localServerUrl->setPlaceholderText(
+        tr("Optional — e.g. http://192.168.1.10:2283"));
+    m_localServerUrl->setClearButtonEnabled(true);
     m_apiKey->setText(current.apiKey);
     m_apiKey->setPlaceholderText(tr("Paste an Immich API key"));
     m_apiKey->setEchoMode(QLineEdit::Password);
@@ -54,11 +61,13 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     form->setHorizontalSpacing(18);
     form->setVerticalSpacing(12);
     form->addRow(tr("Immich URL"), m_serverUrl);
+    form->addRow(tr("Local URL"), m_localServerUrl);
     form->addRow(tr("API Key"), m_apiKey);
 
     auto *privacy = new QLabel(
         tr("The API key is stored locally in this app's settings and is never sent "
-           "anywhere except your configured Immich server."),
+           "anywhere except your configured Immich server. When a local URL is set, "
+           "the app probes it every few seconds and uses it while available."),
         card);
     privacy->setProperty("subheading", true);
     privacy->setWordWrap(true);
@@ -66,10 +75,11 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     m_saveButton->setProperty("primary", true);
     m_status->setProperty("subheading", true);
     m_status->setWordWrap(true);
-    if (current.isConfigured())
-        m_status->setText(tr("Connection details are saved. Test them to verify access."));
-    else
+    if (current.isConfigured()) {
+        showActiveEndpoint(m_client->usingLocalEndpoint(), m_client->activeServerUrl());
+    } else {
         m_status->setText(tr("Enter your server details to load the media library."));
+    }
 
     auto *actions = new QHBoxLayout;
     actions->addWidget(m_status, 1);
@@ -85,9 +95,12 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
 
     connect(m_saveButton, &QPushButton::clicked, this, &ConnectionPage::saveAndTest);
     connect(m_serverUrl, &QLineEdit::returnPressed, this, &ConnectionPage::saveAndTest);
+    connect(m_localServerUrl, &QLineEdit::returnPressed, this, &ConnectionPage::saveAndTest);
     connect(m_apiKey, &QLineEdit::returnPressed, this, &ConnectionPage::saveAndTest);
     connect(m_client, &ImmichClient::connectionTested,
             this, &ConnectionPage::showConnectionResult);
+    connect(m_client, &ImmichClient::activeEndpointChanged,
+            this, &ConnectionPage::showActiveEndpoint);
 }
 
 void ConnectionPage::saveAndTest()
@@ -102,8 +115,24 @@ void ConnectionPage::saveAndTest()
         return;
     }
 
-    m_serverUrl->setText(url.toString(QUrl::RemoveQuery | QUrl::RemoveFragment));
-    m_client->setConnection({m_serverUrl->text(), m_apiKey->text()});
+    ImmichConnectionSettings settings;
+    settings.serverUrl = url.toString(QUrl::RemoveQuery | QUrl::RemoveFragment);
+    settings.apiKey = m_apiKey->text();
+
+    const QString localText = m_localServerUrl->text().trimmed();
+    if (!localText.isEmpty()) {
+        QUrl localUrl = QUrl::fromUserInput(localText);
+        if (!localUrl.isValid() || localUrl.host().isEmpty()) {
+            m_status->setText(tr("Local URL is invalid. Leave it blank or enter a valid host."));
+            return;
+        }
+        settings.localServerUrl =
+            localUrl.toString(QUrl::RemoveQuery | QUrl::RemoveFragment);
+        m_localServerUrl->setText(settings.localServerUrl);
+    }
+
+    m_serverUrl->setText(settings.serverUrl);
+    m_client->setConnection(settings);
     m_saveButton->setEnabled(false);
     m_status->setText(tr("Testing connection…"));
     m_client->testConnection();
@@ -113,6 +142,17 @@ void ConnectionPage::showConnectionResult(bool success, const QString &message)
 {
     m_saveButton->setEnabled(true);
     m_status->setText(success ? tr("✓ %1").arg(message) : tr("Could not connect: %1").arg(message));
+}
+
+void ConnectionPage::showActiveEndpoint(bool usingLocal, const QString &activeUrl)
+{
+    if (!m_client->isConfigured() || activeUrl.isEmpty())
+        return;
+    if (m_saveButton->isEnabled() == false)
+        return;
+    m_status->setText(usingLocal
+                          ? tr("Using local endpoint: %1").arg(activeUrl)
+                          : tr("Using remote endpoint: %1").arg(activeUrl));
 }
 
 } // namespace Aurora

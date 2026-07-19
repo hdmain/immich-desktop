@@ -14,6 +14,7 @@ class QDropEvent;
 class QEvent;
 class QHideEvent;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QResizeEvent;
 class QScrollArea;
@@ -44,19 +45,25 @@ private slots:
     void loadMore();
     void maybeLoadMore();
     void checkForNewPhotos();
+    void applySearch();
     void chooseFilesToUpload();
     void handleNewestAssetsPolled(const QList<Aurora::ImmichAsset> &assets);
-    void showAssets(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage);
+    void showAssets(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage,
+                    const QString &query);
     void showThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showThumbnailError(const QString &assetId, const QString &resultSize,
                             const QString &message);
     void showRequestError(const QString &operation, const QString &message);
     void openAsset(const Aurora::ImmichAsset &asset);
     void downloadAsset(const Aurora::ImmichAsset &asset);
+    void trashAsset(const Aurora::ImmichAsset &asset);
+    void deleteAssetPermanently(const Aurora::ImmichAsset &asset);
+    void handleAssetsDeleted(const QStringList &assetIds, bool permanent);
     void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
     void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
     void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
+    void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
 
 private:
     struct DaySection {
@@ -74,8 +81,11 @@ private:
     bool isTileNearViewport(const MediaTile *tile) const;
     void updateEmptyState();
     void updateAutoCheckTimer();
+    void updateEndpointHint();
     void setDropHighlight(bool active);
     void enqueueUploads(const QStringList &paths);
+    void confirmAndDelete(const Aurora::ImmichAsset &asset, bool permanent);
+    void removeAssetsFromTimeline(const QStringList &assetIds);
     QStringList uploadableLocalPaths(const QList<QUrl> &urls) const;
     bool isUploadableFile(const QString &path) const;
     bool handleDragEvent(QEvent *event);
@@ -88,17 +98,20 @@ private:
     QLabel *m_status;
     QLabel *m_emptyState;
     QLabel *m_dropOverlay;
+    QLineEdit *m_searchField;
     QPushButton *m_uploadButton;
     QPushButton *m_refreshButton;
     QTimer *m_layoutTimer;
     QTimer *m_visibilityTimer;
     QTimer *m_autoCheckTimer;
+    QTimer *m_searchDebounce;
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
     QString m_nextPage;
     QString m_newestAssetId;
+    QString m_searchQuery;
     int m_uploadsCompleted = 0;
     int m_uploadsFailed = 0;
     int m_uploadsTotal = 0;

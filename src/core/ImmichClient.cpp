@@ -19,6 +19,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -42,14 +43,48 @@ qreal aspectRatioFromObject(const QJsonObject &object)
 ImmichClient::ImmichClient(QObject *parent)
     : QObject(parent)
     , m_connection(m_store.loadImmichConnection())
+    , m_activeServerUrl(normalizeServerUrl(m_connection.serverUrl))
     , m_network(new QNetworkAccessManager(this))
+    , m_endpointProbeTimer(new QTimer(this))
 {
     m_imagePool.setMaxThreadCount(8);
+    m_endpointProbeTimer->setInterval(12 * 1000);
+    connect(m_endpointProbeTimer, &QTimer::timeout, this, &ImmichClient::probeEndpoints);
+    if (isConfigured()) {
+        m_endpointProbeTimer->start();
+        QTimer::singleShot(0, this, &ImmichClient::probeEndpoints);
+    }
 }
 
 ImmichClient::~ImmichClient()
 {
     m_imagePool.waitForDone();
+}
+
+QString ImmichClient::normalizeServerUrl(QString url)
+{
+    url = url.trimmed();
+    while (url.endsWith(u'/'))
+        url.chop(1);
+    return url;
+}
+
+QUrl ImmichClient::apiUrlForBase(const QString &serverUrl, const QString &path)
+{
+    QUrl url(serverUrl);
+    QString basePath = url.path();
+    while (basePath.endsWith(u'/'))
+        basePath.chop(1);
+    if (!basePath.endsWith(QStringLiteral("/api")))
+        basePath += QStringLiteral("/api");
+
+    QString endpoint = path;
+    if (!endpoint.startsWith(u'/'))
+        endpoint.prepend(u'/');
+    url.setPath(basePath + endpoint);
+    url.setQuery(QString());
+    url.setFragment({});
+    return url;
 }
 
 ImmichConnectionSettings ImmichClient::connection() const
@@ -62,25 +97,110 @@ bool ImmichClient::isConfigured() const
     return m_connection.isConfigured();
 }
 
+QString ImmichClient::activeServerUrl() const
+{
+    return m_activeServerUrl.isEmpty() ? m_connection.serverUrl : m_activeServerUrl;
+}
+
+bool ImmichClient::usingLocalEndpoint() const
+{
+    return m_usingLocalEndpoint;
+}
+
 void ImmichClient::setConnection(const ImmichConnectionSettings &connection, bool persist)
 {
     ImmichConnectionSettings normalized = connection;
-    normalized.serverUrl = normalized.serverUrl.trimmed();
+    normalized.serverUrl = normalizeServerUrl(normalized.serverUrl);
+    normalized.localServerUrl = normalizeServerUrl(normalized.localServerUrl);
     normalized.apiKey = normalized.apiKey.trimmed();
-    while (normalized.serverUrl.endsWith(u'/'))
-        normalized.serverUrl.chop(1);
 
     const bool changed = normalized.serverUrl != m_connection.serverUrl ||
+                         normalized.localServerUrl != m_connection.localServerUrl ||
                          normalized.apiKey != m_connection.apiKey;
     m_connection = normalized;
     if (persist)
         m_store.saveImmichConnection(m_connection);
+
+    setActiveServerUrl(m_connection.serverUrl, false);
+
+    if (isConfigured()) {
+        if (!m_endpointProbeTimer->isActive())
+            m_endpointProbeTimer->start();
+        probeEndpoints();
+    } else {
+        m_endpointProbeTimer->stop();
+    }
+
     if (changed) {
         m_thumbnailCache.clearMemory();
         if (m_streamServer)
             ensureStreamServer();
         emit configurationChanged(isConfigured());
     }
+}
+
+void ImmichClient::setActiveServerUrl(const QString &url, bool usingLocal)
+{
+    const QString normalized = normalizeServerUrl(url);
+    if (normalized.isEmpty())
+        return;
+
+    const bool changed =
+        normalized != m_activeServerUrl || usingLocal != m_usingLocalEndpoint;
+    m_activeServerUrl = normalized;
+    m_usingLocalEndpoint = usingLocal && m_connection.hasLocalServerUrl() &&
+                           normalized == m_connection.localServerUrl;
+    if (!changed)
+        return;
+
+    if (m_streamServer)
+        ensureStreamServer();
+    emit activeEndpointChanged(m_usingLocalEndpoint, m_activeServerUrl);
+}
+
+void ImmichClient::probeEndpoints()
+{
+    if (!isConfigured() || m_endpointProbeInFlight)
+        return;
+
+    if (!m_connection.hasLocalServerUrl()) {
+        setActiveServerUrl(m_connection.serverUrl, false);
+        if (m_connectionTestPending)
+            finishConnectionTest();
+        return;
+    }
+
+    m_endpointProbeInFlight = true;
+    QNetworkRequest request(apiUrlForBase(m_connection.localServerUrl,
+                                          QStringLiteral("/server/ping")));
+    request.setRawHeader("Accept", "application/json");
+    request.setTransferTimeout(1500);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        m_endpointProbeInFlight = false;
+        const QByteArray body = reply->readAll();
+        const bool reachable = reply->error() == QNetworkReply::NoError;
+        bool pong = false;
+        if (reachable) {
+            const QJsonObject object = QJsonDocument::fromJson(body).object();
+            const QString res = object.value(QStringLiteral("res")).toString();
+            pong = res.compare(QStringLiteral("pong"), Qt::CaseInsensitive) == 0 ||
+                   body.contains("pong");
+        }
+
+        if (reachable && pong)
+            setActiveServerUrl(m_connection.localServerUrl, true);
+        else
+            setActiveServerUrl(m_connection.serverUrl, false);
+
+        reply->deleteLater();
+
+        if (m_connectionTestPending)
+            finishConnectionTest();
+    });
 }
 
 void ImmichClient::ensureStreamServer()
@@ -93,7 +213,7 @@ void ImmichClient::ensureStreamServer()
         return;
     }
 
-    QUrl apiBase(m_connection.serverUrl);
+    QUrl apiBase(activeServerUrl());
     QString basePath = apiBase.path();
     while (basePath.endsWith(u'/'))
         basePath.chop(1);
@@ -117,20 +237,7 @@ QUrl ImmichClient::videoStreamUrl(const QString &assetId)
 
 QUrl ImmichClient::apiUrl(const QString &path) const
 {
-    QUrl url(m_connection.serverUrl);
-    QString basePath = url.path();
-    while (basePath.endsWith(u'/'))
-        basePath.chop(1);
-    if (!basePath.endsWith(QStringLiteral("/api")))
-        basePath += QStringLiteral("/api");
-
-    QString endpoint = path;
-    if (!endpoint.startsWith(u'/'))
-        endpoint.prepend(u'/');
-    url.setPath(basePath + endpoint);
-    url.setQuery(QString());
-    url.setFragment({});
-    return url;
+    return apiUrlForBase(activeServerUrl(), path);
 }
 
 QNetworkRequest ImmichClient::authenticatedRequest(const QUrl &url) const
@@ -178,6 +285,18 @@ void ImmichClient::testConnection()
         return;
     }
 
+    m_connectionTestPending = true;
+    if (m_endpointProbeInFlight)
+        return;
+    probeEndpoints();
+}
+
+void ImmichClient::finishConnectionTest()
+{
+    if (!m_connectionTestPending)
+        return;
+    m_connectionTestPending = false;
+
     auto *reply = m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/users/me"))));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         const QByteArray body = reply->readAll();
@@ -187,18 +306,20 @@ void ImmichClient::testConnection()
             const QJsonObject user = QJsonDocument::fromJson(body).object();
             const QString identity = user.value(QStringLiteral("name")).toString(
                 user.value(QStringLiteral("email")).toString());
+            const QString via =
+                m_usingLocalEndpoint ? tr("local endpoint") : tr("remote endpoint");
             emit connectionTested(
                 true, identity.isEmpty()
-                          ? tr("Connected to Immich.")
-                          : tr("Connected as %1.").arg(identity));
+                          ? tr("Connected via %1.").arg(via)
+                          : tr("Connected as %1 via %2.").arg(identity, via));
         }
         reply->deleteLater();
     });
 }
 
-void ImmichClient::loadAssets(int page, int pageSize)
+void ImmichClient::loadAssets(int page, int pageSize, const QString &query)
 {
-    searchAssets(page, pageSize, false);
+    searchAssets(page, pageSize, false, query);
 }
 
 void ImmichClient::pollNewestAssets(int pageSize)
@@ -209,33 +330,47 @@ void ImmichClient::pollNewestAssets(int pageSize)
     searchAssets(1, pageSize, true);
 }
 
-void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly)
+void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QString &query)
 {
-    if (!ensureConfigured(pollOnly ? tr("Check for new photos") : tr("Load library"))) {
+    if (!ensureConfigured(pollOnly ? tr("Check for new photos")
+                                   : (query.trimmed().isEmpty() ? tr("Load library")
+                                                                : tr("Search")))) {
         if (pollOnly)
             m_pollInFlight = false;
         return;
     }
 
+    const QString trimmedQuery = query.trimmed();
+    const bool smartSearch = !pollOnly && !trimmedQuery.isEmpty();
+
     QJsonObject body;
     body.insert(QStringLiteral("page"), qMax(1, page));
     body.insert(QStringLiteral("size"), qBound(1, pageSize, 250));
-    body.insert(QStringLiteral("order"), QStringLiteral("desc"));
     body.insert(QStringLiteral("withExif"), true);
-    body.insert(QStringLiteral("withStacked"), true);
+    if (smartSearch) {
+        body.insert(QStringLiteral("query"), trimmedQuery);
+    } else {
+        body.insert(QStringLiteral("order"), QStringLiteral("desc"));
+        body.insert(QStringLiteral("withStacked"), true);
+    }
 
-    QNetworkRequest searchRequest = authenticatedRequest(apiUrl(QStringLiteral("/search/metadata")));
+    const QString endpoint = smartSearch ? QStringLiteral("/search/smart")
+                                         : QStringLiteral("/search/metadata");
+    QNetworkRequest searchRequest = authenticatedRequest(apiUrl(endpoint));
     searchRequest.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     searchRequest.setRawHeader("Accept", "application/json");
     auto *reply = m_network->post(searchRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [this, reply, pollOnly] {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, pollOnly, smartSearch, trimmedQuery] {
         const QByteArray body = reply->readAll();
         if (pollOnly)
             m_pollInFlight = false;
 
         if (reply->error() != QNetworkReply::NoError) {
-            if (!pollOnly)
-                emit requestFailed(tr("Load library"), errorMessage(reply, body));
+            if (!pollOnly) {
+                emit requestFailed(smartSearch ? tr("Search") : tr("Load library"),
+                                   errorMessage(reply, body));
+            }
             reply->deleteLater();
             return;
         }
@@ -265,7 +400,8 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly)
             emit newestAssetsPolled(assets);
         else
             emit assetsLoaded(
-                assets, assetsObject.value(QStringLiteral("nextPage")).toVariant().toString());
+                assets, assetsObject.value(QStringLiteral("nextPage")).toVariant().toString(),
+                trimmedQuery);
         reply->deleteLater();
     });
 }
@@ -495,6 +631,45 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
             });
 }
 
+void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
+{
+    if (!ensureConfigured(tr("Delete")))
+        return;
+
+    QStringList ids;
+    ids.reserve(assetIds.size());
+    for (const QString &id : assetIds) {
+        if (!id.trimmed().isEmpty())
+            ids.append(id.trimmed());
+    }
+    if (ids.isEmpty())
+        return;
+
+    QJsonObject body;
+    QJsonArray idArray;
+    for (const QString &id : ids)
+        idArray.append(id);
+    body.insert(QStringLiteral("ids"), idArray);
+    body.insert(QStringLiteral("force"), permanent);
+
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/assets")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+
+    auto *reply = m_network->sendCustomRequest(
+        request, QByteArrayLiteral("DELETE"),
+        QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ids, permanent] {
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Delete"), errorMessage(reply, body));
+        } else {
+            emit assetsDeleted(ids, permanent);
+        }
+        reply->deleteLater();
+    });
+}
+
 void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultSize)
 {
     if (!ensureConfigured(tr("Load image")) || assetId.isEmpty())
@@ -506,9 +681,10 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
     m_pendingImages.insert(pendingKey);
 
     const ImmichConnectionSettings connection = m_connection;
+    const QString serverUrl = activeServerUrl();
     QPointer<ImmichClient> self(this);
 
-    m_imagePool.start([this, self, assetId, resultSize, pendingKey, connection] {
+    m_imagePool.start([this, self, assetId, resultSize, pendingKey, connection, serverUrl] {
         auto finishFail = [self, assetId, resultSize, pendingKey](const QString &message) {
             if (!self)
                 return;
@@ -577,7 +753,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         }
 
         auto fetchSize = [&](const QString &size, bool reportError) -> QByteArray {
-            QUrl url(connection.serverUrl);
+            QUrl url(serverUrl);
             QString basePath = url.path();
             while (basePath.endsWith(u'/'))
                 basePath.chop(1);

@@ -164,6 +164,9 @@ void MediaTile::contextMenuEvent(QContextMenuEvent *event)
     QMenu menu(this);
     menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
     menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
+    menu.addSeparator();
+    menu.addAction(tr("Move to trash"), this, [this] { emit trashRequested(m_asset); });
+    menu.addAction(tr("Delete permanently"), this, [this] { emit deleteRequested(m_asset); });
     menu.exec(event->globalPos());
 }
 

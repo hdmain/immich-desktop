@@ -22,6 +22,8 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     , m_video(new QVideoWidget(this))
     , m_playButton(new QPushButton(this))
     , m_downloadButton(new QPushButton(tr("Download"), this))
+    , m_trashButton(new QPushButton(tr("Trash"), this))
+    , m_deleteButton(new QPushButton(tr("Delete"), this))
     , m_positionSlider(new QSlider(Qt::Horizontal, this))
     , m_volumeSlider(new QSlider(Qt::Horizontal, this))
     , m_timeLabel(new QLabel(QStringLiteral("0:00 / 0:00"), this))
@@ -40,6 +42,8 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     m_playButton->setFixedSize(40, 36);
     m_playButton->setToolTip(tr("Play"));
     m_downloadButton->setToolTip(tr("Download original file"));
+    m_trashButton->setToolTip(tr("Move to trash"));
+    m_deleteButton->setToolTip(tr("Delete permanently"));
     m_positionSlider->setRange(0, 1000);
     m_positionSlider->setEnabled(false);
     m_volumeSlider->setRange(0, 100);
@@ -58,6 +62,8 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     controls->addWidget(volumeLabel);
     controls->addWidget(m_volumeSlider);
     controls->addWidget(m_downloadButton);
+    controls->addWidget(m_trashButton);
+    controls->addWidget(m_deleteButton);
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 10, 10, 10);
@@ -70,6 +76,12 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
             this, &VideoPlayerDialog::togglePlayback);
     connect(m_downloadButton, &QPushButton::clicked, this, [this] {
         emit downloadRequested(m_asset);
+    });
+    connect(m_trashButton, &QPushButton::clicked, this, [this] {
+        emit trashRequested(m_asset);
+    });
+    connect(m_deleteButton, &QPushButton::clicked, this, [this] {
+        emit deleteRequested(m_asset);
     });
     connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int value) {
         m_audio->setVolume(value / 100.0f);

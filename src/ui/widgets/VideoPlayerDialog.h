@@ -22,6 +22,8 @@ public:
 
 signals:
     void downloadRequested(const Aurora::ImmichAsset &asset);
+    void trashRequested(const Aurora::ImmichAsset &asset);
+    void deleteRequested(const Aurora::ImmichAsset &asset);
 
 private:
     void togglePlayback();
@@ -35,6 +37,8 @@ private:
     QVideoWidget *m_video;
     QPushButton *m_playButton;
     QPushButton *m_downloadButton;
+    QPushButton *m_trashButton;
+    QPushButton *m_deleteButton;
     QSlider *m_positionSlider;
     QSlider *m_volumeSlider;
     QLabel *m_timeLabel;
