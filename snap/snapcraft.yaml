@@ -72,12 +72,15 @@ parts:
       - libqt6opengl6t64
       - libqt6dbus6t64
       - libqt6svg6
-      - libqt6multimedia6t64
-      - libqt6multimediawidgets6t64
+      - libqt6multimedia6
+      - libqt6multimediawidgets6
       - qt6-qpa-plugins
       - qt6-gtk-platformtheme
       - qt6-image-formats-plugins
       - qt6-svg-plugins
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-libav
       - libpulse0
       - libavcodec60
       - libavformat60
