@@ -99,12 +99,15 @@ WindowSettings AppSettings::loadWindow() const
     WindowSettings result;
     result.closeToTray =
         m_settings.value(QStringLiteral("window/closeToTray"), true).toBool();
+    result.autoStart =
+        m_settings.value(QStringLiteral("window/autoStart"), false).toBool();
     return result;
 }
 
 void AppSettings::saveWindow(const WindowSettings &window)
 {
     m_settings.setValue(QStringLiteral("window/closeToTray"), window.closeToTray);
+    m_settings.setValue(QStringLiteral("window/autoStart"), window.autoStart);
     m_settings.sync();
 }
 

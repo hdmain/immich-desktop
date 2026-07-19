@@ -30,6 +30,7 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     , m_statusLabel(new QLabel(tr("Opening stream…"), this))
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setAttribute(Qt::WA_StyledBackground, true);
     setWindowTitle(asset.fileName.isEmpty() ? tr("Video") : asset.fileName);
     resize(1000, 700);
 

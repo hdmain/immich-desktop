@@ -53,7 +53,7 @@ void ColorButton::chooseColor()
 {
     const QColor color = QColorDialog::getColor(
         roleColor(), this, tr("Choose %1 color").arg(m_label),
-        QColorDialog::ShowAlphaChannel);
+        QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog);
     if (color.isValid())
         m_themeManager->setCustomColor(m_role, color);
 }

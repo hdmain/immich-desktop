@@ -696,6 +696,7 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
 
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setAttribute(Qt::WA_StyledBackground, true);
     dialog->setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
     dialog->resize(960, 700);
 
@@ -757,7 +758,7 @@ void LibraryPage::downloadAsset(const ImmichAsset &asset)
         QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     const QString path = QFileDialog::getSaveFileName(
         this, tr("Download media"), QStringLiteral("%1/%2").arg(downloads, suggestedName),
-        mediaFileFilter());
+        mediaFileFilter(), nullptr, QFileDialog::DontUseNativeDialog);
     if (path.isEmpty())
         return;
 
@@ -788,6 +789,7 @@ void LibraryPage::confirmAndDelete(const ImmichAsset &asset, bool permanent)
                   : tr("Move %1 to trash? You can restore it later from Immich.").arg(name);
 
     QMessageBox box(this);
+    box.setAttribute(Qt::WA_StyledBackground, true);
     box.setIcon(permanent ? QMessageBox::Warning : QMessageBox::Question);
     box.setWindowTitle(title);
     box.setText(text);
@@ -866,7 +868,7 @@ void LibraryPage::chooseFilesToUpload()
     const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Upload media"),
         QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
-        mediaFileFilter());
+        mediaFileFilter(), nullptr, QFileDialog::DontUseNativeDialog);
     enqueueUploads(paths);
 }
 

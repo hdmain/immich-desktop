@@ -1,6 +1,7 @@
 #include "ui/pages/AppearancePage.h"
 
 #include "core/AppSettings.h"
+#include "core/AutoStart.h"
 #include "core/ThemeManager.h"
 #include "ui/widgets/ColorButton.h"
 
@@ -9,6 +10,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -46,6 +48,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     , m_themeManager(themeManager)
     , m_themeCombo(new QComboBox(this))
     , m_closeToTray(new QCheckBox(tr("Close to system tray"), this))
+    , m_autoStart(new QCheckBox(tr("Start immich when I sign in"), this))
 {
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(4, 6, 4, 4);
@@ -106,14 +109,19 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     QVBoxLayout *desktopLayout = nullptr;
     auto *desktopCard = sectionCard(
         tr("Desktop"),
-        tr("Keep immich running in the background when you close the window."),
+        tr("Control how immich behaves on your desktop and at sign-in."),
         content, &desktopLayout);
     m_closeToTray->setCursor(Qt::PointingHandCursor);
+    m_autoStart->setCursor(Qt::PointingHandCursor);
     const bool trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
     m_closeToTray->setEnabled(trayAvailable);
     if (!trayAvailable)
         m_closeToTray->setToolTip(tr("System tray is not available on this desktop."));
+    m_autoStart->setEnabled(AutoStart::isSupported());
+    if (!AutoStart::isSupported())
+        m_autoStart->setToolTip(tr("Autostart is not supported on this platform."));
     desktopLayout->addWidget(m_closeToTray);
+    desktopLayout->addWidget(m_autoStart);
     contentRoot->addWidget(desktopCard);
 
     contentRoot->addStretch();
@@ -128,6 +136,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     connect(reset, &QPushButton::clicked,
             m_themeManager, &ThemeManager::resetCustomPalette);
     connect(m_closeToTray, &QCheckBox::toggled, this, &AppearancePage::saveCloseToTray);
+    connect(m_autoStart, &QCheckBox::toggled, this, &AppearancePage::saveAutoStart);
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { syncControls(); });
     syncControls();
@@ -140,14 +149,41 @@ void AppearancePage::saveCloseToTray(bool enabled)
     AppSettings().saveWindow(window);
 }
 
+void AppearancePage::saveAutoStart(bool enabled)
+{
+    if (!AutoStart::setEnabled(enabled)) {
+        QMessageBox box(this);
+        box.setAttribute(Qt::WA_StyledBackground, true);
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(tr("Autostart"));
+        box.setText(AutoStart::lastError().isEmpty()
+                        ? tr("Could not update autostart settings.")
+                        : AutoStart::lastError());
+        box.exec();
+        const QSignalBlocker blocker(m_autoStart);
+        m_autoStart->setChecked(AutoStart::isEnabled());
+        return;
+    }
+
+    WindowSettings window = AppSettings().loadWindow();
+    window.autoStart = enabled;
+    AppSettings().saveWindow(window);
+}
+
 void AppearancePage::syncControls()
 {
     const QSignalBlocker comboBlocker(m_themeCombo);
     const int index = m_themeCombo->findData(static_cast<int>(m_themeManager->preset()));
     m_themeCombo->setCurrentIndex(index);
 
+    const WindowSettings window = AppSettings().loadWindow();
     const QSignalBlocker trayBlocker(m_closeToTray);
-    m_closeToTray->setChecked(AppSettings().loadWindow().closeToTray);
+    m_closeToTray->setChecked(window.closeToTray);
+
+    const QSignalBlocker autoStartBlocker(m_autoStart);
+    // Prefer the live OS entry so the checkbox matches what will actually run.
+    m_autoStart->setChecked(AutoStart::isSupported() ? AutoStart::isEnabled()
+                                                     : window.autoStart);
 }
 
 } // namespace Aurora

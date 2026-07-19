@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -67,11 +68,19 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     root->addWidget(subheading);
     root->addSpacing(18);
 
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *content = new QWidget(scroll);
+    auto *contentRoot = new QVBoxLayout(content);
+    contentRoot->setContentsMargins(0, 0, 8, 0);
+    contentRoot->setSpacing(14);
+
     QVBoxLayout *statusLayout = nullptr;
     auto *statusCard = sectionCard(
         tr("Status"),
         tr("Current version: v%1").arg(QString::fromLatin1(Config::ApplicationVersion)),
-        this, &statusLayout);
+        content, &statusLayout);
     m_statusLabel->setProperty("section", true);
     m_detailLabel->setProperty("subheading", true);
     m_detailLabel->setWordWrap(true);
@@ -85,13 +94,13 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     statusLayout->addWidget(m_detailLabel);
     statusLayout->addWidget(m_packageLabel);
     statusLayout->addWidget(m_progress);
-    root->addWidget(statusCard);
+    contentRoot->addWidget(statusCard);
 
     QVBoxLayout *actionLayout = nullptr;
     auto *actionCard = sectionCard(
         tr("Actions"),
         tr("Updates are downloaded safely, then installed with the matching package type."),
-        this, &actionLayout);
+        content, &actionLayout);
     m_checkButton->setProperty("primary", true);
     m_checkButton->setCursor(Qt::PointingHandCursor);
     m_downloadButton->setCursor(Qt::PointingHandCursor);
@@ -109,18 +118,22 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     buttonRow->addStretch();
     actionLayout->addLayout(buttonRow);
     actionLayout->addWidget(m_autoCheck);
-    root->addWidget(actionCard);
+    contentRoot->addWidget(actionCard);
 
     QVBoxLayout *notesLayout = nullptr;
     auto *notesCard = sectionCard(
         tr("Release notes"),
         tr("Notes from the latest GitHub release appear here when an update is available."),
-        this, &notesLayout);
+        content, &notesLayout);
     m_notesView->setReadOnly(true);
-    m_notesView->setMinimumHeight(160);
+    m_notesView->setMinimumHeight(180);
     m_notesView->setPlaceholderText(tr("No release notes yet."));
     notesLayout->addWidget(m_notesView);
-    root->addWidget(notesCard, 1);
+    contentRoot->addWidget(notesCard);
+    contentRoot->addStretch();
+
+    scroll->setWidget(content);
+    root->addWidget(scroll, 1);
 
     connect(m_checkButton, &QPushButton::clicked, this, [this] {
         m_updateManager->checkForUpdates(false);

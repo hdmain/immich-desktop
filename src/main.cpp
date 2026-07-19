@@ -1,4 +1,6 @@
 #include "AppVersion.h"
+#include "core/AppSettings.h"
+#include "core/AutoStart.h"
 #include "core/ImmichClient.h"
 #include "core/SingleInstance.h"
 #include "core/ThemeManager.h"
@@ -10,6 +12,7 @@
 #include <QApplication>
 #include <QFont>
 #include <QStyleFactory>
+#include <QSystemTrayIcon>
 
 int main(int argc, char *argv[])
 {
@@ -25,6 +28,13 @@ int main(int argc, char *argv[])
     Aurora::SingleInstance singleInstance(QStringLiteral("immich-desktop"));
     if (singleInstance.activateExistingInstance())
         return 0;
+
+    const bool launchedFromAutoStart =
+        application.arguments().contains(QStringLiteral("--autostart"));
+
+    // Keep the OS autostart command pointed at the current executable after updates.
+    if (Aurora::AppSettings().loadWindow().autoStart && Aurora::AutoStart::isSupported())
+        Aurora::AutoStart::setEnabled(true);
 
     const QStringList fontFamilies = Aurora::loadApplicationFonts();
     QFont appFont(fontFamilies.contains(QStringLiteral("Inter"))
@@ -44,7 +54,14 @@ int main(int argc, char *argv[])
     Aurora::MainWindow window(&themeManager, &updateManager, &immichClient);
     QObject::connect(&singleInstance, &Aurora::SingleInstance::activationRequested, &window,
                      &Aurora::MainWindow::raiseToFront);
-    window.show();
+
+    const bool startHidden =
+        launchedFromAutoStart && Aurora::AppSettings().loadWindow().closeToTray &&
+        QSystemTrayIcon::isSystemTrayAvailable();
+    if (startHidden)
+        window.hide();
+    else
+        window.show();
 
     return application.exec();
 }

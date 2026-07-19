@@ -34,6 +34,7 @@ struct ImmichConnectionSettings {
 
 struct WindowSettings {
     bool closeToTray = true;
+    bool autoStart = false;
 };
 
 class AppSettings final {

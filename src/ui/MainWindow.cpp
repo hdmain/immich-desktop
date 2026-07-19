@@ -267,6 +267,7 @@ void MainWindow::notifyUpdateAvailable()
     }
 
     QMessageBox box(this);
+    box.setAttribute(Qt::WA_StyledBackground, true);
     box.setIcon(QMessageBox::Information);
     box.setWindowTitle(tr("Update available"));
     box.setText(tr("immich desktop v%1 is available.").arg(info.version));

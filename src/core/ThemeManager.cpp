@@ -76,7 +76,10 @@ QString ThemeManager::buildStyleSheet() const
             color: %1;
             outline: none;
         }
-        QMainWindow, QWidget#windowSurface { background: %2; }
+        QMainWindow, QWidget#windowSurface, QDialog, QMessageBox,
+        QFileDialog, QColorDialog, QErrorMessage {
+            background: %2;
+        }
         QWidget#sidebar, QWidget#titleBar, QFrame[card="true"] {
             background: %3;
             border: 1px solid %4;
@@ -121,14 +124,16 @@ QString ThemeManager::buildStyleSheet() const
         }
         QPushButton[windowControl="true"]:hover { background: %6; }
         QPushButton#closeButton:hover { background: #E5484D; color: white; }
-        QComboBox, QLineEdit {
+        QDialogButtonBox QPushButton { min-width: 88px; }
+        QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {
             background: %6;
             border: 1px solid %4;
             border-radius: 10px;
             padding: 9px 12px;
             min-width: 150px;
         }
-        QComboBox:hover, QComboBox:focus, QLineEdit:hover, QLineEdit:focus {
+        QComboBox:hover, QComboBox:focus, QLineEdit:hover, QLineEdit:focus,
+        QSpinBox:hover, QSpinBox:focus {
             border-color: %7;
         }
         QComboBox::drop-down { border: none; width: 28px; }
@@ -157,7 +162,7 @@ QString ThemeManager::buildStyleSheet() const
             background: %7;
             border-radius: 7px;
         }
-        QTextEdit {
+        QTextEdit, QPlainTextEdit {
             background: %6;
             border: 1px solid %4;
             border-radius: 12px;
@@ -175,9 +180,78 @@ QString ThemeManager::buildStyleSheet() const
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
             height: 0;
         }
+        QScrollBar:horizontal {
+            background: transparent; height: 10px; margin: 2px;
+        }
+        QScrollBar::handle:horizontal {
+            background: %6; border-radius: 4px; min-width: 28px;
+        }
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+            width: 0;
+        }
+        QMenu {
+            background: %3;
+            border: 1px solid %4;
+            border-radius: 10px;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 8px 18px;
+            border-radius: 6px;
+        }
+        QMenu::item:selected {
+            background: %7;
+            color: white;
+        }
+        QMenu::separator {
+            height: 1px;
+            background: %4;
+            margin: 4px 8px;
+        }
         QToolTip {
             background: %3; color: %1; border: 1px solid %4;
             border-radius: 6px; padding: 6px;
+        }
+        QSlider::groove:horizontal {
+            height: 6px;
+            background: %6;
+            border: 1px solid %4;
+            border-radius: 3px;
+        }
+        QSlider::handle:horizontal {
+            width: 16px;
+            height: 16px;
+            margin: -6px 0;
+            background: %7;
+            border-radius: 8px;
+        }
+        QSlider::sub-page:horizontal {
+            background: %7;
+            border-radius: 3px;
+        }
+        QAbstractItemView {
+            background: %6;
+            border: 1px solid %4;
+            border-radius: 8px;
+            selection-background-color: %7;
+            selection-color: white;
+            outline: none;
+        }
+        QHeaderView::section {
+            background: %3;
+            color: %1;
+            border: none;
+            border-right: 1px solid %4;
+            border-bottom: 1px solid %4;
+            padding: 8px 10px;
+            font-weight: 600;
+        }
+        QMessageBox QLabel {
+            color: %1;
+            background: transparent;
+        }
+        QColorDialog QWidget {
+            background: %2;
         }
     )")
         .arg(p.text.name(), p.background.name(), p.panel.name(), p.border.name(),

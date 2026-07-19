@@ -393,6 +393,7 @@ void ExplorePage::openAssetCollection(const QString &title, const QList<ImmichAs
 {
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setAttribute(Qt::WA_StyledBackground, true);
     dialog->setWindowTitle(title);
     dialog->resize(900, 640);
 
@@ -446,6 +447,7 @@ void ExplorePage::openAsset(const ImmichAsset &asset)
 
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setAttribute(Qt::WA_StyledBackground, true);
     dialog->setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
     dialog->resize(960, 700);
 

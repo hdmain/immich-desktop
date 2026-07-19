@@ -18,10 +18,12 @@ public:
 private:
     void syncControls();
     void saveCloseToTray(bool enabled);
+    void saveAutoStart(bool enabled);
 
     ThemeManager *m_themeManager;
     QComboBox *m_themeCombo;
     QCheckBox *m_closeToTray;
+    QCheckBox *m_autoStart;
 };
 
 } // namespace Aurora
