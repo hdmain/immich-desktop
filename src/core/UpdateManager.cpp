@@ -117,10 +117,15 @@ void UpdateManager::downloadUpdate()
         m_error.clear();
         m_downloadPath.clear();
         setState(UpdateState::ReadyToInstall);
+        if (m_installAfterDownload) {
+            m_installAfterDownload = false;
+            QTimer::singleShot(0, this, &UpdateManager::installUpdate);
+        }
         return;
     }
 
     if (!m_update.downloadUrl.isValid()) {
+        m_installAfterDownload = false;
         fail(tr("No downloadable update package was found for this platform."));
         return;
     }
@@ -151,6 +156,19 @@ void UpdateManager::downloadUpdate()
     m_activeReply = m_network->get(request);
     connect(m_activeReply, &QNetworkReply::downloadProgress, this, &UpdateManager::downloadProgress);
     connect(m_activeReply, &QNetworkReply::finished, this, &UpdateManager::handleDownloadFinished);
+}
+
+void UpdateManager::applyUpdate()
+{
+    if (m_state == UpdateState::ReadyToInstall) {
+        installUpdate();
+        return;
+    }
+    if (m_state != UpdateState::Available && m_state != UpdateState::Failed)
+        return;
+
+    m_installAfterDownload = true;
+    downloadUpdate();
 }
 
 void UpdateManager::installUpdate()
@@ -193,6 +211,7 @@ void UpdateManager::setState(UpdateState state)
 
 void UpdateManager::fail(const QString &message)
 {
+    m_installAfterDownload = false;
     m_error = message;
     setState(UpdateState::Failed);
     emit errorOccurred(message);
@@ -254,12 +273,14 @@ void UpdateManager::handleDownloadFinished()
     if (reply->error() != QNetworkReply::NoError) {
         if (reply->error() == QNetworkReply::OperationCanceledError)
             return;
+        m_installAfterDownload = false;
         fail(tr("Download failed: %1").arg(reply->errorString()));
         return;
     }
 
     QFile file(m_downloadPath);
     if (!file.open(QIODevice::WriteOnly)) {
+        m_installAfterDownload = false;
         fail(tr("Unable to write the downloaded package."));
         return;
     }
@@ -274,6 +295,10 @@ void UpdateManager::handleDownloadFinished()
 #endif
 
     setState(UpdateState::ReadyToInstall);
+    if (m_installAfterDownload) {
+        m_installAfterDownload = false;
+        QTimer::singleShot(0, this, &UpdateManager::installUpdate);
+    }
 }
 
 bool UpdateManager::parseReleasePayload(const QByteArray &payload, UpdateInfo *info,

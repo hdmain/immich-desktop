@@ -4,148 +4,73 @@
 #include "core/UpdateManager.h"
 
 #include <QCheckBox>
-#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QSignalBlocker>
-#include <QTextEdit>
 #include <QVBoxLayout>
 
 namespace Aurora {
-namespace {
-
-QFrame *sectionCard(const QString &title, const QString &description, QWidget *parent,
-                    QVBoxLayout **contentLayout)
-{
-    auto *card = new QFrame(parent);
-    card->setProperty("card", true);
-    auto *layout = new QVBoxLayout(card);
-    layout->setContentsMargins(20, 18, 20, 20);
-    layout->setSpacing(12);
-
-    auto *titleLabel = new QLabel(title, card);
-    titleLabel->setProperty("section", true);
-    auto *descriptionLabel = new QLabel(description, card);
-    descriptionLabel->setProperty("subheading", true);
-    descriptionLabel->setWordWrap(true);
-    layout->addWidget(titleLabel);
-    layout->addWidget(descriptionLabel);
-    layout->addSpacing(4);
-    *contentLayout = layout;
-    return card;
-}
-
-} // namespace
 
 UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     : QWidget(parent)
     , m_updateManager(updateManager)
+    , m_versionLabel(new QLabel(this))
     , m_statusLabel(new QLabel(this))
-    , m_detailLabel(new QLabel(this))
-    , m_packageLabel(new QLabel(this))
-    , m_notesView(new QTextEdit(this))
     , m_progress(new QProgressBar(this))
     , m_autoCheck(new QCheckBox(tr("Check for updates automatically"), this))
-    , m_checkButton(new QPushButton(tr("Check for updates"), this))
-    , m_downloadButton(new QPushButton(tr("Download update"), this))
-    , m_installButton(new QPushButton(tr("Install and restart"), this))
-    , m_skipButton(new QPushButton(tr("Skip this version"), this))
+    , m_refreshButton(new QPushButton(tr("Refresh"), this))
+    , m_updateButton(new QPushButton(tr("Update"), this))
 {
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(4, 6, 4, 4);
-    root->setSpacing(8);
+    root->setContentsMargins(24, 24, 24, 24);
+    root->setSpacing(16);
 
     auto *heading = new QLabel(tr("Updates"), this);
     heading->setProperty("heading", true);
-    auto *subheading = new QLabel(
-        tr("Detect new releases and install the package that matches this platform."),
-        this);
-    subheading->setProperty("subheading", true);
     root->addWidget(heading);
-    root->addWidget(subheading);
-    root->addSpacing(18);
 
-    auto *scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto *content = new QWidget(scroll);
-    auto *contentRoot = new QVBoxLayout(content);
-    contentRoot->setContentsMargins(0, 0, 8, 0);
-    contentRoot->setSpacing(14);
+    m_versionLabel->setProperty("subheading", true);
+    m_versionLabel->setText(
+        tr("Current version: v%1").arg(QString::fromLatin1(Config::ApplicationVersion)));
+    root->addWidget(m_versionLabel);
 
-    QVBoxLayout *statusLayout = nullptr;
-    auto *statusCard = sectionCard(
-        tr("Status"),
-        tr("Current version: v%1").arg(QString::fromLatin1(Config::ApplicationVersion)),
-        content, &statusLayout);
     m_statusLabel->setProperty("section", true);
-    m_detailLabel->setProperty("subheading", true);
-    m_detailLabel->setWordWrap(true);
-    m_packageLabel->setProperty("subheading", true);
-    m_packageLabel->setWordWrap(true);
+    m_statusLabel->setWordWrap(true);
+    root->addWidget(m_statusLabel);
+
     m_progress->setRange(0, 100);
     m_progress->setValue(0);
     m_progress->setTextVisible(true);
     m_progress->setVisible(false);
-    statusLayout->addWidget(m_statusLabel);
-    statusLayout->addWidget(m_detailLabel);
-    statusLayout->addWidget(m_packageLabel);
-    statusLayout->addWidget(m_progress);
-    contentRoot->addWidget(statusCard);
+    root->addWidget(m_progress);
 
-    QVBoxLayout *actionLayout = nullptr;
-    auto *actionCard = sectionCard(
-        tr("Actions"),
-        tr("Updates are downloaded safely, then installed with the matching package type."),
-        content, &actionLayout);
-    m_checkButton->setProperty("primary", true);
-    m_checkButton->setCursor(Qt::PointingHandCursor);
-    m_downloadButton->setCursor(Qt::PointingHandCursor);
-    m_installButton->setCursor(Qt::PointingHandCursor);
-    m_installButton->setProperty("primary", true);
-    m_skipButton->setCursor(Qt::PointingHandCursor);
+    auto *buttons = new QHBoxLayout;
+    buttons->setSpacing(10);
+    m_refreshButton->setCursor(Qt::PointingHandCursor);
+    m_updateButton->setCursor(Qt::PointingHandCursor);
+    m_updateButton->setProperty("primary", true);
+    buttons->addWidget(m_refreshButton);
+    buttons->addWidget(m_updateButton);
+    buttons->addStretch();
+    root->addLayout(buttons);
+
     m_autoCheck->setCursor(Qt::PointingHandCursor);
+    root->addWidget(m_autoCheck);
+    root->addStretch();
 
-    auto *buttonRow = new QHBoxLayout;
-    buttonRow->setSpacing(10);
-    buttonRow->addWidget(m_checkButton);
-    buttonRow->addWidget(m_downloadButton);
-    buttonRow->addWidget(m_installButton);
-    buttonRow->addWidget(m_skipButton);
-    buttonRow->addStretch();
-    actionLayout->addLayout(buttonRow);
-    actionLayout->addWidget(m_autoCheck);
-    contentRoot->addWidget(actionCard);
-
-    QVBoxLayout *notesLayout = nullptr;
-    auto *notesCard = sectionCard(
-        tr("Release notes"),
-        tr("Notes from the latest GitHub release appear here when an update is available."),
-        content, &notesLayout);
-    m_notesView->setReadOnly(true);
-    m_notesView->setMinimumHeight(180);
-    m_notesView->setPlaceholderText(tr("No release notes yet."));
-    notesLayout->addWidget(m_notesView);
-    contentRoot->addWidget(notesCard);
-    contentRoot->addStretch();
-
-    scroll->setWidget(content);
-    root->addWidget(scroll, 1);
-
-    connect(m_checkButton, &QPushButton::clicked, this, [this] {
+    connect(m_refreshButton, &QPushButton::clicked, this, [this] {
         m_updateManager->checkForUpdates(false);
     });
-    connect(m_downloadButton, &QPushButton::clicked, m_updateManager, &UpdateManager::downloadUpdate);
-    connect(m_installButton, &QPushButton::clicked, m_updateManager, &UpdateManager::installUpdate);
-    connect(m_skipButton, &QPushButton::clicked, m_updateManager, &UpdateManager::skipCurrentUpdate);
+    connect(m_updateButton, &QPushButton::clicked, m_updateManager, &UpdateManager::applyUpdate);
     connect(m_autoCheck, &QCheckBox::toggled, m_updateManager, &UpdateManager::setAutoCheckEnabled);
     connect(m_updateManager, &UpdateManager::stateChanged, this, [this](UpdateState) {
         refreshUi();
     });
-    connect(m_updateManager, &UpdateManager::updateAvailable, this, &UpdatesPage::onUpdateAvailable);
+    connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &) {
+        refreshUi();
+    });
     connect(m_updateManager, &UpdateManager::upToDate, this, [this] { refreshUi(); });
     connect(m_updateManager, &UpdateManager::errorOccurred, this, [this](const QString &) {
         refreshUi();
@@ -174,56 +99,37 @@ void UpdatesPage::refreshUi()
     const QSignalBlocker blocker(m_autoCheck);
     m_autoCheck->setChecked(m_updateManager->settings().autoCheck);
 
-    m_downloadButton->setEnabled(state == UpdateState::Available ||
-                                 state == UpdateState::ReadyToInstall ||
-                                 state == UpdateState::Failed);
-    m_installButton->setEnabled(state == UpdateState::ReadyToInstall);
-    m_skipButton->setEnabled(state == UpdateState::Available ||
-                             state == UpdateState::ReadyToInstall);
-    m_checkButton->setEnabled(state != UpdateState::Checking &&
-                              state != UpdateState::Downloading &&
-                              state != UpdateState::Installing);
+    const bool busy = state == UpdateState::Checking || state == UpdateState::Downloading ||
+                      state == UpdateState::Installing;
+    m_refreshButton->setEnabled(!busy);
+    m_updateButton->setEnabled(state == UpdateState::Available ||
+                               state == UpdateState::ReadyToInstall ||
+                               state == UpdateState::Failed);
 
     switch (state) {
     case UpdateState::Idle:
-        m_statusLabel->setText(tr("Ready"));
-        m_detailLabel->setText(tr("Check for updates whenever you want, or leave automatic checks on."));
-        m_packageLabel->clear();
+        m_statusLabel->setText(tr("Press Refresh to check for updates."));
         m_progress->setVisible(false);
         break;
     case UpdateState::Checking:
         m_statusLabel->setText(tr("Checking for updates…"));
-        m_detailLabel->setText(tr("Contacting GitHub Releases."));
-        m_packageLabel->clear();
         m_progress->setVisible(true);
         m_progress->setRange(0, 0);
         break;
     case UpdateState::UpToDate:
-        m_statusLabel->setText(tr("You're up to date"));
-        m_detailLabel->setText(
-            tr("immich desktop v%1 is the latest available release.")
-                .arg(QString::fromLatin1(Config::ApplicationVersion)));
-        m_packageLabel->clear();
-        m_notesView->clear();
+        m_statusLabel->setText(tr("You're up to date."));
         m_progress->setVisible(false);
         break;
     case UpdateState::Available:
         m_statusLabel->setText(tr("Update available: v%1").arg(info.version));
-        m_detailLabel->setText(tr("A newer release is ready to download."));
-        m_packageLabel->setText(packageLabel(info));
         m_progress->setVisible(false);
         break;
     case UpdateState::Downloading:
         m_statusLabel->setText(tr("Downloading v%1…").arg(info.version));
-        m_detailLabel->setText(tr("The installer is being downloaded in the background."));
-        m_packageLabel->setText(packageLabel(info));
         m_progress->setVisible(true);
         break;
     case UpdateState::ReadyToInstall:
-        m_statusLabel->setText(tr("Ready to install v%1").arg(info.version));
-        m_detailLabel->setText(
-            tr("The package is ready. Installation will close the app and restart it afterwards."));
-        m_packageLabel->setText(packageLabel(info));
+        m_statusLabel->setText(tr("Installing v%1…").arg(info.version));
         m_progress->setVisible(true);
         m_progress->setRange(0, 100);
         m_progress->setValue(100);
@@ -231,24 +137,14 @@ void UpdatesPage::refreshUi()
         break;
     case UpdateState::Installing:
         m_statusLabel->setText(tr("Installing update…"));
-        m_detailLabel->setText(tr("Launching the installer and restarting immich desktop."));
-        m_packageLabel->setText(packageLabel(info));
+        m_progress->setVisible(true);
+        m_progress->setRange(0, 0);
         break;
     case UpdateState::Failed:
-        m_statusLabel->setText(tr("Update failed"));
-        m_detailLabel->setText(m_updateManager->errorMessage());
-        m_packageLabel->setText(info.assetName.isEmpty() ? QString() : packageLabel(info));
+        m_statusLabel->setText(tr("Update failed: %1").arg(m_updateManager->errorMessage()));
         m_progress->setVisible(false);
         break;
     }
-}
-
-void UpdatesPage::onUpdateAvailable(const UpdateInfo &info)
-{
-    m_notesView->setPlainText(info.releaseNotes.isEmpty()
-                                  ? tr("No release notes were published for this version.")
-                                  : info.releaseNotes);
-    refreshUi();
 }
 
 QString UpdatesPage::formatBytes(qint64 bytes)
@@ -260,23 +156,6 @@ QString UpdatesPage::formatBytes(qint64 bytes)
     if (bytes >= static_cast<qint64>(kb))
         return QStringLiteral("%1 KB").arg(bytes / kb, 0, 'f', 0);
     return QStringLiteral("%1 B").arg(bytes);
-}
-
-QString UpdatesPage::packageLabel(const UpdateInfo &info)
-{
-    QString kind;
-    switch (info.installKind) {
-    case InstallKind::WindowsExe: kind = QStringLiteral("Windows installer (.exe)"); break;
-    case InstallKind::WindowsMsi: kind = QStringLiteral("Windows installer (.msi)"); break;
-    case InstallKind::LinuxDeb: kind = QStringLiteral("Debian package (.deb)"); break;
-    case InstallKind::LinuxAppImage: kind = QStringLiteral("Linux AppImage"); break;
-    case InstallKind::LinuxSnap: kind = QStringLiteral("Snap package"); break;
-    case InstallKind::Unknown: kind = QStringLiteral("Package"); break;
-    }
-    if (info.sizeBytes > 0)
-        return QStringLiteral("%1  ·  %2  ·  %3")
-            .arg(kind, info.assetName, formatBytes(info.sizeBytes));
-    return QStringLiteral("%1  ·  %2").arg(kind, info.assetName);
 }
 
 } // namespace Aurora

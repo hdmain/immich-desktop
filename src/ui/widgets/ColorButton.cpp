@@ -24,6 +24,7 @@ void ColorButton::paintEvent(QPaintEvent *)
     const auto &p = m_themeManager->palette();
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
     painter.setPen(QPen(p.border, 1));
     painter.setBrush(p.button);
     painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 11, 11);

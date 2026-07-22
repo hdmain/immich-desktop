@@ -71,8 +71,8 @@ QString ThemeManager::buildStyleSheet() const
 
     return QStringLiteral(R"(
         * {
-            font-family: "Inter", sans-serif;
-            font-size: 14px;
+            font-family: "Inter", "Segoe UI", sans-serif;
+            font-size: 10.5pt;
             color: %1;
             outline: none;
         }
@@ -97,14 +97,14 @@ QString ThemeManager::buildStyleSheet() const
         QWidget#libraryToolbar { background: transparent; }
         QLabel#timelineDayHeader {
             color: %1;
-            font-size: 15px;
+            font-size: 11.25pt;
             font-weight: 600;
             background: transparent;
             border: none;
         }
-        QLabel[heading="true"] { font-size: 26px; font-weight: 700; }
-        QLabel[subheading="true"] { color: %5; font-size: 13px; }
-        QLabel[section="true"] { font-size: 16px; font-weight: 600; }
+        QLabel[heading="true"] { font-size: 19.5pt; font-weight: 700; }
+        QLabel[subheading="true"] { color: %5; font-size: 9.75pt; }
+        QLabel[section="true"] { font-size: 12pt; font-weight: 600; }
         QPushButton {
             background: %6;
             border: 1px solid %4;
@@ -120,7 +120,7 @@ QString ThemeManager::buildStyleSheet() const
             border: none;
             border-radius: 8px;
             padding: 0;
-            font-size: 17px;
+            font-size: 12.75pt;
         }
         QPushButton[windowControl="true"]:hover { background: %6; }
         QPushButton#closeButton:hover { background: #E5484D; color: white; }

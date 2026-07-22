@@ -17,6 +17,10 @@
 
 int main(int argc, char *argv[])
 {
+    // Avoid rounded 100/125/150% steps that make fonts and icons look soft/pixelated.
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+
     QApplication application(argc, argv);
     application.setOrganizationName(QStringLiteral("Immich"));
     application.setOrganizationDomain(QStringLiteral("immich.app"));
@@ -44,10 +48,13 @@ int main(int argc, char *argv[])
     const QStringList fontFamilies = Aurora::loadApplicationFonts();
     QFont appFont(fontFamilies.contains(QStringLiteral("Inter"))
                       ? QStringLiteral("Inter")
-                      : (fontFamilies.isEmpty() ? QStringLiteral("Sans Serif")
+                      : (fontFamilies.isEmpty() ? QStringLiteral("Segoe UI")
                                                 : fontFamilies.first()));
-    appFont.setStyleHint(QFont::SansSerif);
-    appFont.setPointSize(10);
+    appFont.setStyleHint(QFont::SansSerif, QFont::PreferAntialias);
+    appFont.setHintingPreference(QFont::PreferNoHinting);
+    appFont.setStyleStrategy(static_cast<QFont::StyleStrategy>(
+        QFont::PreferAntialias | QFont::PreferQuality));
+    appFont.setPointSizeF(10.5);
     application.setFont(appFont);
 
     Aurora::ThemeManager themeManager;

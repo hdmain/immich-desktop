@@ -1185,7 +1185,7 @@ void LibraryPage::setDropHighlight(bool active)
         QStringLiteral("QLabel#libraryDropOverlay {"
                        "background: rgba(20, 20, 24, 180);"
                        "color: white;"
-                       "font-size: 18px;"
+                       "font-size: 13.5pt;"
                        "font-weight: 600;"
                        "border: 2px dashed rgba(166, 133, 226, 220);"
                        "margin: 12px;"

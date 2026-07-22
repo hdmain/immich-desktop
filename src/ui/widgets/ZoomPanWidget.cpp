@@ -137,6 +137,9 @@ void ZoomPanWidget::zoomAt(const QPointF &viewportPoint, qreal factor)
 void ZoomPanWidget::paintEvent(QPaintEvent *event)
 {
     QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.fillRect(rect(), QColor(12, 12, 12));
 
     if (m_hostedWidget)

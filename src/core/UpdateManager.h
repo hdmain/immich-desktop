@@ -57,6 +57,7 @@ public:
     void checkForUpdates(bool silent = false);
     void downloadUpdate();
     void installUpdate();
+    void applyUpdate();
     bool shouldAutoCheck() const;
 
 signals:
@@ -85,6 +86,7 @@ private:
     QString m_error;
     QString m_downloadPath;
     bool m_silentCheck = false;
+    bool m_installAfterDownload = false;
 };
 
 } // namespace Aurora

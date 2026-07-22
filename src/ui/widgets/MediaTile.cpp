@@ -109,6 +109,8 @@ QString MediaTile::formatDuration(const QString &raw)
 void MediaTile::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.fillRect(rect(), QColor(20, 20, 20));
 

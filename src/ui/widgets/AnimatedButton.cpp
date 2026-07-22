@@ -4,6 +4,7 @@
 #include "ui/IconUtils.h"
 
 #include <QEnterEvent>
+#include <QFont>
 #include <QPainter>
 #include <QPropertyAnimation>
 
@@ -58,12 +59,16 @@ void AnimatedButton::paintEvent(QPaintEvent *)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
     painter.setPen(Qt::NoPen);
     painter.setBrush(fill);
     painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 11, 11);
 
     painter.setPen(isChecked() ? QColor(Qt::white) : theme.text);
     QFont labelFont = font();
+    labelFont.setHintingPreference(QFont::PreferNoHinting);
+    labelFont.setStyleStrategy(static_cast<QFont::StyleStrategy>(
+        QFont::PreferAntialias | QFont::PreferQuality));
     labelFont.setWeight(isChecked() ? QFont::DemiBold : QFont::Medium);
     painter.setFont(labelFont);
     const QColor iconColor = isChecked() ? QColor(Qt::white) : theme.mutedText;
