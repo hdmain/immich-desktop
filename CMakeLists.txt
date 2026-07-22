@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(immich
-    VERSION 0.1.6
+    VERSION 0.1.7
     DESCRIPTION "Modern Qt 6 desktop application foundation"
     LANGUAGES CXX
 )
