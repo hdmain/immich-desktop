@@ -1,5 +1,7 @@
 #include "ui/widgets/VideoPlayerDialog.h"
 
+#include "ui/widgets/ZoomPanWidget.h"
+
 #include <QAudioOutput>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -40,6 +42,10 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     m_player->setVideoOutput(m_video);
     m_audio->setVolume(0.8f);
 
+    auto *zoomView = new ZoomPanWidget(this);
+    zoomView->setHostedWidget(m_video);
+    zoomView->setMinimumSize(640, 360);
+
     m_playButton->setFixedSize(40, 36);
     m_playButton->setToolTip(tr("Play"));
     m_downloadButton->setToolTip(tr("Download original file"));
@@ -69,7 +75,7 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 10, 10, 10);
     layout->setSpacing(8);
-    layout->addWidget(m_video, 1);
+    layout->addWidget(zoomView, 1);
     layout->addWidget(m_statusLabel);
     layout->addLayout(controls);
 

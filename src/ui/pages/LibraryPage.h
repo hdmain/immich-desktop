@@ -24,6 +24,7 @@ class QTimer;
 namespace Aurora {
 
 class MediaTile;
+class VideoHoverPreview;
 
 class LibraryPage final : public QWidget {
     Q_OBJECT
@@ -97,6 +98,7 @@ private:
     ImmichClient *m_client;
     QScrollArea *m_scrollArea;
     QWidget *m_timelineHost;
+    VideoHoverPreview *m_videoHoverPreview = nullptr;
     QLabel *m_status;
     QLabel *m_emptyState;
     QLabel *m_dropOverlay;

@@ -29,6 +29,7 @@ public:
                         QWidget *parent = nullptr);
 
     void raiseToFront();
+    void scheduleStartupUpdateCheck();
 
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
@@ -46,7 +47,6 @@ private:
     void ensureResizableFrame();
     void selectPage(int index);
     void updateResizeHandles();
-    void scheduleAutoUpdateCheck();
     void notifyUpdateAvailable();
 
     TopBar *m_topBar;

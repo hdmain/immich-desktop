@@ -1,7 +1,9 @@
 #include "ui/pages/LibraryPage.h"
 
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/VideoPlayerDialog.h"
+#include "ui/widgets/ZoomPanWidget.h"
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -116,6 +118,7 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_timelineHost->setObjectName(QStringLiteral("timelineHost"));
     m_timelineHost->setAcceptDrops(true);
     m_timelineHost->installEventFilter(this);
+    m_videoHoverPreview = new VideoHoverPreview(m_client, m_timelineHost, this);
     m_scrollArea->setObjectName(QStringLiteral("libraryScroll"));
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
@@ -337,6 +340,7 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         const QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
         DaySection *section = sectionForDate(date);
         auto *tile = new MediaTile(asset, m_timelineHost);
+        tile->setHoverPreview(m_videoHoverPreview);
         section->tiles.append(tile);
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
@@ -701,10 +705,9 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
     dialog->resize(960, 700);
 
     auto *layout = new QVBoxLayout(dialog);
-    auto *preview = new QLabel(tr("Loading preview…"), dialog);
-    preview->setAlignment(Qt::AlignCenter);
+    auto *preview = new ZoomPanWidget(dialog);
+    preview->setPlaceholderText(tr("Loading preview…"));
     preview->setMinimumSize(480, 320);
-    preview->setProperty("mediaPreview", true);
     layout->addWidget(preview, 1);
 
     auto *buttons = new QDialogButtonBox(dialog);
@@ -734,14 +737,13 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
             [preview, id = asset.id](const QString &assetId, const QPixmap &pixmap) {
                 if (assetId != id)
                     return;
-                preview->setPixmap(pixmap.scaled(
-                    preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                preview->setPixmap(pixmap);
             });
     connect(m_client, &ImmichClient::imageLoadFailed, dialog,
             [preview, id = asset.id](const QString &assetId, const QString &resultSize,
                                      const QString &message) {
                 if (assetId == id && resultSize == QStringLiteral("preview"))
-                    preview->setText(tr("Preview unavailable\n%1").arg(message));
+                    preview->setPlaceholderText(tr("Preview unavailable\n%1").arg(message));
             });
     m_client->loadPreview(asset.id);
     dialog->show();
@@ -1082,6 +1084,8 @@ void LibraryPage::resizeEvent(QResizeEvent *event)
 
 void LibraryPage::hideEvent(QHideEvent *event)
 {
+    if (m_videoHoverPreview)
+        m_videoHoverPreview->stop();
     QWidget::hideEvent(event);
     for (MediaTile *tile : std::as_const(m_tilesById))
         tile->clearThumbnail();

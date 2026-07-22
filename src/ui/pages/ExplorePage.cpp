@@ -1,6 +1,7 @@
 #include "ui/pages/ExplorePage.h"
 
 #include "ui/widgets/VideoPlayerDialog.h"
+#include "ui/widgets/ZoomPanWidget.h"
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -452,8 +453,8 @@ void ExplorePage::openAsset(const ImmichAsset &asset)
     dialog->resize(960, 700);
 
     auto *layout = new QVBoxLayout(dialog);
-    auto *preview = new QLabel(tr("Loading preview…"), dialog);
-    preview->setAlignment(Qt::AlignCenter);
+    auto *preview = new ZoomPanWidget(dialog);
+    preview->setPlaceholderText(tr("Loading preview…"));
     preview->setMinimumSize(480, 320);
     layout->addWidget(preview, 1);
 
@@ -465,8 +466,7 @@ void ExplorePage::openAsset(const ImmichAsset &asset)
             [preview, id = asset.id](const QString &assetId, const QPixmap &pixmap) {
                 if (assetId != id)
                     return;
-                preview->setPixmap(pixmap.scaled(
-                    preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                preview->setPixmap(pixmap);
             });
     m_client->loadPreview(asset.id);
     dialog->show();

@@ -242,9 +242,9 @@ void MainWindow::selectPage(int index)
     m_sidebar->setCurrentPage(index);
 }
 
-void MainWindow::scheduleAutoUpdateCheck()
+void MainWindow::scheduleStartupUpdateCheck()
 {
-    if (m_autoCheckScheduled || !m_updateManager->shouldAutoCheck())
+    if (m_autoCheckScheduled || !m_updateManager->settings().autoCheck)
         return;
     m_autoCheckScheduled = true;
     QTimer::singleShot(2500, this, [this] {
@@ -347,7 +347,6 @@ void MainWindow::showEvent(QShowEvent *event)
     ensureResizableFrame();
     applyWindowCorners();
     updateResizeHandles();
-    scheduleAutoUpdateCheck();
 }
 
 void MainWindow::ensureResizableFrame()

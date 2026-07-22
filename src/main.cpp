@@ -63,5 +63,7 @@ int main(int argc, char *argv[])
     else
         window.show();
 
+    window.scheduleStartupUpdateCheck();
+
     return application.exec();
 }

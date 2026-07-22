@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(immich
-    VERSION 0.1.5
+    VERSION 0.1.6
     DESCRIPTION "Modern Qt 6 desktop application foundation"
     LANGUAGES CXX
 )
@@ -86,8 +86,12 @@ set(IMMICH_SOURCES
     src/ui/widgets/Sidebar.h
     src/ui/widgets/TopBar.cpp
     src/ui/widgets/TopBar.h
+    src/ui/widgets/VideoHoverPreview.cpp
+    src/ui/widgets/VideoHoverPreview.h
     src/ui/widgets/VideoPlayerDialog.cpp
     src/ui/widgets/VideoPlayerDialog.h
+    src/ui/widgets/ZoomPanWidget.cpp
+    src/ui/widgets/ZoomPanWidget.h
     resources/resources.qrc
 )
 

@@ -1,13 +1,16 @@
 #include "ui/widgets/MediaTile.h"
 
 #include "ui/IconUtils.h"
+#include "ui/widgets/VideoHoverPreview.h"
 
 #include <QContextMenuEvent>
+#include <QEnterEvent>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QResizeEvent>
 
 namespace Aurora {
 
@@ -21,6 +24,7 @@ MediaTile::MediaTile(const ImmichAsset &asset, QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     setAttribute(Qt::WA_OpaquePaintEvent);
+    setMouseTracking(true);
     setToolTip(asset.fileName);
 }
 
@@ -42,6 +46,19 @@ bool MediaTile::hasThumbnail() const
 bool MediaTile::hasThumbnailError() const
 {
     return m_hasError;
+}
+
+void MediaTile::setHoverPreview(VideoHoverPreview *preview)
+{
+    m_hoverPreview = preview;
+}
+
+void MediaTile::endHoverPreview()
+{
+    if (!m_hoverPreviewActive)
+        return;
+    m_hoverPreviewActive = false;
+    update();
 }
 
 void MediaTile::setThumbnail(const QPixmap &thumbnail)
@@ -73,6 +90,8 @@ void MediaTile::clearThumbnail()
 void MediaTile::setTileSize(const QSize &size)
 {
     setFixedSize(size);
+    if (m_hoverPreview)
+        m_hoverPreview->updateTileGeometry(this);
 }
 
 QString MediaTile::formatDuration(const QString &raw)
@@ -105,7 +124,7 @@ void MediaTile::paintEvent(QPaintEvent *)
                          m_hasError ? m_error : tr("…"));
     }
 
-    if (m_asset.isVideo()) {
+    if (m_asset.isVideo() && !m_hoverPreviewActive) {
         const QString duration = formatDuration(m_asset.duration);
         const QPixmap playIcon =
             renderSvgIcon(QStringLiteral(":/icons/play.svg"), Qt::white, QSize(18, 18));
@@ -139,6 +158,33 @@ void MediaTile::paintEvent(QPaintEvent *)
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(rect().adjusted(1, 1, -1, -1));
     }
+}
+
+void MediaTile::enterEvent(QEnterEvent *event)
+{
+    if (m_hoverPreview && m_asset.isVideo()) {
+        m_hoverPreviewActive = true;
+        m_hoverPreview->showForTile(this);
+        update();
+    }
+    QWidget::enterEvent(event);
+}
+
+void MediaTile::leaveEvent(QEvent *event)
+{
+    if (m_hoverPreview && m_hoverPreviewActive) {
+        m_hoverPreviewActive = false;
+        m_hoverPreview->hideForTile(this);
+        update();
+    }
+    QWidget::leaveEvent(event);
+}
+
+void MediaTile::resizeEvent(QResizeEvent *event)
+{
+    if (m_hoverPreview)
+        m_hoverPreview->updateTileGeometry(this);
+    QWidget::resizeEvent(event);
 }
 
 void MediaTile::keyPressEvent(QKeyEvent *event)
