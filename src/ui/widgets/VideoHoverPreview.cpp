@@ -145,9 +145,11 @@ void VideoHoverPreview::stop()
         m_player->blockSignals(false);
     }
 
+    // Always detach from the tile before any timeline clear/deleteLater.
     if (m_video) {
         m_video->hide();
-        m_video->setParent(m_hostWidget);
+        if (m_video->parentWidget() != m_hostWidget)
+            m_video->setParent(m_hostWidget);
     }
 
     m_handlingPlayer = false;

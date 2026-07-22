@@ -936,14 +936,19 @@ void ImmichClient::scheduleUploadRetry(int delayMs)
 
 void ImmichClient::processUploadQueue()
 {
-    if (m_processingUploadQueue || m_uploadInFlight || !m_online)
+    if (m_processingUploadQueue || m_uploadInFlight || !m_online || m_uploadRetryScheduled)
         return;
 
     m_processingUploadQueue = true;
-    while (!m_uploadInFlight && !m_uploadQueue.isEmpty() && m_online) {
+    // Bound passes so a failed open+requeue cannot spin forever on the UI thread.
+    int remainingPasses = m_uploadQueue.size();
+    while (!m_uploadInFlight && !m_uploadQueue.isEmpty() && m_online && remainingPasses > 0) {
+        --remainingPasses;
         const QString next = m_uploadQueue.takeFirst();
-        if (!startUpload(next))
-            continue;
+        if (startUpload(next))
+            break;
+        if (m_uploadRetryScheduled)
+            break;
     }
     m_processingUploadQueue = false;
     persistUploadQueue();
@@ -957,6 +962,14 @@ bool ImmichClient::startUpload(const QString &filePath)
         m_uploadRetryCounts.remove(filePath);
         m_uploadQueueStore.remove(filePath);
         emit requestFailed(tr("Upload"), tr("File not found: %1").arg(filePath));
+        return false;
+    }
+
+    if (info.size() <= 0) {
+        m_uploadRetryCounts.remove(filePath);
+        m_uploadQueueStore.remove(filePath);
+        emit requestFailed(tr("Upload"),
+                           tr("File is empty: %1").arg(info.fileName()));
         return false;
     }
 
@@ -1039,12 +1052,17 @@ bool ImmichClient::startUpload(const QString &filePath)
                 emit uploadProgress(filePath, bytesSent, bytesTotal);
             });
     connect(reply, &QNetworkReply::finished, this, [this, reply, filePath] {
+        // Capture error before any further work; reply stays valid until deleteLater.
+        const auto replyError = reply->error();
         const QByteArray body = reply->readAll();
+        const bool transient = replyError != QNetworkReply::NoError &&
+                               isTransientNetworkError(reply);
+
         m_uploadInFlight = false;
         m_uploadInFlightPath.clear();
 
-        if (reply->error() != QNetworkReply::NoError) {
-            if (isTransientNetworkError(reply)) {
+        if (replyError != QNetworkReply::NoError) {
+            if (transient) {
                 setOnline(false);
                 requeueUpload(filePath, true);
                 emit requestFailed(
@@ -1060,27 +1078,28 @@ bool ImmichClient::startUpload(const QString &filePath)
                                                     errorMessage(reply, body)));
             }
             emit uploadQueueChanged(pendingUploadCount());
-        } else {
-            m_uploadRetryCounts.remove(filePath);
-            m_uploadQueueStore.remove(filePath);
-            persistUploadQueue();
-            const QJsonObject object = QJsonDocument::fromJson(body).object();
-            const QString assetId = object.value(QStringLiteral("id")).toString();
-            const bool duplicate =
-                object.value(QStringLiteral("duplicate")).toBool() ||
-                object.value(QStringLiteral("status")).toString().compare(
-                    QStringLiteral("duplicate"), Qt::CaseInsensitive) == 0;
-            emit assetUploaded(filePath, assetId, duplicate);
-            emit uploadQueueChanged(pendingUploadCount());
-            if (!m_online)
-                setOnline(true);
-            else
-                processUploadQueue();
+            reply->deleteLater();
+            if (!transient)
+                QTimer::singleShot(0, this, &ImmichClient::processUploadQueue);
+            return;
         }
 
+        m_uploadRetryCounts.remove(filePath);
+        m_uploadQueueStore.remove(filePath);
+        persistUploadQueue();
+        const QJsonObject object = QJsonDocument::fromJson(body).object();
+        const QString assetId = object.value(QStringLiteral("id")).toString();
+        const bool duplicate =
+            object.value(QStringLiteral("duplicate")).toBool() ||
+            object.value(QStringLiteral("status")).toString().compare(
+                QStringLiteral("duplicate"), Qt::CaseInsensitive) == 0;
+        emit assetUploaded(filePath, assetId, duplicate);
+        emit uploadQueueChanged(pendingUploadCount());
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
-            processUploadQueue();
+        if (!m_online)
+            setOnline(true);
+        else
+            QTimer::singleShot(0, this, &ImmichClient::processUploadQueue);
     });
     return true;
 }

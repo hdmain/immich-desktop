@@ -436,6 +436,11 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
 
 void LibraryPage::clearTimeline()
 {
+    // QVideoWidget is reparented onto the active tile; stop first so tile
+    // deletion cannot destroy the shared preview widget out from under us.
+    if (m_videoHoverPreview)
+        m_videoHoverPreview->stop();
+
     for (DaySection &section : m_sections) {
         if (section.header)
             section.header->deleteLater();
