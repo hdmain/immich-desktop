@@ -132,6 +132,7 @@ bool AutoStart::setEnabled(bool enabled)
     out << QStringLiteral("Name=immich desktop\n");
     out << QStringLiteral("Comment=Immich desktop client\n");
     out << QStringLiteral("Exec=%1\n").arg(exePath);
+    out << QStringLiteral("Icon=immich-desktop\n");
     out << QStringLiteral("Terminal=false\n");
     out << QStringLiteral("Categories=Graphics;Photography;\n");
     out << QStringLiteral("X-GNOME-Autostart-enabled=true\n");

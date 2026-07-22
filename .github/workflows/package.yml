@@ -128,8 +128,8 @@ jobs:
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --executable AppDir/usr/bin/immich \
-            --desktop-file AppDir/usr/share/applications/immich.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/immich.png \
+            --desktop-file AppDir/usr/share/applications/immich-desktop.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/immich-desktop.png \
             --plugin qt \
             --output appimage
           mv "$OUTPUT" dist/

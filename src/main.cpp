@@ -11,6 +11,7 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QGuiApplication>
 #include <QStyleFactory>
 #include <QSystemTrayIcon>
 
@@ -22,6 +23,10 @@ int main(int argc, char *argv[])
     application.setApplicationName(QStringLiteral("immich"));
     application.setApplicationVersion(
         QString::fromLatin1(Aurora::Config::ApplicationVersion));
+#if defined(Q_OS_LINUX)
+    QGuiApplication::setDesktopFileName(QStringLiteral("immich-desktop"));
+#endif
+
     application.setWindowIcon(Aurora::applicationIcon());
     application.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 

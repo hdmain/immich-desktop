@@ -28,7 +28,7 @@ apps:
     extensions:
       - gnome
     common-id: com.github.hdmain.immich-desktop
-    desktop: usr/share/applications/immich.desktop
+    desktop: usr/share/applications/immich-desktop.desktop
     command: bin/immich-launch
     plugs:
       - audio-playback
@@ -77,7 +77,7 @@ parts:
       - qt6-base-dev
       - qt6-base-dev-tools
       - qt6-multimedia-dev
-      - libqt6svg6-dev
+      - qt6-svg-dev
       - qt6-image-formats-plugins
     stage-packages:
       - libqt6core6t64
