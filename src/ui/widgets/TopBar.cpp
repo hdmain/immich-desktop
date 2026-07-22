@@ -10,6 +10,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QWindow>
+#include <QtMath>
 
 namespace Aurora {
 
@@ -30,9 +31,19 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     layout->setSpacing(8);
 
     auto *logo = new QLabel(this);
+    const qreal dpr = devicePixelRatioF();
+    constexpr int kLogoHeight = 37; // ~20% smaller than max (46) in the 52px title bar
     QPixmap logoPixmap(QStringLiteral(":/branding/immich-logo-inline-light.png"));
-    logo->setPixmap(logoPixmap.scaled(126, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    logo->setFixedSize(132, 34);
+    const int logoWidth = logoPixmap.isNull()
+        ? qRound(kLogoHeight * (792.0 / 266.25))
+        : qMax(1, qRound(kLogoHeight * (qreal(logoPixmap.width()) / qreal(logoPixmap.height()))));
+    QPixmap scaled = logoPixmap.scaled(
+        QSize(qRound(logoWidth * dpr), qRound(kLogoHeight * dpr)),
+        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    logo->setPixmap(scaled);
+    logo->setFixedSize(logoWidth, kLogoHeight);
+    logo->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     layout->addWidget(logo);
 
     auto *separator = new QLabel(QStringLiteral("  /  "), this);
