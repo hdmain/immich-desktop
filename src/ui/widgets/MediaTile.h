@@ -35,6 +35,8 @@ public:
 
 signals:
     void activated(const Aurora::ImmichAsset &asset);
+    void highlighted(const Aurora::ImmichAsset &asset);
+    void copyRequested(const Aurora::ImmichAsset &asset);
     void downloadRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
@@ -42,6 +44,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void enterEvent(QEnterEvent *event) override;

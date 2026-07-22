@@ -57,6 +57,8 @@ private slots:
     void showRequestError(const QString &operation, const QString &message);
     void openAsset(const Aurora::ImmichAsset &asset);
     void downloadAsset(const Aurora::ImmichAsset &asset);
+    void copyAsset(const Aurora::ImmichAsset &asset);
+    void pasteFromClipboard();
     void trashAsset(const Aurora::ImmichAsset &asset);
     void deleteAssetPermanently(const Aurora::ImmichAsset &asset);
     void handleAssetsDeleted(const QStringList &assetIds, bool permanent);
@@ -64,6 +66,8 @@ private slots:
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
     void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
     void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
+    void handleAssetOriginalFetched(const QString &assetId, const QByteArray &bytes,
+                                    const QString &contentType);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
     void handleOnlineChanged(bool online);
     void handleUploadQueueChanged(int pendingCount);
@@ -87,6 +91,11 @@ private:
     void updateEndpointHint();
     void setDropHighlight(bool active);
     void enqueueUploads(const QStringList &paths);
+    void cleanupPasteTemp(const QString &path);
+    bool pasteClipboardFiles();
+    bool pasteClipboardImage();
+    bool isSearchFieldFocused() const;
+    ImmichAsset currentAssetForClipboard() const;
     void confirmAndDelete(const Aurora::ImmichAsset &asset, bool permanent);
     void removeAssetsFromTimeline(const QStringList &assetIds);
     QStringList uploadableLocalPaths(const QList<QUrl> &urls) const;
@@ -116,6 +125,9 @@ private:
     QString m_nextPage;
     QString m_newestAssetId;
     QString m_searchQuery;
+    QString m_copyInFlightAssetId;
+    QSet<QString> m_pasteTempFiles;
+    ImmichAsset m_currentAsset;
     int m_uploadsCompleted = 0;
     int m_uploadsFailed = 0;
     int m_uploadsTotal = 0;

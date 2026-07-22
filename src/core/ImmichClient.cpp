@@ -1162,6 +1162,30 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
             });
 }
 
+void ImmichClient::fetchAssetOriginal(const QString &assetId)
+{
+    if (!ensureConfigured(tr("Copy")) || assetId.isEmpty())
+        return;
+
+    auto *reply =
+        m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/assets/%1/original").arg(assetId))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, assetId] {
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Copy"), errorMessage(reply, body));
+            reply->deleteLater();
+            return;
+        }
+        const QString contentType =
+            QString::fromUtf8(reply->header(QNetworkRequest::ContentTypeHeader)
+                                  .toByteArray())
+                .section(u';', 0, 0)
+                .trimmed();
+        emit assetOriginalFetched(assetId, body, contentType);
+        reply->deleteLater();
+    });
+}
+
 void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
 {
     if (!ensureConfigured(tr("Delete")))

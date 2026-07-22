@@ -5,17 +5,25 @@
 #include "ui/widgets/VideoPlayerDialog.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
+#include <QApplication>
+#include <QBuffer>
+#include <QClipboard>
+#include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHideEvent>
 #include <QHBoxLayout>
+#include <QImage>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
@@ -27,6 +35,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
+#include <QShortcut>
 #include <QShowEvent>
 #include <QStandardPaths>
 #include <QTimer>
@@ -175,6 +184,8 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
             this, &LibraryPage::handleDownloadProgress);
     connect(m_client, &ImmichClient::assetDownloaded,
             this, &LibraryPage::handleAssetDownloaded);
+    connect(m_client, &ImmichClient::assetOriginalFetched,
+            this, &LibraryPage::handleAssetOriginalFetched);
     connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
     connect(m_client, &ImmichClient::activeEndpointChanged,
             this, &LibraryPage::handleActiveEndpointChanged);
@@ -199,6 +210,19 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     updateEmptyState();
     updateAutoCheckTimer();
     updateEndpointHint();
+
+    auto *pasteShortcut = new QShortcut(QKeySequence::Paste, this);
+    pasteShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(pasteShortcut, &QShortcut::activated, this, &LibraryPage::pasteFromClipboard);
+
+    auto *copyShortcut = new QShortcut(QKeySequence::Copy, this);
+    copyShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copyShortcut, &QShortcut::activated, this, [this] {
+        if (isSearchFieldFocused())
+            return;
+        copyAsset(currentAssetForClipboard());
+    });
+
     QTimer::singleShot(0, this, [this] {
         if (m_client->isConfigured())
             refresh();
@@ -344,6 +368,10 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         section->tiles.append(tile);
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
+        connect(tile, &MediaTile::highlighted, this, [this](const ImmichAsset &asset) {
+            m_currentAsset = asset;
+        });
+        connect(tile, &MediaTile::copyRequested, this, &LibraryPage::copyAsset);
         connect(tile, &MediaTile::downloadRequested, this, &LibraryPage::downloadAsset);
         connect(tile, &MediaTile::trashRequested, this, &LibraryPage::trashAsset);
         connect(tile, &MediaTile::deleteRequested, this, &LibraryPage::deleteAssetPermanently);
@@ -402,7 +430,16 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
 {
     if (operation == tr("Load image"))
         return;
+    if (operation == tr("Copy")) {
+        m_copyInFlightAssetId.clear();
+        m_status->setText(tr("Copy failed: %1").arg(message));
+        return;
+    }
     if (operation == tr("Upload")) {
+        for (const QString &path : QSet<QString>(m_pasteTempFiles)) {
+            if (message.contains(QFileInfo(path).fileName()))
+                cleanupPasteTemp(path);
+        }
         const bool willRetry = message.contains(QStringLiteral("will retry"), Qt::CaseInsensitive) ||
                                message.contains(QStringLiteral("queued for retry"),
                                                 Qt::CaseInsensitive);
@@ -627,7 +664,7 @@ void LibraryPage::updateEmptyState()
     }
     m_emptyState->setText(
         tr("No photos or videos yet.\n"
-           "Drop files here or use Upload to add media."));
+           "Drop files here, paste with Ctrl+V, or use Upload to add media."));
 }
 
 void LibraryPage::updateAutoCheckTimer()
@@ -687,6 +724,7 @@ void LibraryPage::handleUploadQueueChanged(int pendingCount)
 
 void LibraryPage::openAsset(const ImmichAsset &asset)
 {
+    m_currentAsset = asset;
     if (asset.isVideo()) {
         auto *player = new VideoPlayerDialog(m_client, asset, this);
         connect(player, &VideoPlayerDialog::downloadRequested, this,
@@ -716,11 +754,15 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
     layout->addWidget(preview, 1);
 
     auto *buttons = new QDialogButtonBox(dialog);
+    auto *copyButton = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
     auto *downloadButton = buttons->addButton(tr("Download"), QDialogButtonBox::ActionRole);
     auto *trashButton = buttons->addButton(tr("Move to trash"), QDialogButtonBox::ActionRole);
     auto *deleteButton =
         buttons->addButton(tr("Delete permanently"), QDialogButtonBox::DestructiveRole);
     buttons->addButton(QDialogButtonBox::Close);
+    connect(copyButton, &QPushButton::clicked, this, [this, asset] {
+        copyAsset(asset);
+    });
     connect(downloadButton, &QPushButton::clicked, this, [this, asset] {
         downloadAsset(asset);
     });
@@ -771,6 +813,140 @@ void LibraryPage::downloadAsset(const ImmichAsset &asset)
 
     m_status->setText(tr("Downloading %1…").arg(suggestedName));
     m_client->downloadAsset(asset.id, path, suggestedName);
+}
+
+void LibraryPage::copyAsset(const ImmichAsset &asset)
+{
+    if (!m_client->isConfigured() || asset.id.isEmpty()) {
+        m_status->setText(tr("Connect to Immich in Settings before copying."));
+        return;
+    }
+    if (asset.isVideo()) {
+        m_status->setText(tr("Copy works for photos — download videos instead."));
+        return;
+    }
+
+    m_currentAsset = asset;
+    m_copyInFlightAssetId = asset.id;
+    m_status->setText(tr("Copying %1…")
+                          .arg(asset.fileName.isEmpty() ? tr("photo") : asset.fileName));
+    m_client->fetchAssetOriginal(asset.id);
+}
+
+void LibraryPage::pasteFromClipboard()
+{
+    if (isSearchFieldFocused())
+        return;
+    if (!m_client->isConfigured()) {
+        m_status->setText(tr("Connect to Immich in Settings before uploading."));
+        return;
+    }
+
+    if (pasteClipboardFiles())
+        return;
+    if (pasteClipboardImage())
+        return;
+
+    m_status->setText(tr("Clipboard has no image or media files to upload."));
+}
+
+bool LibraryPage::isSearchFieldFocused() const
+{
+    QWidget *focus = QApplication::focusWidget();
+    while (focus) {
+        if (focus == m_searchField)
+            return true;
+        focus = focus->parentWidget();
+    }
+    return false;
+}
+
+ImmichAsset LibraryPage::currentAssetForClipboard() const
+{
+    if (auto *tile = qobject_cast<MediaTile *>(QApplication::focusWidget()))
+        return tile->asset();
+    return m_currentAsset;
+}
+
+bool LibraryPage::pasteClipboardFiles()
+{
+    const QMimeData *mime = QApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasUrls())
+        return false;
+
+    const QStringList paths = uploadableLocalPaths(mime->urls());
+    if (paths.isEmpty())
+        return false;
+
+    enqueueUploads(paths);
+    return true;
+}
+
+bool LibraryPage::pasteClipboardImage()
+{
+    const QMimeData *mime = QApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasImage())
+        return false;
+
+    const QImage image = qvariant_cast<QImage>(mime->imageData());
+    if (image.isNull())
+        return false;
+
+    const QString tempDir =
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+        QStringLiteral("/immich-desktop-paste");
+    QDir().mkpath(tempDir);
+    const QString path =
+        QStringLiteral("%1/paste-%2.png")
+            .arg(tempDir, QString::number(QDateTime::currentMSecsSinceEpoch()));
+
+    if (!image.save(path, "PNG")) {
+        m_status->setText(tr("Could not save clipboard image for upload."));
+        return true;
+    }
+
+    m_pasteTempFiles.insert(path);
+    enqueueUploads({path});
+    return true;
+}
+
+void LibraryPage::cleanupPasteTemp(const QString &path)
+{
+    if (!m_pasteTempFiles.contains(path))
+        return;
+    m_pasteTempFiles.remove(path);
+    QFile::remove(path);
+}
+
+void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByteArray &bytes,
+                                             const QString &contentType)
+{
+    if (assetId != m_copyInFlightAssetId)
+        return;
+    m_copyInFlightAssetId.clear();
+
+    QImage image;
+    if (!image.loadFromData(bytes)) {
+        m_status->setText(tr("Could not decode image for clipboard."));
+        return;
+    }
+
+    auto *mime = new QMimeData;
+    mime->setImageData(image);
+    if (!contentType.isEmpty())
+        mime->setData(contentType, bytes);
+    // Also expose PNG so more apps accept the paste.
+    QByteArray pngBytes;
+    QBuffer pngBuffer(&pngBytes);
+    pngBuffer.open(QIODevice::WriteOnly);
+    image.save(&pngBuffer, "PNG");
+    mime->setData(QStringLiteral("image/png"), pngBytes);
+
+    QApplication::clipboard()->setMimeData(mime);
+    const QString name = m_currentAsset.id == assetId && !m_currentAsset.fileName.isEmpty()
+                             ? m_currentAsset.fileName
+                             : tr("photo");
+    m_status->setText(tr("Copied %1 to clipboard").arg(name));
 }
 
 void LibraryPage::trashAsset(const ImmichAsset &asset)
@@ -922,6 +1098,7 @@ void LibraryPage::handleAssetUploaded(const QString &filePath, const QString &as
                                       bool duplicate)
 {
     Q_UNUSED(assetId);
+    cleanupPasteTemp(filePath);
     ++m_uploadsCompleted;
     const QString name = QFileInfo(filePath).fileName();
     const int remaining = m_client->pendingUploadCount();

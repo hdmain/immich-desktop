@@ -6,6 +6,7 @@
 #include <QContextMenuEvent>
 #include <QEnterEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -162,6 +163,7 @@ void MediaTile::paintEvent(QPaintEvent *)
 
 void MediaTile::enterEvent(QEnterEvent *event)
 {
+    emit highlighted(m_asset);
     if (m_hoverPreview && m_asset.isVideo()) {
         m_hoverPreviewActive = true;
         m_hoverPreview->showForTile(this);
@@ -189,6 +191,11 @@ void MediaTile::resizeEvent(QResizeEvent *event)
 
 void MediaTile::keyPressEvent(QKeyEvent *event)
 {
+    if (event->matches(QKeySequence::Copy)) {
+        emit copyRequested(m_asset);
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter ||
         event->key() == Qt::Key_Space) {
         emit activated(m_asset);
@@ -196,6 +203,15 @@ void MediaTile::keyPressEvent(QKeyEvent *event)
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+void MediaTile::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        setFocus(Qt::MouseFocusReason);
+        emit highlighted(m_asset);
+    }
+    QWidget::mousePressEvent(event);
 }
 
 void MediaTile::mouseReleaseEvent(QMouseEvent *event)
@@ -209,6 +225,8 @@ void MediaTile::contextMenuEvent(QContextMenuEvent *event)
 {
     QMenu menu(this);
     menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
+    if (!m_asset.isVideo())
+        menu.addAction(tr("Copy"), this, [this] { emit copyRequested(m_asset); });
     menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
     menu.addSeparator();
     menu.addAction(tr("Move to trash"), this, [this] { emit trashRequested(m_asset); });

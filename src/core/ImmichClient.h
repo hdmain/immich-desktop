@@ -54,6 +54,7 @@ public:
     void uploadAssets(const QStringList &filePaths);
     void downloadAsset(const QString &assetId, const QString &destinationPath,
                        const QString &suggestedFileName = {});
+    void fetchAssetOriginal(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
     bool isUploading() const;
     int pendingUploadCount() const;
@@ -80,6 +81,8 @@ signals:
     void uploadQueueChanged(int pendingCount);
     void downloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
     void assetDownloaded(const QString &assetId, const QString &destinationPath);
+    void assetOriginalFetched(const QString &assetId, const QByteArray &bytes,
+                              const QString &contentType);
     void assetsDeleted(const QStringList &assetIds, bool permanent);
     void requestFailed(const QString &operation, const QString &message);
 
