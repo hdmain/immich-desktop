@@ -28,7 +28,10 @@ int main(int argc, char *argv[])
     application.setApplicationVersion(
         QString::fromLatin1(Aurora::Config::ApplicationVersion));
 #if defined(Q_OS_LINUX)
-    QGuiApplication::setDesktopFileName(QStringLiteral("immich-desktop"));
+    if (const QString flatpakId = qEnvironmentVariable("FLATPAK_ID"); !flatpakId.isEmpty())
+        QGuiApplication::setDesktopFileName(flatpakId);
+    else
+        QGuiApplication::setDesktopFileName(QStringLiteral("immich-desktop"));
 #endif
 
     application.setWindowIcon(Aurora::applicationIcon());

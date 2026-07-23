@@ -32,10 +32,13 @@ QString AutoStart::registryValueName()
 QString AutoStart::launchCommand()
 {
 #ifndef Q_OS_WIN
-    // Prefer the stable snap launcher over the revision-specific binary path.
+    // Prefer the stable snap/flatpak launcher over the revision-specific binary path.
     const QString snapName = qEnvironmentVariable("SNAP_NAME");
     if (!snapName.isEmpty())
         return QStringLiteral("/snap/bin/%1 --autostart").arg(snapName);
+    const QString flatpakId = qEnvironmentVariable("FLATPAK_ID");
+    if (!flatpakId.isEmpty())
+        return QStringLiteral("flatpak run %1 --autostart").arg(flatpakId);
     QString exe = QCoreApplication::applicationFilePath();
     exe.replace(u'\\', QStringLiteral("\\\\"));
     exe.replace(u'"', QStringLiteral("\\\""));

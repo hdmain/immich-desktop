@@ -1,0 +1,55 @@
+# Unofficial Immich Qt desktop client — Flatpak manifest for Flathub.
+# App ID: com.github.hdmain.immich-desktop
+#
+# Local build (on Linux):
+#   flatpak-builder --user --install --force-clean build-dir \
+#     flatpak/com.github.hdmain.immich-desktop.yml
+
+id: com.github.hdmain.immich-desktop
+runtime: org.kde.Platform
+runtime-version: "6.9"
+sdk: org.kde.Sdk
+command: immich
+
+rename-desktop-file: immich-desktop.desktop
+rename-appdata-file: immich-desktop.metainfo.xml
+rename-icon: immich-desktop
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-download
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-config/autostart:create
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/doc
+  - /share/man
+  - "*.a"
+  - "*.la"
+
+modules:
+  - name: immich-desktop
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: git
+        url: https://github.com/hdmain/immich-desktop.git
+        tag: v0.1.7
+        commit: 4600ad9f2cc8c94dcd4d279b5d4f929a7bdfa75a
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig

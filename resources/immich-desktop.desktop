@@ -7,6 +7,6 @@ Exec=immich
 Icon=immich-desktop
 Terminal=false
 Categories=Graphics;Photography;Qt;
-Keywords=immich;photos;videos;gallery;
+Keywords=immich;photos;videos;gallery;self-hosted;
 StartupWMClass=immich
 X-GNOME-UsesNotifications=true
