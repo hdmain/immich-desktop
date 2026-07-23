@@ -7,13 +7,17 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDirIterator>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QShowEvent>
 #include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QVBoxLayout>
 
@@ -41,6 +45,37 @@ QFrame *sectionCard(const QString &title, const QString &description, QWidget *p
     return card;
 }
 
+qint64 directorySizeBytes(const QString &path)
+{
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return 0;
+
+    qint64 total = 0;
+    QDirIterator it(path, QDir::Files | QDir::Hidden | QDir::System | QDir::NoSymLinks,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const qint64 size = it.fileInfo().size();
+        if (size > 0)
+            total += size;
+    }
+    return total;
+}
+
+QString formatBytes(qint64 bytes)
+{
+    constexpr double kb = 1024.0;
+    constexpr double mb = kb * 1024.0;
+    constexpr double gb = mb * 1024.0;
+    if (bytes >= static_cast<qint64>(gb))
+        return QStringLiteral("%1 GB").arg(bytes / gb, 0, 'f', 2);
+    if (bytes >= static_cast<qint64>(mb))
+        return QStringLiteral("%1 MB").arg(bytes / mb, 0, 'f', 1);
+    if (bytes >= static_cast<qint64>(kb))
+        return QStringLiteral("%1 KB").arg(bytes / kb, 0, 'f', 0);
+    return QStringLiteral("%1 B").arg(bytes);
+}
+
 } // namespace
 
 AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
@@ -49,6 +84,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     , m_themeCombo(new QComboBox(this))
     , m_closeToTray(new QCheckBox(tr("Close to system tray"), this))
     , m_autoStart(new QCheckBox(tr("Start immich when I sign in"), this))
+    , m_cacheSizeLabel(new QLabel(this))
 {
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(4, 6, 4, 4);
@@ -124,6 +160,19 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     desktopLayout->addWidget(m_autoStart);
     contentRoot->addWidget(desktopCard);
 
+    QVBoxLayout *cacheLayout = nullptr;
+    auto *cacheCard = sectionCard(
+        tr("Cache"),
+        tr("Local storage used for thumbnails and offline library data."),
+        content, &cacheLayout);
+    m_cacheSizeLabel->setProperty("subheading", true);
+    m_cacheSizeLabel->setWordWrap(true);
+    auto *refreshCache = new QPushButton(tr("Refresh"), cacheCard);
+    refreshCache->setCursor(Qt::PointingHandCursor);
+    cacheLayout->addWidget(m_cacheSizeLabel);
+    cacheLayout->addWidget(refreshCache, 0, Qt::AlignLeft);
+    contentRoot->addWidget(cacheCard);
+
     contentRoot->addStretch();
 
     scroll->setWidget(content);
@@ -137,9 +186,26 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
             m_themeManager, &ThemeManager::resetCustomPalette);
     connect(m_closeToTray, &QCheckBox::toggled, this, &AppearancePage::saveCloseToTray);
     connect(m_autoStart, &QCheckBox::toggled, this, &AppearancePage::saveAutoStart);
+    connect(refreshCache, &QPushButton::clicked, this, &AppearancePage::refreshCacheSize);
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { syncControls(); });
     syncControls();
+    refreshCacheSize();
+}
+
+void AppearancePage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    refreshCacheSize();
+}
+
+void AppearancePage::refreshCacheSize()
+{
+    const QString cacheRoot =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const qint64 bytes = directorySizeBytes(cacheRoot);
+    m_cacheSizeLabel->setText(tr("Cache size: %1").arg(formatBytes(bytes)));
+    m_cacheSizeLabel->setToolTip(cacheRoot);
 }
 
 void AppearancePage::saveCloseToTray(bool enabled)

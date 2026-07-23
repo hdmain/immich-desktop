@@ -247,9 +247,11 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
     upstream.setRawHeader("x-api-key", m_apiKey.toUtf8());
     if (!rangeHeader.isEmpty())
         upstream.setRawHeader("Range", rangeHeader);
+    // Immich may redirect playback to object storage on another host.
     upstream.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                          QNetworkRequest::SameOriginRedirectPolicy);
-    upstream.setTransferTimeout(30000);
+                          QNetworkRequest::NoLessSafeRedirectPolicy);
+    // Inactivity timeout only — large videos must be allowed to stream longer.
+    upstream.setTransferTimeout(120000);
 
     auto *reply = isHead ? m_network->head(upstream) : m_network->get(upstream);
     reply->setReadBufferSize(512 * 1024);
@@ -277,14 +279,29 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
         else
             header += " Error\r\n";
 
-        const QByteArray contentType = VideoStreamServer::sanitizedContentType(
-            reply->header(QNetworkRequest::ContentTypeHeader).toByteArray());
+        QByteArray contentType = reply->rawHeader("Content-Type");
+        if (contentType.isEmpty()) {
+            contentType = reply->header(QNetworkRequest::ContentTypeHeader)
+                              .toString()
+                              .toUtf8();
+        }
+        contentType = VideoStreamServer::sanitizedContentType(contentType);
         header += "Content-Type: " +
                   (contentType.isEmpty() ? QByteArray("video/mp4") : contentType) + "\r\n";
         header += "Accept-Ranges: bytes\r\n";
         header += "Connection: close\r\n";
-        const QByteArray contentLength = VideoStreamServer::sanitizedContentLength(
-            reply->header(QNetworkRequest::ContentLengthHeader).toByteArray());
+
+        // ContentLengthHeader is often a qlonglong QVariant; toByteArray() is empty.
+        QByteArray contentLength = reply->rawHeader("Content-Length");
+        if (contentLength.isEmpty()) {
+            const QVariant lengthVariant =
+                reply->header(QNetworkRequest::ContentLengthHeader);
+            bool ok = false;
+            const qlonglong length = lengthVariant.toLongLong(&ok);
+            if (ok && length >= 0)
+                contentLength = QByteArray::number(length);
+        }
+        contentLength = VideoStreamServer::sanitizedContentLength(contentLength);
         if (!contentLength.isEmpty())
             header += "Content-Length: " + contentLength + "\r\n";
 

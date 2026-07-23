@@ -4,6 +4,8 @@
 
 class QCheckBox;
 class QComboBox;
+class QLabel;
+class QShowEvent;
 
 namespace Aurora {
 
@@ -15,8 +17,12 @@ class AppearancePage final : public QWidget {
 public:
     explicit AppearancePage(ThemeManager *themeManager, QWidget *parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     void syncControls();
+    void refreshCacheSize();
     void saveCloseToTray(bool enabled);
     void saveAutoStart(bool enabled);
 
@@ -24,6 +30,7 @@ private:
     QComboBox *m_themeCombo;
     QCheckBox *m_closeToTray;
     QCheckBox *m_autoStart;
+    QLabel *m_cacheSizeLabel;
 };
 
 } // namespace Aurora

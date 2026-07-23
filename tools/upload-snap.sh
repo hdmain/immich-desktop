@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SNAP="/mnt/c/Users/makss/Desktop/python/immich-desktop/dist-snap/immich-desktop_0.1.6_amd64.snap"
+SNAP="/mnt/c/Users/makss/Desktop/python/immich-desktop/dist-snap/immich-desktop_0.1.7_amd64.snap"
 CHANNEL="${1:-stable}"
 
 if [ ! -f "$SNAP" ]; then

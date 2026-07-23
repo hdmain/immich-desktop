@@ -95,6 +95,7 @@ parts:
       - qt6-image-formats-plugins
       - gstreamer1.0-plugins-base
       - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
       - gstreamer1.0-libav
       - libpulse0
       - libavcodec60
@@ -102,6 +103,9 @@ parts:
       - libavutil58
       - libswresample4
       - libswscale7
+      - libva2
+      - libva-drm2
+      - mesa-va-drivers
       - libgl1
       - libegl1
       - libglib2.0-0t64
@@ -120,6 +124,7 @@ parts:
       - libxcb-util1
       - libice6
       - libsm6
+      - libasound2t64
 
     override-pull: |
       craftctl default
