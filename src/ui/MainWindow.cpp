@@ -84,6 +84,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     , m_sidebar(new Sidebar(themeManager, this))
     , m_themeManager(themeManager)
     , m_updateManager(updateManager)
+    , m_immichClient(immichClient)
 {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
                    Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint |
@@ -136,13 +137,16 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
         if (state != UpdateState::Available && state != UpdateState::ReadyToInstall &&
             state != UpdateState::Downloading)
             m_topBar->setUpdateAvailable(false);
+        refreshTrayIcon();
     });
     connect(m_themeManager, &ThemeManager::appearanceChanged, this, [this] {
-        const QIcon icon = applicationIconForPalette(m_themeManager->palette());
-        setWindowIcon(icon);
-        if (m_trayIcon)
-            m_trayIcon->setIcon(icon);
+        setWindowIcon(applicationIconForPalette(m_themeManager->palette()));
+        refreshTrayIcon();
     });
+    connect(m_immichClient, &ImmichClient::uploadQueueChanged, this,
+            [this](int) { refreshTrayIcon(); });
+    connect(m_immichClient, &ImmichClient::transferActivityChanged, this,
+            &MainWindow::refreshTrayIcon);
 
     const QList<Qt::Edges> resizeEdges = {
         Qt::TopEdge, Qt::BottomEdge, Qt::LeftEdge, Qt::RightEdge,
@@ -165,7 +169,8 @@ void MainWindow::setupTrayIcon()
 
     QApplication::setQuitOnLastWindowClosed(false);
 
-    m_trayIcon = new QSystemTrayIcon(applicationIconForPalette(m_themeManager->palette()), this);
+    m_trayIcon = new QSystemTrayIcon(this);
+    refreshTrayIcon();
     m_trayIcon->setToolTip(tr("immich"));
 
     auto *menu = new QMenu(this);
@@ -308,6 +313,30 @@ void MainWindow::maybeShowGitHubStarPrompt()
             QUrl(QStringLiteral("https://github.com/%1")
                      .arg(QString::fromLatin1(Config::GitHubRepository))));
     }
+}
+
+void MainWindow::refreshTrayIcon()
+{
+    if (!m_trayIcon)
+        return;
+
+    const auto &palette = m_themeManager->palette();
+    if (m_immichClient && m_immichClient->isUploading()) {
+        m_trayIcon->setIcon(trayUploadIcon(palette));
+        m_trayIcon->setToolTip(tr("immich — uploading"));
+        return;
+    }
+
+    const bool downloadingUpdate = m_updateManager &&
+                                   m_updateManager->state() == UpdateState::Downloading;
+    if ((m_immichClient && m_immichClient->isDownloading()) || downloadingUpdate) {
+        m_trayIcon->setIcon(trayDownloadIcon(palette));
+        m_trayIcon->setToolTip(tr("immich — downloading"));
+        return;
+    }
+
+    m_trayIcon->setIcon(applicationIconForPalette(palette));
+    m_trayIcon->setToolTip(tr("immich"));
 }
 
 void MainWindow::notifyUpdateAvailable()

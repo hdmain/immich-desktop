@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 namespace Aurora {
@@ -28,7 +29,14 @@ QStringList UploadQueueStore::load() const
     if (!file.open(QIODevice::ReadOnly))
         return {};
 
-    const QJsonArray items = QJsonDocument::fromJson(file.readAll())
+    constexpr qint64 maximumQueueBytes = 1024 * 1024;
+    if (file.size() < 0 || file.size() > maximumQueueBytes)
+        return {};
+    const QByteArray payload = file.read(maximumQueueBytes + 1);
+    if (payload.size() > maximumQueueBytes)
+        return {};
+
+    const QJsonArray items = QJsonDocument::fromJson(payload)
                                  .object()
                                  .value(QStringLiteral("paths"))
                                  .toArray();
@@ -52,10 +60,14 @@ void UploadQueueStore::save(const QStringList &paths) const
     QJsonObject root;
     root.insert(QStringLiteral("paths"), items);
 
-    QFile file(m_filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    QSaveFile file(m_filePath);
+    if (!file.open(QIODevice::WriteOnly))
         return;
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Compact);
+    if (file.write(payload) != payload.size())
+        file.cancelWriting();
+    else
+        file.commit();
 }
 
 void UploadQueueStore::enqueue(const QStringList &paths)

@@ -4,6 +4,8 @@
 
 #include <QFormLayout>
 #include <QFrame>
+#include <QAbstractSocket>
+#include <QHostAddress>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -12,6 +14,32 @@
 #include <QVBoxLayout>
 
 namespace Aurora {
+namespace {
+
+bool looksLikePrivateOrLocalHost(const QString &host)
+{
+    if (host.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0)
+        return true;
+    const QHostAddress address(host);
+    if (address.isNull())
+        return false;
+    if (address.isLoopback())
+        return true;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    return address.isPrivateUse() || address.isLinkLocal();
+#else
+    if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+        const quint32 v4 = address.toIPv4Address();
+        return (v4 >= 0x0a000000u && v4 <= 0x0affffffu) || // 10.0.0.0/8
+               (v4 >= 0xac100000u && v4 <= 0xac1fffffu) || // 172.16.0.0/12
+               (v4 >= 0xc0a80000u && v4 <= 0xc0a8ffffu) || // 192.168.0.0/16
+               (v4 >= 0xa9fe0000u && v4 <= 0xa9feffffu);   // 169.254.0.0/16
+    }
+    return false;
+#endif
+}
+
+} // namespace
 
 ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     : QWidget(parent)
@@ -106,8 +134,15 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
 void ConnectionPage::saveAndTest()
 {
     QUrl url = QUrl::fromUserInput(m_serverUrl->text().trimmed());
-    if (!url.isValid() || url.host().isEmpty()) {
-        m_status->setText(tr("Enter a valid Immich URL, including the host."));
+    const auto isAllowedServerUrl = [](const QUrl &candidate) {
+        const QString scheme = candidate.scheme().toLower();
+        return candidate.isValid() && !candidate.host().isEmpty() &&
+               (scheme == QStringLiteral("https") || scheme == QStringLiteral("http")) &&
+               candidate.userName().isEmpty() && candidate.password().isEmpty();
+    };
+    if (!isAllowedServerUrl(url)) {
+        m_status->setText(
+            tr("Enter an HTTP(S) Immich URL without embedded credentials."));
         return;
     }
     if (m_apiKey->text().trimmed().isEmpty()) {
@@ -122,8 +157,9 @@ void ConnectionPage::saveAndTest()
     const QString localText = m_localServerUrl->text().trimmed();
     if (!localText.isEmpty()) {
         QUrl localUrl = QUrl::fromUserInput(localText);
-        if (!localUrl.isValid() || localUrl.host().isEmpty()) {
-            m_status->setText(tr("Local URL is invalid. Leave it blank or enter a valid host."));
+        if (!isAllowedServerUrl(localUrl)) {
+            m_status->setText(
+                tr("Local URL must be HTTP(S) and must not contain embedded credentials."));
             return;
         }
         settings.localServerUrl =
@@ -134,7 +170,13 @@ void ConnectionPage::saveAndTest()
     m_serverUrl->setText(settings.serverUrl);
     m_client->setConnection(settings);
     m_saveButton->setEnabled(false);
-    m_status->setText(tr("Testing connection…"));
+    if (url.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0 &&
+        !looksLikePrivateOrLocalHost(url.host())) {
+        m_status->setText(
+            tr("Warning: remote HTTP sends your API key in cleartext. Prefer HTTPS. Testing…"));
+    } else {
+        m_status->setText(tr("Testing connection…"));
+    }
     m_client->testConnection();
 }
 

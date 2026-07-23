@@ -226,7 +226,11 @@ void ExplorePage::refresh()
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_status->setText(tr("Loading explore…"));
-    m_client->loadExplore();
+    if (!m_client->loadExplore()) {
+        m_loading = false;
+        m_refreshButton->setEnabled(true);
+        m_status->setText(tr("Explore could not be refreshed right now."));
+    }
 }
 
 void ExplorePage::clearSections()

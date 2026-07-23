@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
 
@@ -46,20 +47,32 @@ bool writeJsonFile(const QString &path, const QJsonObject &object)
 {
     QFileInfo info(path);
     QDir().mkpath(info.absolutePath());
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
         return false;
-    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
-    return true;
+    const QByteArray payload = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    if (file.write(payload) != payload.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
 }
 
-QJsonObject readJsonFile(const QString &path)
+QJsonObject readJsonFile(const QString &path, qint64 maximumBytes)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return {};
-    return QJsonDocument::fromJson(file.readAll()).object();
+    if (file.size() < 0 || file.size() > maximumBytes)
+        return {};
+    const QByteArray payload = file.read(maximumBytes + 1);
+    if (payload.size() > maximumBytes)
+        return {};
+    return QJsonDocument::fromJson(payload).object();
 }
+
+constexpr qint64 kMaxOfflineJsonBytes = 32LL * 1024 * 1024;
+constexpr int kMaxCachedLibraryAssets = 5000;
 
 } // namespace
 
@@ -98,8 +111,9 @@ void OfflineStore::saveLibrary(const QString &serverUrl, const QList<ImmichAsset
         return;
 
     QJsonArray items;
-    for (const ImmichAsset &asset : assets)
-        items.append(assetToJson(asset));
+    const int limit = qMin(assets.size(), kMaxCachedLibraryAssets);
+    for (int i = 0; i < limit; ++i)
+        items.append(assetToJson(assets.at(i)));
 
     QJsonObject root;
     root.insert(QStringLiteral("serverUrl"), serverUrl);
@@ -123,6 +137,8 @@ void OfflineStore::mergeLibrary(const QString &serverUrl, const QList<ImmichAsse
         existing.append(asset);
         seen.insert(asset.id);
     }
+    while (existing.size() > kMaxCachedLibraryAssets)
+        existing.removeLast();
     saveLibrary(serverUrl, existing, query);
 }
 
@@ -131,7 +147,7 @@ bool OfflineStore::loadLibrary(const QString &serverUrl, QList<ImmichAsset> *ass
 {
     if (!assets || serverUrl.isEmpty())
         return false;
-    const QJsonObject root = readJsonFile(libraryPath(serverUrl));
+    const QJsonObject root = readJsonFile(libraryPath(serverUrl), kMaxOfflineJsonBytes);
     if (root.isEmpty())
         return false;
     if (query)
@@ -187,7 +203,7 @@ bool OfflineStore::loadExplore(const QString &serverUrl, ImmichExploreData *data
 {
     if (!data || serverUrl.isEmpty())
         return false;
-    const QJsonObject root = readJsonFile(explorePath(serverUrl));
+    const QJsonObject root = readJsonFile(explorePath(serverUrl), kMaxOfflineJsonBytes);
     if (root.isEmpty())
         return false;
 

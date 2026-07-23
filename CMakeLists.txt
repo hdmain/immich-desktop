@@ -133,7 +133,7 @@ target_link_libraries(immich PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(immich PRIVATE dwmapi)
+    target_link_libraries(immich PRIVATE crypt32 dwmapi)
 
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIRECTORY "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
@@ -235,7 +235,6 @@ if(WIN32)
     set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\immich.exe")
     set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")
     set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")
-    set(CPACK_PACKAGE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources\\\\immich-installer.bmp")
     set(CPACK_WIX_VERSION 3)
     set(CPACK_WIX_UPGRADE_GUID "A62C0898-DA73-47EB-A640-6FC2F37DFA1F")
     set(CPACK_WIX_PRODUCT_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/immich.ico")

@@ -50,6 +50,7 @@ private:
     void updateResizeHandles();
     void notifyUpdateAvailable();
     void maybeShowGitHubStarPrompt();
+    void refreshTrayIcon();
 
     TopBar *m_topBar;
     AnimatedStackedWidget *m_pages;
@@ -57,6 +58,7 @@ private:
     Sidebar *m_sidebar;
     ThemeManager *m_themeManager;
     UpdateManager *m_updateManager;
+    ImmichClient *m_immichClient = nullptr;
     QSystemTrayIcon *m_trayIcon = nullptr;
     QList<ResizeHandle *> m_resizeHandles;
     bool m_autoCheckScheduled = false;

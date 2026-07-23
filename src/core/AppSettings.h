@@ -53,7 +53,9 @@ public:
     void saveUpdate(const UpdateSettings &update);
 
     ImmichConnectionSettings loadImmichConnection() const;
-    void saveImmichConnection(const ImmichConnectionSettings &connection);
+    // Returns false when the API key could not be protected for storage; URLs are
+    // still saved and any previously stored key is left unchanged.
+    bool saveImmichConnection(const ImmichConnectionSettings &connection);
 
     WindowSettings loadWindow() const;
     void saveWindow(const WindowSettings &window);

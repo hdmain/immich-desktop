@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QMutexLocker>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 namespace Aurora {
@@ -40,10 +41,17 @@ QPixmap ThumbnailCache::memoryPixmap(const QString &assetId) const
 
 QByteArray ThumbnailCache::readDisk(const QString &assetId) const
 {
+    QMutexLocker lock(&m_diskMutex);
     QFile file(filePath(assetId));
     if (!file.open(QIODevice::ReadOnly))
         return {};
-    return file.readAll();
+    constexpr qint64 maximumThumbnailBytes = 8LL * 1024 * 1024;
+    if (file.size() < 0 || file.size() > maximumThumbnailBytes)
+        return {};
+    const QByteArray bytes = file.read(maximumThumbnailBytes + 1);
+    if (bytes.size() > maximumThumbnailBytes)
+        return {};
+    return bytes;
 }
 
 void ThumbnailCache::store(const QString &assetId, const QByteArray &bytes,
@@ -62,9 +70,14 @@ void ThumbnailCache::store(const QString &assetId, const QByteArray &bytes,
     if (bytes.isEmpty())
         return;
 
-    QFile file(filePath(assetId));
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        file.write(bytes);
+    QMutexLocker lock(&m_diskMutex);
+    QSaveFile file(filePath(assetId));
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+    if (file.write(bytes) != bytes.size())
+        file.cancelWriting();
+    else
+        file.commit();
 }
 
 void ThumbnailCache::clearMemory()

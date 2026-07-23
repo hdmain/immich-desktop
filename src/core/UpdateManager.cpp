@@ -8,6 +8,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileDevice>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -16,6 +17,8 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QVersionNumber>
@@ -44,6 +47,19 @@ UpdateManager::UpdateManager(QObject *parent)
     : QObject(parent)
     , m_network(new QNetworkAccessManager(this))
 {
+}
+
+UpdateManager::~UpdateManager()
+{
+    if (m_activeReply) {
+        disconnect(m_activeReply, nullptr, this, nullptr);
+        m_activeReply->abort();
+    }
+    if (m_downloadFile) {
+        m_downloadFile->cancelWriting();
+        delete m_downloadFile;
+        m_downloadFile = nullptr;
+    }
 }
 
 UpdateState UpdateManager::state() const { return m_state; }
@@ -97,6 +113,7 @@ void UpdateManager::checkForUpdates(bool silent)
                       QStringLiteral("immich-desktop/%1")
                           .arg(QString::fromLatin1(Config::ApplicationVersion)));
     request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setTransferTimeout(30000);
 
     if (m_activeReply) {
         m_activeReply->abort();
@@ -134,13 +151,34 @@ void UpdateManager::downloadUpdate()
     m_downloadPath.clear();
     setState(UpdateState::Downloading);
 
+    const QString safeAssetName = QFileInfo(m_update.assetName).fileName();
+    if (safeAssetName.isEmpty() || safeAssetName != m_update.assetName) {
+        m_installAfterDownload = false;
+        fail(tr("The update package has an unsafe file name."));
+        return;
+    }
+
     const QString tempRoot = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
                              QStringLiteral("/immich-desktop-updates");
-    QDir().mkpath(tempRoot);
-    m_downloadPath = tempRoot + QLatin1Char('/') + m_update.assetName;
+    if (!QDir().mkpath(tempRoot)) {
+        m_installAfterDownload = false;
+        fail(tr("Unable to create the update download directory."));
+        return;
+    }
+    m_downloadPath = QDir(tempRoot).filePath(safeAssetName);
 
     if (QFile::exists(m_downloadPath))
         QFile::remove(m_downloadPath);
+
+    delete m_downloadFile;
+    m_downloadFile = new QSaveFile(m_downloadPath);
+    if (!m_downloadFile->open(QIODevice::WriteOnly)) {
+        delete m_downloadFile;
+        m_downloadFile = nullptr;
+        m_installAfterDownload = false;
+        fail(tr("Unable to create the update package file."));
+        return;
+    }
 
     QNetworkRequest request(m_update.downloadUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader,
@@ -148,6 +186,7 @@ void UpdateManager::downloadUpdate()
                           .arg(QString::fromLatin1(Config::ApplicationVersion)));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
 
     if (m_activeReply) {
         m_activeReply->abort();
@@ -155,6 +194,8 @@ void UpdateManager::downloadUpdate()
     }
     m_activeReply = m_network->get(request);
     connect(m_activeReply, &QNetworkReply::downloadProgress, this, &UpdateManager::downloadProgress);
+    connect(m_activeReply, &QNetworkReply::readyRead, this,
+            &UpdateManager::handleDownloadReadyRead);
     connect(m_activeReply, &QNetworkReply::finished, this, &UpdateManager::handleDownloadFinished);
 }
 
@@ -236,9 +277,22 @@ void UpdateManager::handleReleaseReply()
         return;
     }
 
+    constexpr qsizetype maximumReleaseBytes = 2 * 1024 * 1024;
+    const qint64 advertised =
+        reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+    if (advertised > maximumReleaseBytes || reply->bytesAvailable() > maximumReleaseBytes) {
+        fail(tr("The update server returned an unexpectedly large response."));
+        return;
+    }
+    const QByteArray payload = reply->read(maximumReleaseBytes + 1);
+    if (payload.size() > maximumReleaseBytes) {
+        fail(tr("The update server returned an unexpectedly large response."));
+        return;
+    }
+
     UpdateInfo info;
     QString parseError;
-    if (!parseReleasePayload(reply->readAll(), &info, &parseError)) {
+    if (!parseReleasePayload(payload, &info, &parseError)) {
         fail(parseError);
         return;
     }
@@ -262,36 +316,84 @@ void UpdateManager::handleReleaseReply()
     emit updateAvailable(info);
 }
 
+void UpdateManager::handleDownloadReadyRead()
+{
+    if (!m_activeReply || !m_downloadFile)
+        return;
+
+    constexpr qint64 maximumPackageBytes = 1024LL * 1024 * 1024;
+    const QByteArray chunk = m_activeReply->readAll();
+    const qint64 expectedSize = m_update.sizeBytes;
+    const qint64 maximumAllowed =
+        expectedSize > 0 ? qMin(maximumPackageBytes, expectedSize) : maximumPackageBytes;
+    if (chunk.size() > maximumAllowed - m_downloadFile->size()) {
+        m_activeReply->setProperty("downloadFailure",
+                                   tr("The update package exceeded its advertised size."));
+        m_activeReply->abort();
+        return;
+    }
+    if (!chunk.isEmpty() && m_downloadFile->write(chunk) != chunk.size()) {
+        m_activeReply->setProperty("downloadFailure",
+                                   tr("Unable to write the downloaded package."));
+        m_activeReply->abort();
+    }
+}
+
 void UpdateManager::handleDownloadFinished()
 {
     auto *reply = m_activeReply;
-    m_activeReply = nullptr;
     if (!reply)
         return;
+    handleDownloadReadyRead();
+    m_activeReply = nullptr;
     reply->deleteLater();
 
-    if (reply->error() != QNetworkReply::NoError) {
-        if (reply->error() == QNetworkReply::OperationCanceledError)
+    const QString downloadFailure = reply->property("downloadFailure").toString();
+    if (!downloadFailure.isEmpty() || reply->error() != QNetworkReply::NoError) {
+        if (m_downloadFile) {
+            m_downloadFile->cancelWriting();
+            delete m_downloadFile;
+            m_downloadFile = nullptr;
+        }
+        if (reply->error() == QNetworkReply::OperationCanceledError &&
+            downloadFailure.isEmpty())
             return;
         m_installAfterDownload = false;
-        fail(tr("Download failed: %1").arg(reply->errorString()));
+        fail(downloadFailure.isEmpty()
+                 ? tr("Download failed: %1").arg(reply->errorString())
+                 : downloadFailure);
         return;
     }
 
-    QFile file(m_downloadPath);
-    if (!file.open(QIODevice::WriteOnly)) {
+    if (!m_downloadFile) {
         m_installAfterDownload = false;
-        fail(tr("Unable to write the downloaded package."));
+        fail(tr("The update package file is unavailable."));
         return;
     }
-    file.write(reply->readAll());
-    file.close();
+    if (m_update.sizeBytes > 0 && m_downloadFile->size() != m_update.sizeBytes) {
+        m_downloadFile->cancelWriting();
+        delete m_downloadFile;
+        m_downloadFile = nullptr;
+        m_installAfterDownload = false;
+        fail(tr("The update package size did not match the release metadata."));
+        return;
+    }
+    if (!m_downloadFile->commit()) {
+        delete m_downloadFile;
+        m_downloadFile = nullptr;
+        m_installAfterDownload = false;
+        fail(tr("Unable to finalize the downloaded package."));
+        return;
+    }
+    delete m_downloadFile;
+    m_downloadFile = nullptr;
 
 #ifndef Q_OS_WIN
     if (m_update.installKind == InstallKind::LinuxAppImage)
         QFile::setPermissions(m_downloadPath,
-                              QFile::permissions(m_downloadPath) | QFile::ExeUser | QFile::ExeGroup |
-                                  QFile::ExeOther);
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                  QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                                  QFileDevice::ExeGroup);
 #endif
 
     setState(UpdateState::ReadyToInstall);
@@ -380,8 +482,24 @@ bool UpdateManager::parseReleasePayload(const QByteArray &payload, UpdateInfo *i
     else if (info->assetName.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive))
         info->installKind = InstallKind::LinuxAppImage;
 
-    if (!info->downloadUrl.isValid()) {
-        *error = tr("The selected update package has an invalid download URL.");
+    static const QRegularExpression safeNamePattern(
+        QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"));
+    if (QFileInfo(info->assetName).fileName() != info->assetName ||
+        !safeNamePattern.match(info->assetName).hasMatch()) {
+        *error = tr("The selected update package has an unsafe file name.");
+        return false;
+    }
+    if (!info->downloadUrl.isValid() ||
+        info->downloadUrl.scheme() != QStringLiteral("https") ||
+        info->downloadUrl.host().compare(QStringLiteral("github.com"),
+                                         Qt::CaseInsensitive) != 0 ||
+        !info->downloadUrl.userName().isEmpty() ||
+        !info->downloadUrl.password().isEmpty()) {
+        *error = tr("The selected update package has an untrusted download URL.");
+        return false;
+    }
+    if (info->sizeBytes <= 0 || info->sizeBytes > 1024LL * 1024 * 1024) {
+        *error = tr("The selected update package has an invalid size.");
         return false;
     }
     return true;
@@ -426,14 +544,37 @@ bool UpdateManager::assetMatches(const QString &name, InstallKind kind) const
 
 bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind)
 {
+    const auto isSafeShellPath = [](const QString &path) {
+        if (path.isEmpty() || path.size() > 512)
+            return false;
+        for (const QChar ch : path) {
+            const ushort u = ch.unicode();
+            if (u < 0x20 || u == '"' || u == '\'' || u == '`' || u == '$' || u == ';' ||
+                u == '|' || u == '&' || u == '<' || u == '>' || u == '%' || u == '!' ||
+                u == '^' || u == '\n' || u == '\r') {
+                return false;
+            }
+        }
+        return QFileInfo(path).isAbsolute();
+    };
+
 #ifdef Q_OS_WIN
     const QString appPath = QCoreApplication::applicationFilePath();
-    const QString helperPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-                               QStringLiteral("/immich-desktop-apply-update.cmd");
+    if (!isSafeShellPath(packagePath) || !isSafeShellPath(appPath))
+        return false;
+
+    const QString helperDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+                              QStringLiteral("/immich-desktop-updates");
+    if (!QDir().mkpath(helperDir))
+        return false;
+    const QString helperPath =
+        QDir(helperDir).filePath(QStringLiteral("immich-desktop-apply-update.cmd"));
     QFile helper(helperPath);
     if (!helper.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
         return false;
 
+    const QString nativePackage = QDir::toNativeSeparators(packagePath);
+    const QString nativeApp = QDir::toNativeSeparators(appPath);
     QString script;
     if (kind == InstallKind::WindowsMsi) {
         script = QStringLiteral(
@@ -441,8 +582,7 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      "timeout /t 2 /nobreak >nul\r\n"
                      "msiexec /i \"%1\" /passive\r\n"
                      "if exist \"%2\" start \"\" \"%2\"\r\n")
-                     .arg(QDir::toNativeSeparators(packagePath),
-                          QDir::toNativeSeparators(appPath));
+                     .arg(nativePackage, nativeApp);
     } else {
         script = QStringLiteral(
                      "@echo off\r\n"
@@ -450,8 +590,7 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      "start /wait \"\" \"%1\" /S\r\n"
                      "if errorlevel 1 start /wait \"\" \"%1\"\r\n"
                      "if exist \"%2\" start \"\" \"%2\"\r\n")
-                     .arg(QDir::toNativeSeparators(packagePath),
-                          QDir::toNativeSeparators(appPath));
+                     .arg(nativePackage, nativeApp);
     }
     helper.write(script.toLocal8Bit());
     helper.close();
@@ -462,6 +601,10 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
     if (kind == InstallKind::LinuxSnap) {
         const QString snapName =
             qEnvironmentVariable("SNAP_NAME", QStringLiteral("immich-desktop"));
+        static const QRegularExpression snapNamePattern(
+            QStringLiteral("^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$"));
+        if (!snapNamePattern.match(snapName).hasMatch())
+            return false;
         if (QProcess::startDetached(QStringLiteral("snap"),
                                     {QStringLiteral("refresh"), snapName})) {
             return true;
@@ -471,6 +614,8 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
     }
 
     if (kind == InstallKind::LinuxAppImage) {
+        if (!isSafeShellPath(packagePath))
+            return false;
         const QString currentAppImage = qEnvironmentVariable("APPIMAGE");
         QString target = currentAppImage;
         if (target.isEmpty()) {
@@ -478,9 +623,17 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      QStringLiteral("/Applications/") + QFileInfo(packagePath).fileName();
             QDir().mkpath(QFileInfo(target).absolutePath());
         }
+        if (!isSafeShellPath(target))
+            return false;
 
-        const QString helperPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-                                   QStringLiteral("/immich-desktop-apply-update.sh");
+        const QString helperDir =
+            QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+            QStringLiteral("/immich-desktop-updates-") +
+            QString::number(QCoreApplication::applicationPid());
+        if (!QDir().mkpath(helperDir))
+            return false;
+        const QString helperPath =
+            QDir(helperDir).filePath(QStringLiteral("immich-desktop-apply-update.sh"));
         QFile helper(helperPath);
         if (!helper.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
             return false;
@@ -489,20 +642,21 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                                    "#!/bin/sh\n"
                                    "set -eu\n"
                                    "sleep 1\n"
-                                   "cp \"%1\" \"%2.new\"\n"
-                                   "chmod +x \"%2.new\"\n"
-                                   "mv \"%2.new\" \"%2\"\n"
+                                   "cp -- \"%1\" \"%2.new\"\n"
+                                   "chmod u+x -- \"%2.new\"\n"
+                                   "mv -- \"%2.new\" \"%2\"\n"
                                    "exec \"%2\"\n")
                                    .arg(packagePath, target);
         helper.write(script.toUtf8());
         helper.close();
-        QFile::setPermissions(helperPath,
-                              QFile::permissions(helperPath) | QFile::ExeUser | QFile::ExeGroup |
-                                  QFile::ExeOther);
+        QFile::setPermissions(helperPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                              QFileDevice::ExeOwner);
         return QProcess::startDetached(QStringLiteral("/bin/sh"), {helperPath});
     }
 
     if (kind == InstallKind::LinuxDeb) {
+        if (!isSafeShellPath(packagePath))
+            return false;
         if (QProcess::startDetached(QStringLiteral("pkexec"),
                                     {QStringLiteral("dpkg"), QStringLiteral("-i"), packagePath})) {
             return true;

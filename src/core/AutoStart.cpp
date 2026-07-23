@@ -36,9 +36,14 @@ QString AutoStart::launchCommand()
     const QString snapName = qEnvironmentVariable("SNAP_NAME");
     if (!snapName.isEmpty())
         return QStringLiteral("/snap/bin/%1 --autostart").arg(snapName);
-#endif
+    QString exe = QCoreApplication::applicationFilePath();
+    exe.replace(u'\\', QStringLiteral("\\\\"));
+    exe.replace(u'"', QStringLiteral("\\\""));
+    return QStringLiteral("\"%1\" --autostart").arg(exe);
+#else
     const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
     return QStringLiteral("\"%1\" --autostart").arg(exe);
+#endif
 }
 
 QString AutoStart::desktopFilePath()

@@ -45,7 +45,7 @@ public:
     void testConnection();
     void loadAssets(int page = 1, int pageSize = 80, const QString &query = {});
     void pollNewestAssets(int pageSize = 20);
-    void loadExplore();
+    bool loadExplore();
     void loadAssetsForPerson(const QString &personId, int page = 1, int pageSize = 80);
     void loadAssetsForCity(const QString &city, int page = 1, int pageSize = 80);
     void loadThumbnail(const QString &assetId);
@@ -57,7 +57,9 @@ public:
     void fetchAssetOriginal(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
     bool isUploading() const;
+    bool isDownloading() const;
     int pendingUploadCount() const;
+    int activeDownloadCount() const;
     QUrl videoStreamUrl(const QString &assetId);
 
 signals:
@@ -85,6 +87,7 @@ signals:
                               const QString &contentType);
     void assetsDeleted(const QStringList &assetIds, bool permanent);
     void requestFailed(const QString &operation, const QString &message);
+    void transferActivityChanged();
 
 private:
     static QString normalizeServerUrl(QString url);
@@ -110,6 +113,8 @@ private:
     void restoreUploadQueue();
     void requeueUpload(const QString &filePath, bool toFront = true);
     void scheduleUploadRetry(int delayMs = 1500);
+    void beginActiveDownload();
+    void endActiveDownload();
     void probeEndpoints();
     void probeReachability();
     void setOnline(bool online);
@@ -134,12 +139,14 @@ private:
     QHash<QString, int> m_uploadRetryCounts;
     VideoStreamServer *m_streamServer = nullptr;
     ImmichExploreData m_exploreBuffer;
+    QString m_exploreError;
     bool m_usingLocalEndpoint = false;
-    bool m_online = true;
+    bool m_online = false;
     bool m_pollInFlight = false;
     bool m_uploadInFlight = false;
     bool m_processingUploadQueue = false;
     bool m_uploadRetryScheduled = false;
+    int m_activeDownloads = 0;
     bool m_endpointProbeInFlight = false;
     bool m_reachabilityProbeInFlight = false;
     bool m_connectionTestPending = false;

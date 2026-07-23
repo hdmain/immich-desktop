@@ -6,10 +6,6 @@
 #include <QLocalSocket>
 #include <QSysInfo>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
-
 namespace Aurora {
 namespace {
 
@@ -56,11 +52,6 @@ bool SingleInstance::activateExistingInstance()
         return false;
     }
 
-#ifdef Q_OS_WIN
-    // Allow the primary process to take foreground after we exit.
-    AllowSetForegroundWindow(ASFW_ANY);
-#endif
-
     socket.write(kActivateMessage);
     socket.flush();
     socket.waitForBytesWritten(500);
@@ -94,14 +85,14 @@ void SingleInstance::handleNewConnection()
             continue;
         connect(client, &QLocalSocket::readyRead, this, [this, client] {
             const QByteArray payload = client->readAll();
-            if (payload.contains(kActivateMessage) || payload.contains("activate"))
+            if (payload == kActivateMessage)
                 emit activationRequested();
         });
         connect(client, &QLocalSocket::disconnected, client, &QLocalSocket::deleteLater);
         // Message may already be buffered before readyRead connects.
         if (client->bytesAvailable() > 0) {
             const QByteArray payload = client->readAll();
-            if (payload.contains(kActivateMessage) || payload.contains("activate"))
+            if (payload == kActivateMessage)
                 emit activationRequested();
         }
     }

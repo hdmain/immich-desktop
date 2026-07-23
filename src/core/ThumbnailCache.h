@@ -23,6 +23,7 @@ private:
     QString filePath(const QString &assetId) const;
 
     mutable QMutex m_mutex;
+    mutable QMutex m_diskMutex;
     mutable QCache<QString, QPixmap> m_memory;
     QString m_directory;
 };

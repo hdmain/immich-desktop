@@ -7,6 +7,7 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
+class QSaveFile;
 
 namespace Aurora {
 
@@ -45,6 +46,7 @@ class UpdateManager final : public QObject {
 
 public:
     explicit UpdateManager(QObject *parent = nullptr);
+    ~UpdateManager() override;
 
     UpdateState state() const;
     UpdateInfo availableUpdate() const;
@@ -72,6 +74,7 @@ private:
     void setState(UpdateState state);
     void fail(const QString &message);
     void handleReleaseReply();
+    void handleDownloadReadyRead();
     void handleDownloadFinished();
     bool parseReleasePayload(const QByteArray &payload, UpdateInfo *info, QString *error) const;
     InstallKind preferredInstallKind() const;
@@ -81,6 +84,7 @@ private:
     AppSettings m_settingsStore;
     QNetworkAccessManager *m_network;
     QNetworkReply *m_activeReply = nullptr;
+    QSaveFile *m_downloadFile = nullptr;
     UpdateState m_state = UpdateState::Idle;
     UpdateInfo m_update;
     QString m_error;
