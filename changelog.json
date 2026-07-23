@@ -1,4 +1,4 @@
 {
   "version": "0.1.7",
-  "what_changed": "• Fixed Windows link error for UpdateManager::usesSnapStore().\n• Fixed video playback proxy dropping Content-Length (caused “Stream doesn't contain enough data”), allow safe Immich CDN redirects, and improve Snap multimedia.\n• Settings → Appearance shows local cache size.\n• Snap-aware update UI strings when running from Snap.\n• Added Flatpak packaging and Flathub-ready AppStream metadata (desktop/metainfo, screenshots, releases)."
+  "what_changed": "• Fixed Windows link error for UpdateManager::usesSnapStore().\n• Fixed video playback proxy dropping Content-Length (caused “Stream doesn't contain enough data”), allow safe Immich CDN redirects, and improve Snap multimedia.\n• Settings → Appearance shows local cache size.\n• Snap-aware update UI strings when running from Snap.\n• Added Flatpak packaging for Flathub using App ID io.github.hdmain.immich-desktop (Flathub rejects com.github.* for new apps)."
 }

@@ -27,7 +27,7 @@ apps:
   immich-desktop:
     extensions:
       - gnome
-    common-id: com.github.hdmain.immich-desktop
+    common-id: io.github.hdmain.immich-desktop
     desktop: usr/share/applications/immich-desktop.desktop
     command: bin/immich-launch
     plugs:

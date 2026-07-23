@@ -1,13 +1,13 @@
 # Unofficial Immich Qt desktop client — Flatpak manifest for Flathub.
-# App ID: com.github.hdmain.immich-desktop
+# App ID: io.github.hdmain.immich-desktop
 #
 # Local build (on Linux):
 #   flatpak-builder --user --install --force-clean build-dir \
-#     flatpak/com.github.hdmain.immich-desktop.yml
+#     flatpak/io.github.hdmain.immich-desktop.yml
 
-id: com.github.hdmain.immich-desktop
+id: io.github.hdmain.immich-desktop
 runtime: org.kde.Platform
-runtime-version: "6.9"
+runtime-version: "6.11"
 sdk: org.kde.Sdk
 command: immich
 
@@ -26,7 +26,6 @@ finish-args:
   - --filesystem=xdg-videos
   - --filesystem=xdg-download
   - --filesystem=xdg-documents
-  - --filesystem=xdg-config/autostart:create
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
 
@@ -48,7 +47,7 @@ modules:
       - type: git
         url: https://github.com/hdmain/immich-desktop.git
         tag: v0.1.7
-        commit: 0569382adfa6635e11dd5323c8ca86676a6f1760
+        commit: PLACEHOLDER
     cleanup:
       - /include
       - /lib/cmake

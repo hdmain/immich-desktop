@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2026 Immich Desktop Community -->
 <component type="desktop-application">
-  <id>com.github.hdmain.immich-desktop</id>
+  <id>io.github.hdmain.immich-desktop</id>
   <name>immich desktop</name>
   <summary>Unofficial Immich desktop client</summary>
-  <developer id="com.github.hdmain">
+  <developer id="io.github.hdmain">
     <name>Immich Desktop Community</name>
   </developer>
   <metadata_license>MIT</metadata_license>
@@ -28,11 +28,15 @@
   <url type="homepage">https://github.com/hdmain/immich-desktop</url>
   <url type="bugtracker">https://github.com/hdmain/immich-desktop/issues</url>
   <url type="vcs-browser">https://github.com/hdmain/immich-desktop</url>
-  <launchable type="desktop-id">com.github.hdmain.immich-desktop.desktop</launchable>
+  <launchable type="desktop-id">io.github.hdmain.immich-desktop.desktop</launchable>
   <provides>
     <binary>immich</binary>
     <id>immich-desktop.desktop</id>
+    <id>com.github.hdmain.immich-desktop</id>
   </provides>
+  <replaces>
+    <id>com.github.hdmain.immich-desktop</id>
+  </replaces>
   <categories>
     <category>Graphics</category>
     <category>Photography</category>
@@ -64,6 +68,7 @@
           <li>Fixed Windows UpdateManager link error</li>
           <li>Show local cache size in Appearance settings</li>
           <li>Snap-aware update messaging</li>
+          <li>Flatpak packaging for Flathub (App ID io.github.hdmain.immich-desktop)</li>
         </ul>
       </description>
       <url>https://github.com/hdmain/immich-desktop/releases/tag/v0.1.7</url>
