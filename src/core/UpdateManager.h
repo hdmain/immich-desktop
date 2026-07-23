@@ -74,22 +74,13 @@ signals:
 private:
     void setState(UpdateState state);
     void fail(const QString &message);
-    void checkGitHubForUpdates();
-    void checkSnapStoreForUpdates();
     void handleReleaseReply();
-    void handleSnapStoreReply();
-    void handleChangelogReply();
     void handleDownloadReadyRead();
     void handleDownloadFinished();
-    void finishUpdateCheck(const UpdateInfo &info);
-    void fetchChangelogNotes(const QString &version);
     bool parseReleasePayload(const QByteArray &payload, UpdateInfo *info, QString *error) const;
-    bool parseSnapStorePayload(const QByteArray &payload, UpdateInfo *info, QString *error) const;
-    bool parseChangelogPayload(const QByteArray &payload, QString *notes, QString *error) const;
     InstallKind preferredInstallKind() const;
     bool assetMatches(const QString &name, InstallKind kind) const;
     bool launchInstaller(const QString &packagePath, InstallKind kind);
-    QString installedVersion() const;
 
     AppSettings m_settingsStore;
     QNetworkAccessManager *m_network;

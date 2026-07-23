@@ -94,6 +94,11 @@ bool UpdateManager::shouldAutoCheck() const
     return update.lastCheckUtc.secsTo(QDateTime::currentDateTimeUtc()) >= 24 * 60 * 60;
 }
 
+bool UpdateManager::usesSnapStore() const
+{
+    return preferredInstallKind() == InstallKind::LinuxSnap;
+}
+
 void UpdateManager::checkForUpdates(bool silent)
 {
     if (m_state == UpdateState::Checking || m_state == UpdateState::Downloading ||
