@@ -83,75 +83,6 @@ bool isValidImmichId(const QString &id)
     return pattern.match(id).hasMatch();
 }
 
-constexpr qsizetype kMaxJsonResponseBytes = 16 * 1024 * 1024;
-
-bool isAllowedServerUrl(const QUrl &url)
-{
-    if (!url.isValid() || url.host().isEmpty())
-        return false;
-    const QString scheme = url.scheme().toLower();
-    if (scheme != QStringLiteral("https") && scheme != QStringLiteral("http"))
-        return false;
-    return url.userName().isEmpty() && url.password().isEmpty();
-}
-
-QString sanitizeStoredServerUrl(const QString &raw)
-{
-    QString url = raw.trimmed();
-    while (url.endsWith(u'/'))
-        url.chop(1);
-    if (url.isEmpty())
-        return {};
-    const QUrl parsed = QUrl::fromUserInput(url);
-    if (!isAllowedServerUrl(parsed))
-        return {};
-    return parsed.toString(QUrl::RemoveQuery | QUrl::RemoveFragment);
-}
-
-QByteArray takeReplyBody(QNetworkReply *reply, qsizetype maxBytes, QString *errorOut = nullptr)
-{
-    if (!reply) {
-        if (errorOut)
-            *errorOut = QObject::tr("Missing network reply.");
-        return {};
-    }
-    const qint64 advertised =
-        reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-    if (advertised > maxBytes || reply->bytesAvailable() > maxBytes) {
-        if (errorOut)
-            *errorOut = QObject::tr("Server response is too large.");
-        return {};
-    }
-    const QByteArray body = reply->read(maxBytes + 1);
-    if (body.size() > maxBytes) {
-        if (errorOut)
-            *errorOut = QObject::tr("Server response is too large.");
-        return {};
-    }
-    return body;
-}
-
-QString sanitizeMultipartFileName(QString name)
-{
-    name = QFileInfo(name).fileName();
-    QString cleaned;
-    cleaned.reserve(name.size());
-    for (const QChar ch : name) {
-        const ushort u = ch.unicode();
-        if (u < 0x20 || u == 0x7f || ch == u'"' || ch == u'\\' || ch == u';' || ch == u'\r' ||
-            ch == u'\n') {
-            continue;
-        }
-        cleaned.append(ch);
-    }
-    cleaned = cleaned.trimmed();
-    if (cleaned.isEmpty() || cleaned == QLatin1String(".") || cleaned == QLatin1String(".."))
-        return QStringLiteral("upload.bin");
-    if (cleaned.size() > 180)
-        cleaned = cleaned.left(180);
-    return cleaned;
-}
-
 } // namespace
 
 ImmichClient::ImmichClient(QObject *parent)
@@ -162,12 +93,6 @@ ImmichClient::ImmichClient(QObject *parent)
     , m_endpointProbeTimer(new QTimer(this))
     , m_reachabilityTimer(new QTimer(this))
 {
-    m_connection.serverUrl = sanitizeStoredServerUrl(m_connection.serverUrl);
-    m_connection.localServerUrl = sanitizeStoredServerUrl(m_connection.localServerUrl);
-    if (m_connection.serverUrl.isEmpty())
-        m_connection.apiKey.clear();
-    m_activeServerUrl = normalizeServerUrl(m_connection.serverUrl);
-
     m_imagePool.setMaxThreadCount(8);
     m_endpointProbeTimer->setInterval(12 * 1000);
     connect(m_endpointProbeTimer, &QTimer::timeout, this, &ImmichClient::probeEndpoints);
@@ -309,21 +234,16 @@ bool ImmichClient::isTransientNetworkError(QNetworkReply *reply)
 void ImmichClient::setConnection(const ImmichConnectionSettings &connection, bool persist)
 {
     ImmichConnectionSettings normalized = connection;
-    normalized.serverUrl = sanitizeStoredServerUrl(normalized.serverUrl);
-    normalized.localServerUrl = sanitizeStoredServerUrl(normalized.localServerUrl);
+    normalized.serverUrl = normalizeServerUrl(normalized.serverUrl);
+    normalized.localServerUrl = normalizeServerUrl(normalized.localServerUrl);
     normalized.apiKey = normalized.apiKey.trimmed();
-    if (normalized.serverUrl.isEmpty())
-        normalized.apiKey.clear();
 
     const bool changed = normalized.serverUrl != m_connection.serverUrl ||
                          normalized.localServerUrl != m_connection.localServerUrl ||
                          normalized.apiKey != m_connection.apiKey;
     m_connection = normalized;
-    if (persist && !m_store.saveImmichConnection(m_connection)) {
-        emit requestFailed(
-            tr("Save settings"),
-            tr("Could not securely store the API key. The previous key was kept."));
-    }
+    if (persist)
+        m_store.saveImmichConnection(m_connection);
 
     setActiveServerUrl(m_connection.serverUrl, false);
 
@@ -389,9 +309,8 @@ void ImmichClient::probeEndpoints()
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         m_endpointProbeInFlight = false;
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, 64 * 1024, &sizeError);
-        const bool reachable = sizeError.isEmpty() && reply->error() == QNetworkReply::NoError;
+        const QByteArray body = reply->readAll();
+        const bool reachable = reply->error() == QNetworkReply::NoError;
         bool pong = false;
         if (reachable) {
             const QJsonObject object = QJsonDocument::fromJson(body).object();
@@ -429,10 +348,8 @@ void ImmichClient::probeReachability()
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         m_reachabilityProbeInFlight = false;
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, 64 * 1024, &sizeError);
-        const bool reachable = sizeError.isEmpty() &&
-                               reply->error() == QNetworkReply::NoError &&
+        const QByteArray body = reply->readAll();
+        const bool reachable = reply->error() == QNetworkReply::NoError &&
                                (body.contains("pong") ||
                                 QJsonDocument::fromJson(body)
                                         .object()
@@ -545,11 +462,8 @@ void ImmichClient::finishConnectionTest()
 
     auto *reply = m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/users/me"))));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, kMaxJsonResponseBytes, &sizeError);
-        if (!sizeError.isEmpty()) {
-            emit connectionTested(false, sizeError);
-        } else if (reply->error() != QNetworkReply::NoError) {
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
             emit connectionTested(false, errorMessage(reply, body));
         } else {
             const QJsonObject user = QJsonDocument::fromJson(body).object();
@@ -620,13 +534,12 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
     auto *reply = m_network->post(searchRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, pollOnly, smartSearch, trimmedQuery, page] {
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, kMaxJsonResponseBytes, &sizeError);
+        const QByteArray body = reply->readAll();
         if (pollOnly)
             m_pollInFlight = false;
 
-        if (!sizeError.isEmpty() || reply->error() != QNetworkReply::NoError) {
-            if (reply->error() != QNetworkReply::NoError && isTransientNetworkError(reply))
+        if (reply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(reply))
                 setOnline(false);
             if (!pollOnly) {
                 if (page <= 1 && emitCachedLibrary(trimmedQuery)) {
@@ -634,8 +547,7 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
                     return;
                 }
                 emit requestFailed(smartSearch ? tr("Search") : tr("Load library"),
-                                   sizeError.isEmpty() ? errorMessage(reply, body)
-                                                       : sizeError);
+                                   errorMessage(reply, body));
             }
             reply->deleteLater();
             return;
@@ -687,7 +599,6 @@ bool ImmichClient::loadExplore()
     }
 
     m_exploreBuffer = ImmichExploreData{};
-    m_exploreError.clear();
     m_explorePeoplePending = true;
     m_exploreDataPending = true;
 
@@ -702,14 +613,13 @@ bool ImmichClient::loadExplore()
     peopleRequest.setRawHeader("Accept", "application/json");
     auto *peopleReply = m_network->get(peopleRequest);
     connect(peopleReply, &QNetworkReply::finished, this, [this, peopleReply] {
-        QString sizeError;
-        const QByteArray body = takeReplyBody(peopleReply, kMaxJsonResponseBytes, &sizeError);
-        QString error = sizeError;
-        if (error.isEmpty() && peopleReply->error() != QNetworkReply::NoError) {
+        const QByteArray body = peopleReply->readAll();
+        QString error;
+        if (peopleReply->error() != QNetworkReply::NoError) {
             if (isTransientNetworkError(peopleReply))
                 setOnline(false);
             error = errorMessage(peopleReply, body);
-        } else if (error.isEmpty()) {
+        } else {
             const QJsonObject object = QJsonDocument::fromJson(body).object();
             const QJsonArray people = object.value(QStringLiteral("people")).toArray();
             m_exploreBuffer.people.reserve(people.size());
@@ -733,14 +643,13 @@ bool ImmichClient::loadExplore()
     exploreRequest.setRawHeader("Accept", "application/json");
     auto *exploreReply = m_network->get(exploreRequest);
     connect(exploreReply, &QNetworkReply::finished, this, [this, exploreReply] {
-        QString sizeError;
-        const QByteArray body = takeReplyBody(exploreReply, kMaxJsonResponseBytes, &sizeError);
-        QString error = sizeError;
-        if (error.isEmpty() && exploreReply->error() != QNetworkReply::NoError) {
+        const QByteArray body = exploreReply->readAll();
+        QString error;
+        if (exploreReply->error() != QNetworkReply::NoError) {
             if (isTransientNetworkError(exploreReply))
                 setOnline(false);
             error = errorMessage(exploreReply, body);
-        } else if (error.isEmpty()) {
+        } else {
             const QJsonArray sections = QJsonDocument::fromJson(body).array();
             for (const QJsonValue &sectionValue : sections) {
                 const QJsonObject section = sectionValue.toObject();
@@ -779,18 +688,16 @@ void ImmichClient::finishExploreLoad(bool peopleDone, bool exploreDone, const QS
         m_explorePeoplePending = false;
     if (exploreDone)
         m_exploreDataPending = false;
-    if (!error.isEmpty() && m_exploreError.isEmpty())
-        m_exploreError = error;
 
     if (m_explorePeoplePending || m_exploreDataPending)
         return;
 
     const bool empty = m_exploreBuffer.people.isEmpty() && m_exploreBuffer.places.isEmpty() &&
                        m_exploreBuffer.recentAssets.isEmpty();
-    if (!m_exploreError.isEmpty() && empty) {
+    if (!error.isEmpty() && empty) {
         if (emitCachedExplore())
             return;
-        emit requestFailed(tr("Load explore"), m_exploreError);
+        emit requestFailed(tr("Load explore"), error);
         return;
     }
 
@@ -826,16 +733,6 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
     if (!ensureConfigured(tr("Load explore")) || filterValue.trimmed().isEmpty())
         return;
 
-    const QString trimmedValue = filterValue.trimmed();
-    if (filterKind == QStringLiteral("person") && !isValidImmichId(trimmedValue)) {
-        emit requestFailed(tr("Load explore"), tr("The person identifier is invalid."));
-        return;
-    }
-    if (filterKind == QStringLiteral("city") && trimmedValue.size() > 200) {
-        emit requestFailed(tr("Load explore"), tr("The city filter is too long."));
-        return;
-    }
-
     QJsonObject body;
     body.insert(QStringLiteral("page"), qMax(1, page));
     body.insert(QStringLiteral("size"), qBound(1, pageSize, 250));
@@ -844,10 +741,10 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
     body.insert(QStringLiteral("withStacked"), true);
     if (filterKind == QStringLiteral("person")) {
         QJsonArray personIds;
-        personIds.append(trimmedValue);
+        personIds.append(filterValue);
         body.insert(QStringLiteral("personIds"), personIds);
     } else if (filterKind == QStringLiteral("city")) {
-        body.insert(QStringLiteral("city"), trimmedValue);
+        body.insert(QStringLiteral("city"), filterValue);
     } else {
         return;
     }
@@ -857,13 +754,10 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
     request.setRawHeader("Accept", "application/json");
     auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, filterKind, filterValue = trimmedValue] {
-                QString sizeError;
-                const QByteArray body = takeReplyBody(reply, kMaxJsonResponseBytes, &sizeError);
-                if (!sizeError.isEmpty() || reply->error() != QNetworkReply::NoError) {
-                    emit requestFailed(tr("Load explore"),
-                                       sizeError.isEmpty() ? errorMessage(reply, body)
-                                                           : sizeError);
+            [this, reply, filterKind, filterValue] {
+                const QByteArray body = reply->readAll();
+                if (reply->error() != QNetworkReply::NoError) {
+                    emit requestFailed(tr("Load explore"), errorMessage(reply, body));
                     reply->deleteLater();
                     return;
                 }
@@ -914,13 +808,12 @@ void ImmichClient::loadPersonThumbnail(const QString &personId)
         m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/people/%1/thumbnail").arg(personId))));
     connect(reply, &QNetworkReply::finished, this, [this, reply, personId, cacheKey] {
         m_pendingPersonImages.remove(personId);
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, 8 * 1024 * 1024, &sizeError);
-        if (!sizeError.isEmpty() || reply->error() != QNetworkReply::NoError) {
-            if (reply->error() != QNetworkReply::NoError && isTransientNetworkError(reply))
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (isTransientNetworkError(reply))
                 setOnline(false);
             emit imageLoadFailed(personId, QStringLiteral("person"),
-                                 sizeError.isEmpty() ? errorMessage(reply, body) : sizeError);
+                                 errorMessage(reply, body));
             reply->deleteLater();
             return;
         }
@@ -943,27 +836,16 @@ void ImmichClient::loadPersonThumbnail(const QString &personId)
 
 QImage ImmichClient::decodeImage(const QByteArray &bytes, int maximumDimension) const
 {
-    constexpr qsizetype maximumEncodedBytes = 32 * 1024 * 1024;
-    if (bytes.isEmpty() || bytes.size() > maximumEncodedBytes)
-        return {};
-
     QBuffer buffer;
     buffer.setData(bytes);
     buffer.open(QIODevice::ReadOnly);
     QImageReader reader(&buffer);
     reader.setAutoTransform(true);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    reader.setAllocationLimit(256);
-#endif
     const QSize sourceSize = reader.size();
-    if (sourceSize.isValid()) {
-        constexpr qint64 maximumPixels = 64LL * 1024 * 1024;
-        if (static_cast<qint64>(sourceSize.width()) * sourceSize.height() > maximumPixels)
-            return {};
-        if (sourceSize.width() > maximumDimension || sourceSize.height() > maximumDimension) {
-            reader.setScaledSize(sourceSize.scaled(
-                maximumDimension, maximumDimension, Qt::KeepAspectRatio));
-        }
+    if (sourceSize.isValid() &&
+        (sourceSize.width() > maximumDimension || sourceSize.height() > maximumDimension)) {
+        reader.setScaledSize(sourceSize.scaled(
+            maximumDimension, maximumDimension, Qt::KeepAspectRatio));
     }
 
     QImage image = reader.read();
@@ -1186,11 +1068,11 @@ bool ImmichClient::startUpload(const QString &filePath)
                 created.toUTC().toString(Qt::ISODateWithMs));
     addTextPart(QStringLiteral("fileModifiedAt"),
                 modified.toUTC().toString(Qt::ISODateWithMs));
-    addTextPart(QStringLiteral("filename"), sanitizeMultipartFileName(info.fileName()));
+    addTextPart(QStringLiteral("filename"), info.fileName());
     addTextPart(QStringLiteral("isFavorite"), QStringLiteral("false"));
 
     QHttpPart filePart;
-    const QString safeName = sanitizeMultipartFileName(info.fileName());
+    const QString safeName = info.fileName().replace(QLatin1Char('"'), QLatin1Char('\''));
     filePart.setHeader(
         QNetworkRequest::ContentDispositionHeader,
         QVariant(QStringLiteral("form-data; name=\"assetData\"; filename=\"%1\"")
@@ -1218,15 +1100,14 @@ bool ImmichClient::startUpload(const QString &filePath)
     connect(reply, &QNetworkReply::finished, this, [this, reply, filePath] {
         // Capture error before any further work; reply stays valid until deleteLater.
         const auto replyError = reply->error();
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, kMaxJsonResponseBytes, &sizeError);
+        const QByteArray body = reply->readAll();
         const bool transient = replyError != QNetworkReply::NoError &&
                                isTransientNetworkError(reply);
 
         m_uploadInFlight = false;
         m_uploadInFlightPath.clear();
 
-        if (!sizeError.isEmpty() || replyError != QNetworkReply::NoError) {
+        if (replyError != QNetworkReply::NoError) {
             if (transient) {
                 setOnline(false);
                 requeueUpload(filePath, true);
@@ -1238,11 +1119,9 @@ bool ImmichClient::startUpload(const QString &filePath)
                 m_uploadRetryCounts.remove(filePath);
                 m_uploadQueueStore.remove(filePath);
                 persistUploadQueue();
-                emit requestFailed(
-                    tr("Upload"),
-                    tr("%1: %2").arg(QFileInfo(filePath).fileName(),
-                                     sizeError.isEmpty() ? errorMessage(reply, body)
-                                                         : sizeError));
+                emit requestFailed(tr("Upload"),
+                                   tr("%1: %2").arg(QFileInfo(filePath).fileName(),
+                                                    errorMessage(reply, body)));
             }
             emit uploadQueueChanged(pendingUploadCount());
             reply->deleteLater();
@@ -1296,57 +1175,25 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
     file->setParent(reply);
     beginActiveDownload();
 
-    constexpr qint64 maximumDownloadBytes = 4LL * 1024 * 1024 * 1024; // 4 GiB
-    auto bytesWritten = std::make_shared<qint64>(0);
-    connect(reply, &QNetworkReply::metaDataChanged, this,
-            [reply, maximumDownloadBytes] {
-                const qint64 contentLength =
-                    reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-                if (contentLength > maximumDownloadBytes) {
-                    reply->setProperty("destinationWriteFailed", true);
-                    reply->setProperty("destinationWriteError",
-                                       QObject::tr("Download exceeds the 4 GiB safety limit."));
-                    reply->abort();
-                }
-            });
-    connect(reply, &QNetworkReply::readyRead, this, [reply, file, bytesWritten, maximumDownloadBytes] {
+    connect(reply, &QNetworkReply::readyRead, this, [reply, file] {
         const QByteArray chunk = reply->readAll();
-        if (chunk.isEmpty())
-            return;
-        if (*bytesWritten + chunk.size() > maximumDownloadBytes) {
-            reply->setProperty("destinationWriteFailed", true);
-            reply->setProperty("destinationWriteError",
-                               QObject::tr("Download exceeds the 4 GiB safety limit."));
-            reply->abort();
-            return;
-        }
-        if (file->write(chunk) != chunk.size()) {
+        if (!chunk.isEmpty() && file->write(chunk) != chunk.size()) {
             reply->setProperty("destinationWriteFailed", true);
             reply->setProperty("destinationWriteError", file->errorString());
             reply->abort();
-            return;
         }
-        *bytesWritten += chunk.size();
     });
     connect(reply, &QNetworkReply::downloadProgress, this,
             [this, assetId](qint64 bytesReceived, qint64 bytesTotal) {
                 emit downloadProgress(assetId, bytesReceived, bytesTotal);
             });
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, file, assetId, destinationPath, bytesWritten, maximumDownloadBytes] {
-                if (reply->bytesAvailable() > 0 &&
-                    !reply->property("destinationWriteFailed").toBool()) {
+            [this, reply, file, assetId, destinationPath] {
+                if (reply->bytesAvailable() > 0) {
                     const QByteArray chunk = reply->readAll();
-                    if (*bytesWritten + chunk.size() > maximumDownloadBytes) {
-                        reply->setProperty("destinationWriteFailed", true);
-                        reply->setProperty(
-                            "destinationWriteError",
-                            QObject::tr("Download exceeds the 4 GiB safety limit."));
-                    } else if (file->write(chunk) != chunk.size()) {
+                    if (file->write(chunk) != chunk.size()) {
                         reply->setProperty("destinationWriteFailed", true);
                         reply->setProperty("destinationWriteError", file->errorString());
-                    } else {
-                        *bytesWritten += chunk.size();
                     }
                 }
 
@@ -1367,10 +1214,8 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     file->close();
                     file->remove();
                     endActiveDownload();
-                    QString sizeError;
-                    emit requestFailed(
-                        tr("Download"),
-                        errorMessage(reply, takeReplyBody(reply, 64 * 1024, &sizeError)));
+                    emit requestFailed(tr("Download"),
+                                       errorMessage(reply, reply->readAll()));
                     reply->deleteLater();
                     return;
                 }
@@ -1503,11 +1348,9 @@ void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
         request, QByteArrayLiteral("DELETE"),
         QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, ids, permanent] {
-        QString sizeError;
-        const QByteArray body = takeReplyBody(reply, kMaxJsonResponseBytes, &sizeError);
-        if (!sizeError.isEmpty() || reply->error() != QNetworkReply::NoError) {
-            emit requestFailed(tr("Delete"),
-                               sizeError.isEmpty() ? errorMessage(reply, body) : sizeError);
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Delete"), errorMessage(reply, body));
         } else {
             emit assetsDeleted(ids, permanent);
         }

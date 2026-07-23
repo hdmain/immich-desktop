@@ -150,27 +150,15 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
     return result;
 }
 
-bool AppSettings::saveImmichConnection(const ImmichConnectionSettings &connection)
+void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connection)
 {
     m_settings.setValue(QStringLiteral("immich/serverUrl"), connection.serverUrl.trimmed());
     m_settings.setValue(QStringLiteral("immich/localServerUrl"),
                         connection.localServerUrl.trimmed());
     const QString apiKey = connection.apiKey.trimmed();
-    if (apiKey.isEmpty()) {
-        m_settings.setValue(QStringLiteral("immich/apiKey"), QString());
-        m_settings.sync();
-        return true;
-    }
-
     const QString protectedKey = protectSecret(apiKey);
-    if (protectedKey.isEmpty()) {
-        // Encryption failed — never overwrite a previously stored key with "".
-        m_settings.sync();
-        return false;
-    }
     m_settings.setValue(QStringLiteral("immich/apiKey"), protectedKey);
     m_settings.sync();
-    return true;
 }
 
 WindowSettings AppSettings::loadWindow() const

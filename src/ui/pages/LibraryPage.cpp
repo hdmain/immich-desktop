@@ -31,7 +31,6 @@
 #include <QMimeData>
 #include <QPointer>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -39,7 +38,6 @@
 #include <QShortcut>
 #include <QShowEvent>
 #include <QStandardPaths>
-#include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -803,18 +801,12 @@ void LibraryPage::downloadAsset(const ImmichAsset &asset)
     if (!m_client->isConfigured() || asset.id.isEmpty())
         return;
 
-    QString suggestedName = QFileInfo(asset.fileName).fileName();
-    suggestedName.replace(QRegularExpression(QStringLiteral(R"([\\/:*?"<>|\x00-\x1f])")),
-                          QStringLiteral("_"));
-    if (suggestedName.isEmpty() || suggestedName == QLatin1String(".") ||
-        suggestedName == QLatin1String("..")) {
-        suggestedName = QStringLiteral("immich-%1").arg(asset.id);
-    }
-
+    const QString suggestedName =
+        asset.fileName.isEmpty() ? QStringLiteral("immich-%1").arg(asset.id) : asset.fileName;
     const QString downloads =
         QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     const QString path = QFileDialog::getSaveFileName(
-        this, tr("Download media"), QDir(downloads).filePath(suggestedName),
+        this, tr("Download media"), QStringLiteral("%1/%2").arg(downloads, suggestedName),
         mediaFileFilter(), nullptr, QFileDialog::DontUseNativeDialog);
     if (path.isEmpty())
         return;
@@ -904,18 +896,11 @@ bool LibraryPage::pasteClipboardImage()
         QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
         QStringLiteral("/immich-desktop-paste");
     QDir().mkpath(tempDir);
-
-    QTemporaryFile temp(tempDir + QStringLiteral("/paste-XXXXXX.png"));
-    temp.setAutoRemove(false);
-    if (!temp.open()) {
-        m_status->setText(tr("Could not save clipboard image for upload."));
-        return true;
-    }
-    const QString path = temp.fileName();
-    temp.close();
+    const QString path =
+        QStringLiteral("%1/paste-%2.png")
+            .arg(tempDir, QString::number(QDateTime::currentMSecsSinceEpoch()));
 
     if (!image.save(path, "PNG")) {
-        QFile::remove(path);
         m_status->setText(tr("Could not save clipboard image for upload."));
         return true;
     }

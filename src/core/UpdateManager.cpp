@@ -8,7 +8,6 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
-#include <QFileDevice>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,7 +19,6 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
-#include <QSysInfo>
 #include <QTimer>
 #include <QVersionNumber>
 
@@ -96,21 +94,6 @@ bool UpdateManager::shouldAutoCheck() const
     return update.lastCheckUtc.secsTo(QDateTime::currentDateTimeUtc()) >= 24 * 60 * 60;
 }
 
-bool UpdateManager::usesSnapStore() const
-{
-    return preferredInstallKind() == InstallKind::LinuxSnap;
-}
-
-QString UpdateManager::installedVersion() const
-{
-    if (usesSnapStore()) {
-        const QString snapVersion = qEnvironmentVariable("SNAP_VERSION");
-        if (!snapVersion.isEmpty())
-            return stripVersionPrefix(snapVersion);
-    }
-    return QString::fromLatin1(Config::ApplicationVersion);
-}
-
 void UpdateManager::checkForUpdates(bool silent)
 {
     if (m_state == UpdateState::Checking || m_state == UpdateState::Downloading ||
@@ -122,20 +105,12 @@ void UpdateManager::checkForUpdates(bool silent)
     m_error.clear();
     setState(UpdateState::Checking);
 
-    if (usesSnapStore()) {
-        checkSnapStoreForUpdates();
-        return;
-    }
-    checkGitHubForUpdates();
-}
-
-void UpdateManager::checkGitHubForUpdates()
-{
     const QUrl url(QStringLiteral("https://api.github.com/repos/%1/releases/latest")
                        .arg(QString::fromLatin1(Config::GitHubRepository)));
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("immich-desktop/%1").arg(installedVersion()));
+                      QStringLiteral("immich-desktop/%1")
+                          .arg(QString::fromLatin1(Config::ApplicationVersion)));
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setTransferTimeout(30000);
 
@@ -145,35 +120,6 @@ void UpdateManager::checkGitHubForUpdates()
     }
     m_activeReply = m_network->get(request);
     connect(m_activeReply, &QNetworkReply::finished, this, &UpdateManager::handleReleaseReply);
-}
-
-void UpdateManager::checkSnapStoreForUpdates()
-{
-    const QString snapName =
-        qEnvironmentVariable("SNAP_NAME", QStringLiteral("immich-desktop"));
-    const QUrl url(QStringLiteral("https://api.snapcraft.io/v2/snaps/info/%1").arg(snapName));
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("immich-desktop/%1").arg(installedVersion()));
-    request.setRawHeader("Snap-Device-Series", "16");
-
-    const QString arch = QSysInfo::currentCpuArchitecture();
-    QByteArray snapArch = "amd64";
-    if (arch == QStringLiteral("i386"))
-        snapArch = "i386";
-    else if (arch == QStringLiteral("arm64") || arch == QStringLiteral("aarch64"))
-        snapArch = "arm64";
-    else if (arch == QStringLiteral("arm"))
-        snapArch = "armhf";
-    request.setRawHeader("Snap-Device-Architecture", snapArch);
-    request.setTransferTimeout(30000);
-
-    if (m_activeReply) {
-        m_activeReply->abort();
-        m_activeReply->deleteLater();
-    }
-    m_activeReply = m_network->get(request);
-    connect(m_activeReply, &QNetworkReply::finished, this, &UpdateManager::handleSnapStoreReply);
 }
 
 void UpdateManager::downloadUpdate()
@@ -330,75 +276,14 @@ void UpdateManager::handleReleaseReply()
         return;
     }
 
-    constexpr qsizetype maximumReleaseBytes = 2 * 1024 * 1024;
-    const qint64 advertised =
-        reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-    if (advertised > maximumReleaseBytes || reply->bytesAvailable() > maximumReleaseBytes) {
-        fail(tr("The update server returned an unexpectedly large response."));
-        return;
-    }
-    const QByteArray payload = reply->read(maximumReleaseBytes + 1);
-    if (payload.size() > maximumReleaseBytes) {
-        fail(tr("The update server returned an unexpectedly large response."));
-        return;
-    }
-
     UpdateInfo info;
     QString parseError;
-    if (!parseReleasePayload(payload, &info, &parseError)) {
+    if (!parseReleasePayload(reply->readAll(), &info, &parseError)) {
         fail(parseError);
         return;
     }
 
-    finishUpdateCheck(info);
-}
-
-void UpdateManager::handleSnapStoreReply()
-{
-    auto *reply = m_activeReply;
-    m_activeReply = nullptr;
-    if (!reply)
-        return;
-    reply->deleteLater();
-
-    auto updateSettings = m_settingsStore.loadUpdate();
-    updateSettings.lastCheckUtc = QDateTime::currentDateTimeUtc();
-    m_settingsStore.saveUpdate(updateSettings);
-
-    if (reply->error() != QNetworkReply::NoError) {
-        if (reply->error() == QNetworkReply::OperationCanceledError)
-            return;
-        fail(tr("Snap Store update check failed: %1").arg(reply->errorString()));
-        return;
-    }
-
-    constexpr qsizetype maximumReleaseBytes = 2 * 1024 * 1024;
-    const qint64 advertised =
-        reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-    if (advertised > maximumReleaseBytes || reply->bytesAvailable() > maximumReleaseBytes) {
-        fail(tr("The Snap Store returned an unexpectedly large response."));
-        return;
-    }
-    const QByteArray payload = reply->read(maximumReleaseBytes + 1);
-    if (payload.size() > maximumReleaseBytes) {
-        fail(tr("The Snap Store returned an unexpectedly large response."));
-        return;
-    }
-
-    UpdateInfo info;
-    QString parseError;
-    if (!parseSnapStorePayload(payload, &info, &parseError)) {
-        fail(parseError);
-        return;
-    }
-
-    finishUpdateCheck(info);
-}
-
-void UpdateManager::finishUpdateCheck(const UpdateInfo &info)
-{
-    auto updateSettings = m_settingsStore.loadUpdate();
-    const QString current = installedVersion();
+    const QString current = QString::fromLatin1(Config::ApplicationVersion);
     if (!isNewerVersion(info.version, current)) {
         setState(UpdateState::UpToDate);
         emit upToDate();
@@ -414,62 +299,7 @@ void UpdateManager::finishUpdateCheck(const UpdateInfo &info)
 
     m_update = info;
     setState(UpdateState::Available);
-    emit updateAvailable(m_update);
-
-    if (m_update.releaseNotes.isEmpty())
-        fetchChangelogNotes(m_update.version);
-}
-
-void UpdateManager::fetchChangelogNotes(const QString &version)
-{
-    const QString cleanVersion = stripVersionPrefix(version);
-    if (cleanVersion.isEmpty())
-        return;
-
-    const QUrl url(QStringLiteral("https://raw.githubusercontent.com/%1/v%2/changelog.json")
-                       .arg(QString::fromLatin1(Config::GitHubRepository), cleanVersion));
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("immich-desktop/%1").arg(installedVersion()));
-    request.setTransferTimeout(30000);
-
-    if (m_activeReply) {
-        m_activeReply->abort();
-        m_activeReply->deleteLater();
-    }
-    m_activeReply = m_network->get(request);
-    connect(m_activeReply, &QNetworkReply::finished, this, &UpdateManager::handleChangelogReply);
-}
-
-void UpdateManager::handleChangelogReply()
-{
-    auto *reply = m_activeReply;
-    m_activeReply = nullptr;
-    if (!reply)
-        return;
-    reply->deleteLater();
-
-    if (m_state != UpdateState::Available)
-        return;
-    if (reply->error() != QNetworkReply::NoError)
-        return;
-
-    constexpr qsizetype maximumChangelogBytes = 256 * 1024;
-    const qint64 advertised =
-        reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-    if (advertised > maximumChangelogBytes || reply->bytesAvailable() > maximumChangelogBytes)
-        return;
-    const QByteArray payload = reply->read(maximumChangelogBytes + 1);
-    if (payload.size() > maximumChangelogBytes)
-        return;
-
-    QString notes;
-    QString parseError;
-    if (!parseChangelogPayload(payload, &notes, &parseError) || notes.isEmpty())
-        return;
-
-    m_update.releaseNotes = notes;
-    emit updateAvailable(m_update);
+    emit updateAvailable(info);
 }
 
 void UpdateManager::handleDownloadReadyRead()
@@ -547,9 +377,8 @@ void UpdateManager::handleDownloadFinished()
 #ifndef Q_OS_WIN
     if (m_update.installKind == InstallKind::LinuxAppImage)
         QFile::setPermissions(m_downloadPath,
-                              QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                  QFileDevice::ExeOwner | QFileDevice::ReadGroup |
-                                  QFileDevice::ExeGroup);
+                              QFile::permissions(m_downloadPath) | QFile::ExeUser | QFile::ExeGroup |
+                                  QFile::ExeOther);
 #endif
 
     setState(UpdateState::ReadyToInstall);
@@ -578,6 +407,14 @@ bool UpdateManager::parseReleasePayload(const QByteArray &payload, UpdateInfo *i
     }
 
     const InstallKind preferred = preferredInstallKind();
+    if (preferred == InstallKind::LinuxSnap) {
+        info->installKind = InstallKind::LinuxSnap;
+        info->assetName = QStringLiteral("Snap Store");
+        info->downloadUrl = QUrl(QStringLiteral("https://snapcraft.io/immich-desktop"));
+        info->sizeBytes = 0;
+        return true;
+    }
+
     const auto assets = root.value(QStringLiteral("assets")).toArray();
 
     QJsonObject chosen;
@@ -653,110 +490,6 @@ bool UpdateManager::parseReleasePayload(const QByteArray &payload, UpdateInfo *i
     return true;
 }
 
-bool UpdateManager::parseSnapStorePayload(const QByteArray &payload, UpdateInfo *info,
-                                          QString *error) const
-{
-    const auto document = QJsonDocument::fromJson(payload);
-    if (!document.isObject()) {
-        *error = tr("The Snap Store returned an unexpected response.");
-        return false;
-    }
-
-    const auto channelMap = document.object().value(QStringLiteral("channel-map")).toArray();
-    if (channelMap.isEmpty()) {
-        *error = tr("The Snap Store did not list any channels for this package.");
-        return false;
-    }
-
-    auto snapArchitecture = []() -> QString {
-        const QString arch = QSysInfo::currentCpuArchitecture();
-        if (arch == QStringLiteral("x86_64"))
-            return QStringLiteral("amd64");
-        if (arch == QStringLiteral("i386"))
-            return QStringLiteral("i386");
-        if (arch == QStringLiteral("arm64") || arch == QStringLiteral("aarch64"))
-            return QStringLiteral("arm64");
-        if (arch == QStringLiteral("arm"))
-            return QStringLiteral("armhf");
-        return arch;
-    };
-
-    const QString architecture = snapArchitecture();
-    const int currentRevision = qEnvironmentVariableIntValue("SNAP_REVISION");
-
-    QString track = QStringLiteral("latest");
-    QString risk = QStringLiteral("stable");
-    if (currentRevision > 0) {
-        for (const auto &value : channelMap) {
-            const auto entry = value.toObject();
-            if (entry.value(QStringLiteral("revision")).toInt() != currentRevision)
-                continue;
-            const auto channel = entry.value(QStringLiteral("channel")).toObject();
-            const QString entryArch =
-                channel.value(QStringLiteral("architecture")).toString();
-            if (!entryArch.isEmpty() && entryArch != architecture)
-                continue;
-            track = channel.value(QStringLiteral("track")).toString(track);
-            risk = channel.value(QStringLiteral("risk")).toString(risk);
-            break;
-        }
-    }
-
-    QString storeVersion;
-    int storeRevision = -1;
-    for (const auto &value : channelMap) {
-        const auto entry = value.toObject();
-        const auto channel = entry.value(QStringLiteral("channel")).toObject();
-        const QString entryArch = channel.value(QStringLiteral("architecture")).toString();
-        if (!entryArch.isEmpty() && entryArch != architecture)
-            continue;
-        if (channel.value(QStringLiteral("track")).toString() != track)
-            continue;
-        if (channel.value(QStringLiteral("risk")).toString() != risk)
-            continue;
-
-        storeVersion = stripVersionPrefix(entry.value(QStringLiteral("version")).toString());
-        storeRevision = entry.value(QStringLiteral("revision")).toInt();
-        break;
-    }
-
-    if (storeVersion.isEmpty()) {
-        *error = tr("Unable to determine the Snap Store version for channel %1/%2.")
-                     .arg(track, risk);
-        return false;
-    }
-
-    info->version = storeVersion;
-    info->tagName = storeVersion;
-    if (storeRevision > 0)
-        info->tagName = QStringLiteral("%1 (rev %2)").arg(storeVersion).arg(storeRevision);
-    info->releaseNotes.clear();
-    info->installKind = InstallKind::LinuxSnap;
-    info->assetName = QStringLiteral("Snap Store");
-    info->downloadUrl = QUrl(QStringLiteral("https://snapcraft.io/%1")
-                                 .arg(qEnvironmentVariable("SNAP_NAME",
-                                                           QStringLiteral("immich-desktop"))));
-    info->sizeBytes = 0;
-    return true;
-}
-
-bool UpdateManager::parseChangelogPayload(const QByteArray &payload, QString *notes,
-                                          QString *error) const
-{
-    const auto document = QJsonDocument::fromJson(payload);
-    if (!document.isObject()) {
-        *error = tr("The changelog file is not valid JSON.");
-        return false;
-    }
-
-    *notes = document.object().value(QStringLiteral("what_changed")).toString().trimmed();
-    if (notes->isEmpty()) {
-        *error = tr("The changelog file does not include release notes.");
-        return false;
-    }
-    return true;
-}
-
 InstallKind UpdateManager::preferredInstallKind() const
 {
 #ifdef Q_OS_WIN
@@ -796,37 +529,14 @@ bool UpdateManager::assetMatches(const QString &name, InstallKind kind) const
 
 bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind)
 {
-    const auto isSafeShellPath = [](const QString &path) {
-        if (path.isEmpty() || path.size() > 512)
-            return false;
-        for (const QChar ch : path) {
-            const ushort u = ch.unicode();
-            if (u < 0x20 || u == '"' || u == '\'' || u == '`' || u == '$' || u == ';' ||
-                u == '|' || u == '&' || u == '<' || u == '>' || u == '%' || u == '!' ||
-                u == '^' || u == '\n' || u == '\r') {
-                return false;
-            }
-        }
-        return QFileInfo(path).isAbsolute();
-    };
-
 #ifdef Q_OS_WIN
     const QString appPath = QCoreApplication::applicationFilePath();
-    if (!isSafeShellPath(packagePath) || !isSafeShellPath(appPath))
-        return false;
-
-    const QString helperDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-                              QStringLiteral("/immich-desktop-updates");
-    if (!QDir().mkpath(helperDir))
-        return false;
-    const QString helperPath =
-        QDir(helperDir).filePath(QStringLiteral("immich-desktop-apply-update.cmd"));
+    const QString helperPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+                               QStringLiteral("/immich-desktop-apply-update.cmd");
     QFile helper(helperPath);
     if (!helper.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
         return false;
 
-    const QString nativePackage = QDir::toNativeSeparators(packagePath);
-    const QString nativeApp = QDir::toNativeSeparators(appPath);
     QString script;
     if (kind == InstallKind::WindowsMsi) {
         script = QStringLiteral(
@@ -834,7 +544,8 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      "timeout /t 2 /nobreak >nul\r\n"
                      "msiexec /i \"%1\" /passive\r\n"
                      "if exist \"%2\" start \"\" \"%2\"\r\n")
-                     .arg(nativePackage, nativeApp);
+                     .arg(QDir::toNativeSeparators(packagePath),
+                          QDir::toNativeSeparators(appPath));
     } else {
         script = QStringLiteral(
                      "@echo off\r\n"
@@ -842,7 +553,8 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      "start /wait \"\" \"%1\" /S\r\n"
                      "if errorlevel 1 start /wait \"\" \"%1\"\r\n"
                      "if exist \"%2\" start \"\" \"%2\"\r\n")
-                     .arg(nativePackage, nativeApp);
+                     .arg(QDir::toNativeSeparators(packagePath),
+                          QDir::toNativeSeparators(appPath));
     }
     helper.write(script.toLocal8Bit());
     helper.close();
@@ -853,10 +565,6 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
     if (kind == InstallKind::LinuxSnap) {
         const QString snapName =
             qEnvironmentVariable("SNAP_NAME", QStringLiteral("immich-desktop"));
-        static const QRegularExpression snapNamePattern(
-            QStringLiteral("^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$"));
-        if (!snapNamePattern.match(snapName).hasMatch())
-            return false;
         if (QProcess::startDetached(QStringLiteral("snap"),
                                     {QStringLiteral("refresh"), snapName})) {
             return true;
@@ -866,8 +574,6 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
     }
 
     if (kind == InstallKind::LinuxAppImage) {
-        if (!isSafeShellPath(packagePath))
-            return false;
         const QString currentAppImage = qEnvironmentVariable("APPIMAGE");
         QString target = currentAppImage;
         if (target.isEmpty()) {
@@ -875,17 +581,9 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                      QStringLiteral("/Applications/") + QFileInfo(packagePath).fileName();
             QDir().mkpath(QFileInfo(target).absolutePath());
         }
-        if (!isSafeShellPath(target))
-            return false;
 
-        const QString helperDir =
-            QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-            QStringLiteral("/immich-desktop-updates-") +
-            QString::number(QCoreApplication::applicationPid());
-        if (!QDir().mkpath(helperDir))
-            return false;
-        const QString helperPath =
-            QDir(helperDir).filePath(QStringLiteral("immich-desktop-apply-update.sh"));
+        const QString helperPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+                                   QStringLiteral("/immich-desktop-apply-update.sh");
         QFile helper(helperPath);
         if (!helper.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
             return false;
@@ -894,21 +592,20 @@ bool UpdateManager::launchInstaller(const QString &packagePath, InstallKind kind
                                    "#!/bin/sh\n"
                                    "set -eu\n"
                                    "sleep 1\n"
-                                   "cp -- \"%1\" \"%2.new\"\n"
-                                   "chmod u+x -- \"%2.new\"\n"
-                                   "mv -- \"%2.new\" \"%2\"\n"
+                                   "cp \"%1\" \"%2.new\"\n"
+                                   "chmod +x \"%2.new\"\n"
+                                   "mv \"%2.new\" \"%2\"\n"
                                    "exec \"%2\"\n")
                                    .arg(packagePath, target);
         helper.write(script.toUtf8());
         helper.close();
-        QFile::setPermissions(helperPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                              QFileDevice::ExeOwner);
+        QFile::setPermissions(helperPath,
+                              QFile::permissions(helperPath) | QFile::ExeUser | QFile::ExeGroup |
+                                  QFile::ExeOther);
         return QProcess::startDetached(QStringLiteral("/bin/sh"), {helperPath});
     }
 
     if (kind == InstallKind::LinuxDeb) {
-        if (!isSafeShellPath(packagePath))
-            return false;
         if (QProcess::startDetached(QStringLiteral("pkexec"),
                                     {QStringLiteral("dpkg"), QStringLiteral("-i"), packagePath})) {
             return true;

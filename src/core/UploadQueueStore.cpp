@@ -29,14 +29,7 @@ QStringList UploadQueueStore::load() const
     if (!file.open(QIODevice::ReadOnly))
         return {};
 
-    constexpr qint64 maximumQueueBytes = 1024 * 1024;
-    if (file.size() < 0 || file.size() > maximumQueueBytes)
-        return {};
-    const QByteArray payload = file.read(maximumQueueBytes + 1);
-    if (payload.size() > maximumQueueBytes)
-        return {};
-
-    const QJsonArray items = QJsonDocument::fromJson(payload)
+    const QJsonArray items = QJsonDocument::fromJson(file.readAll())
                                  .object()
                                  .value(QStringLiteral("paths"))
                                  .toArray();

@@ -58,21 +58,13 @@ bool writeJsonFile(const QString &path, const QJsonObject &object)
     return file.commit();
 }
 
-QJsonObject readJsonFile(const QString &path, qint64 maximumBytes)
+QJsonObject readJsonFile(const QString &path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return {};
-    if (file.size() < 0 || file.size() > maximumBytes)
-        return {};
-    const QByteArray payload = file.read(maximumBytes + 1);
-    if (payload.size() > maximumBytes)
-        return {};
-    return QJsonDocument::fromJson(payload).object();
+    return QJsonDocument::fromJson(file.readAll()).object();
 }
-
-constexpr qint64 kMaxOfflineJsonBytes = 32LL * 1024 * 1024;
-constexpr int kMaxCachedLibraryAssets = 5000;
 
 } // namespace
 
@@ -111,9 +103,8 @@ void OfflineStore::saveLibrary(const QString &serverUrl, const QList<ImmichAsset
         return;
 
     QJsonArray items;
-    const int limit = qMin(assets.size(), kMaxCachedLibraryAssets);
-    for (int i = 0; i < limit; ++i)
-        items.append(assetToJson(assets.at(i)));
+    for (const ImmichAsset &asset : assets)
+        items.append(assetToJson(asset));
 
     QJsonObject root;
     root.insert(QStringLiteral("serverUrl"), serverUrl);
@@ -137,8 +128,6 @@ void OfflineStore::mergeLibrary(const QString &serverUrl, const QList<ImmichAsse
         existing.append(asset);
         seen.insert(asset.id);
     }
-    while (existing.size() > kMaxCachedLibraryAssets)
-        existing.removeLast();
     saveLibrary(serverUrl, existing, query);
 }
 
@@ -147,7 +136,7 @@ bool OfflineStore::loadLibrary(const QString &serverUrl, QList<ImmichAsset> *ass
 {
     if (!assets || serverUrl.isEmpty())
         return false;
-    const QJsonObject root = readJsonFile(libraryPath(serverUrl), kMaxOfflineJsonBytes);
+    const QJsonObject root = readJsonFile(libraryPath(serverUrl));
     if (root.isEmpty())
         return false;
     if (query)
@@ -203,7 +192,7 @@ bool OfflineStore::loadExplore(const QString &serverUrl, ImmichExploreData *data
 {
     if (!data || serverUrl.isEmpty())
         return false;
-    const QJsonObject root = readJsonFile(explorePath(serverUrl), kMaxOfflineJsonBytes);
+    const QJsonObject root = readJsonFile(explorePath(serverUrl));
     if (root.isEmpty())
         return false;
 

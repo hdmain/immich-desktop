@@ -45,13 +45,7 @@ QByteArray ThumbnailCache::readDisk(const QString &assetId) const
     QFile file(filePath(assetId));
     if (!file.open(QIODevice::ReadOnly))
         return {};
-    constexpr qint64 maximumThumbnailBytes = 8LL * 1024 * 1024;
-    if (file.size() < 0 || file.size() > maximumThumbnailBytes)
-        return {};
-    const QByteArray bytes = file.read(maximumThumbnailBytes + 1);
-    if (bytes.size() > maximumThumbnailBytes)
-        return {};
-    return bytes;
+    return file.readAll();
 }
 
 void ThumbnailCache::store(const QString &assetId, const QByteArray &bytes,

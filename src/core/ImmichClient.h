@@ -139,7 +139,6 @@ private:
     QHash<QString, int> m_uploadRetryCounts;
     VideoStreamServer *m_streamServer = nullptr;
     ImmichExploreData m_exploreBuffer;
-    QString m_exploreError;
     bool m_usingLocalEndpoint = false;
     bool m_online = false;
     bool m_pollInFlight = false;

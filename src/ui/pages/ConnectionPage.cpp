@@ -4,8 +4,6 @@
 
 #include <QFormLayout>
 #include <QFrame>
-#include <QAbstractSocket>
-#include <QHostAddress>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -14,32 +12,6 @@
 #include <QVBoxLayout>
 
 namespace Aurora {
-namespace {
-
-bool looksLikePrivateOrLocalHost(const QString &host)
-{
-    if (host.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0)
-        return true;
-    const QHostAddress address(host);
-    if (address.isNull())
-        return false;
-    if (address.isLoopback())
-        return true;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
-    return address.isPrivateUse() || address.isLinkLocal();
-#else
-    if (address.protocol() == QAbstractSocket::IPv4Protocol) {
-        const quint32 v4 = address.toIPv4Address();
-        return (v4 >= 0x0a000000u && v4 <= 0x0affffffu) || // 10.0.0.0/8
-               (v4 >= 0xac100000u && v4 <= 0xac1fffffu) || // 172.16.0.0/12
-               (v4 >= 0xc0a80000u && v4 <= 0xc0a8ffffu) || // 192.168.0.0/16
-               (v4 >= 0xa9fe0000u && v4 <= 0xa9feffffu);   // 169.254.0.0/16
-    }
-    return false;
-#endif
-}
-
-} // namespace
 
 ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     : QWidget(parent)
@@ -170,13 +142,7 @@ void ConnectionPage::saveAndTest()
     m_serverUrl->setText(settings.serverUrl);
     m_client->setConnection(settings);
     m_saveButton->setEnabled(false);
-    if (url.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0 &&
-        !looksLikePrivateOrLocalHost(url.host())) {
-        m_status->setText(
-            tr("Warning: remote HTTP sends your API key in cleartext. Prefer HTTPS. Testing…"));
-    } else {
-        m_status->setText(tr("Testing connection…"));
-    }
+    m_status->setText(tr("Testing connection…"));
     m_client->testConnection();
 }
 

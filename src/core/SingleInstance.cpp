@@ -6,6 +6,10 @@
 #include <QLocalSocket>
 #include <QSysInfo>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace Aurora {
 namespace {
 
@@ -51,6 +55,11 @@ bool SingleInstance::activateExistingInstance()
         startPrimaryServer();
         return false;
     }
+
+#ifdef Q_OS_WIN
+    // Allow the primary process to take foreground after we exit.
+    AllowSetForegroundWindow(ASFW_ANY);
+#endif
 
     socket.write(kActivateMessage);
     socket.flush();
