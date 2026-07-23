@@ -1,0 +1,14 @@
+---
+description: Always update changelog.json after completing product/code changes
+alwaysApply: true
+---
+
+# Changelog updates
+
+After finishing any user-facing or shippable change in this repo, update `changelog.json` in the same turn before ending.
+
+- Keep `version` aligned with `CMakeLists.txt` `project(... VERSION ...)`.
+- Append concise bullets under `what_changed` describing what changed and why it matters.
+- Prefer the existing style: short lead summary, then `•` bullets.
+- Do not invent a new version unless the user asked to bump/release; for ongoing work on the current version, extend that entry.
+- Skip trivial-only edits (typos in comments, formatting-only) unless the user asks.
