@@ -172,16 +172,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
+      - name: Build release notes from changelog.json
+        id: changelog
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path("changelog.json")
+          if not path.is_file():
+              print("changelog.json is missing", file=sys.stderr)
+              sys.exit(1)
+
+          data = json.loads(path.read_text(encoding="utf-8"))
+          version = str(data.get("version", "")).strip()
+          notes = str(data.get("what_changed", "")).strip()
+          if not notes:
+              print("changelog.json what_changed is empty", file=sys.stderr)
+              sys.exit(1)
+
+          tag = "${{ github.ref_name }}"
+          expected = tag[1:] if tag.startswith("v") else tag
+          if version and version != expected:
+              print(
+                  f"warning: changelog.json version {version!r} does not match tag {tag!r}",
+                  file=sys.stderr,
+              )
+
+          pathlib.Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          print(f"Prepared release notes for {tag} ({len(notes)} chars)")
+          PY
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md
+          generate_release_notes: false
           files: |
             dist/*.exe
             dist/*.msi

@@ -7,6 +7,7 @@ class QFrame;
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class QScrollArea;
 
 namespace Aurora {
 
@@ -29,6 +30,8 @@ private:
     UpdateManager *m_updateManager;
     QLabel *m_versionLabel;
     QLabel *m_statusLabel;
+    QScrollArea *m_notesScroll;
+    QLabel *m_notesLabel;
     QProgressBar *m_progress;
     QCheckBox *m_autoCheck;
     QPushButton *m_refreshButton;

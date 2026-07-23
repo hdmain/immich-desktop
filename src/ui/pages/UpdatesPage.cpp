@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -22,6 +23,8 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     , m_updateManager(updateManager)
     , m_versionLabel(new QLabel(this))
     , m_statusLabel(new QLabel(this))
+    , m_notesScroll(new QScrollArea(this))
+    , m_notesLabel(new QLabel(m_notesScroll))
     , m_progress(new QProgressBar(this))
     , m_autoCheck(new QCheckBox(tr("Check for updates automatically"), this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
@@ -39,11 +42,34 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     m_versionLabel->setProperty("subheading", true);
     m_versionLabel->setText(
         tr("Current version: v%1").arg(QString::fromLatin1(Config::ApplicationVersion)));
+    if (m_updateManager->usesSnapStore()) {
+        const QString snapVersion = qEnvironmentVariable("SNAP_VERSION");
+        if (!snapVersion.isEmpty()) {
+            m_versionLabel->setText(tr("Current version: v%1 (Snap)").arg(snapVersion));
+        } else {
+            m_versionLabel->setText(
+                tr("Current version: v%1 (Snap)")
+                    .arg(QString::fromLatin1(Config::ApplicationVersion)));
+        }
+    }
     root->addWidget(m_versionLabel);
 
     m_statusLabel->setProperty("section", true);
     m_statusLabel->setWordWrap(true);
     root->addWidget(m_statusLabel);
+
+    m_notesScroll->setWidgetResizable(true);
+    m_notesScroll->setFrameShape(QFrame::NoFrame);
+    m_notesScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_notesScroll->setWidget(m_notesLabel);
+    m_notesScroll->setVisible(false);
+    m_notesScroll->setMinimumHeight(120);
+    m_notesScroll->setMaximumHeight(280);
+    m_notesLabel->setProperty("subheading", true);
+    m_notesLabel->setWordWrap(true);
+    m_notesLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_notesLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    root->addWidget(m_notesScroll, 1);
 
     m_progress->setRange(0, 100);
     m_progress->setValue(0);
@@ -172,22 +198,41 @@ void UpdatesPage::refreshUi()
                                state == UpdateState::ReadyToInstall ||
                                state == UpdateState::Failed);
 
+    const bool showNotes = (state == UpdateState::Available ||
+                            state == UpdateState::Downloading ||
+                            state == UpdateState::ReadyToInstall) &&
+                           !info.releaseNotes.isEmpty();
+    m_notesScroll->setVisible(showNotes);
+    if (showNotes)
+        m_notesLabel->setText(info.releaseNotes);
+    else
+        m_notesLabel->clear();
+
     switch (state) {
     case UpdateState::Idle:
-        m_statusLabel->setText(tr("Press Refresh to check for updates."));
+        m_statusLabel->setText(m_updateManager->usesSnapStore()
+                                   ? tr("Press Refresh to check the Snap Store for updates.")
+                                   : tr("Press Refresh to check for updates."));
         m_progress->setVisible(false);
         break;
     case UpdateState::Checking:
-        m_statusLabel->setText(tr("Checking for updates…"));
+        m_statusLabel->setText(m_updateManager->usesSnapStore()
+                                   ? tr("Checking the Snap Store for updates…")
+                                   : tr("Checking for updates…"));
         m_progress->setVisible(true);
         m_progress->setRange(0, 0);
         break;
     case UpdateState::UpToDate:
-        m_statusLabel->setText(tr("You're up to date."));
+        m_statusLabel->setText(m_updateManager->usesSnapStore()
+                                   ? tr("You're up to date with the Snap Store.")
+                                   : tr("You're up to date."));
         m_progress->setVisible(false);
         break;
     case UpdateState::Available:
-        m_statusLabel->setText(tr("Update available: v%1").arg(info.version));
+        m_statusLabel->setText(
+            m_updateManager->usesSnapStore()
+                ? tr("Snap Store update available: v%1").arg(info.version)
+                : tr("Update available: v%1").arg(info.version));
         m_progress->setVisible(false);
         break;
     case UpdateState::Downloading:

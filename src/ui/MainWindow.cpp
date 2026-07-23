@@ -128,10 +128,14 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     });
     connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
         m_topBar->setUpdateAvailable(true, info.version);
-        notifyUpdateAvailable();
+        if (m_notifiedUpdateVersion != info.version) {
+            m_notifiedUpdateVersion = info.version;
+            notifyUpdateAvailable();
+        }
     });
     connect(m_updateManager, &UpdateManager::upToDate, this, [this] {
         m_topBar->setUpdateAvailable(false);
+        m_notifiedUpdateVersion.clear();
     });
     connect(m_updateManager, &UpdateManager::stateChanged, this, [this](UpdateState state) {
         if (state != UpdateState::Available && state != UpdateState::ReadyToInstall &&
@@ -358,8 +362,13 @@ void MainWindow::notifyUpdateAvailable()
     box.setIcon(QMessageBox::Information);
     box.setWindowTitle(tr("Update available"));
     box.setText(tr("immich desktop v%1 is available.").arg(info.version));
-    box.setInformativeText(
-        tr("Open the Updates page to download and install the package for this platform."));
+    if (!info.releaseNotes.isEmpty()) {
+        box.setInformativeText(tr("What's new:"));
+        box.setDetailedText(info.releaseNotes);
+    } else {
+        box.setInformativeText(
+            tr("Open the Updates page to download and install the package for this platform."));
+    }
     box.addButton(tr("Open Updates"), QMessageBox::AcceptRole);
     box.addButton(tr("Later"), QMessageBox::RejectRole);
     box.exec();

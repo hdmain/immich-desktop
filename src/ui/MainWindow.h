@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QMainWindow>
+#include <QString>
 
 class QCloseEvent;
 class QEvent;
@@ -61,6 +62,7 @@ private:
     ImmichClient *m_immichClient = nullptr;
     QSystemTrayIcon *m_trayIcon = nullptr;
     QList<ResizeHandle *> m_resizeHandles;
+    QString m_notifiedUpdateVersion;
     bool m_autoCheckScheduled = false;
     bool m_starPromptScheduled = false;
     bool m_forceQuit = false;
