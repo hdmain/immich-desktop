@@ -124,9 +124,9 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           LINUXDEPLOY_ARCH: ${{ matrix.linuxdeploy_arch }}
+          OUTPUT: immich-desktop-${{ matrix.linuxdeploy_arch }}.AppImage
         run: |
           cmake --install build --prefix "$PWD/AppDir/usr"
-          OUTPUT="immich-desktop-${LINUXDEPLOY_ARCH}.AppImage"
           wget -q \
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
           wget -q \
@@ -143,6 +143,14 @@ jobs:
             --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/immich-desktop.png \
             --plugin qt \
             --output appimage
+          # linuxdeploy may still emit a desktop-derived name; normalize to $OUTPUT.
+          if [ ! -f "$OUTPUT" ]; then
+            generated="$(ls -1 ./*-"${LINUXDEPLOY_ARCH}".AppImage 2>/dev/null | head -1 || true)"
+            if [ -n "$generated" ]; then
+              mv "$generated" "$OUTPUT"
+            fi
+          fi
+          test -f "$OUTPUT"
           mv "$OUTPUT" dist/
 
       - name: Upload Linux packages
