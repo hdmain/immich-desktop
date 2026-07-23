@@ -47,7 +47,7 @@ modules:
       - type: git
         url: https://github.com/hdmain/immich-desktop.git
         tag: v0.1.7
-        commit: PLACEHOLDER
+        commit: e771e5e288d40e3a9321a412f94626648f9bd207
     cleanup:
       - /include
       - /lib/cmake
