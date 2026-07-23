@@ -52,8 +52,9 @@ sudo snap install immich-desktop
 
 ### Other packages
 
-Grab Windows (`.exe` / `.msi`), Linux `.deb`, or AppImage from the
-[latest release](https://github.com/hdmain/immich-desktop/releases/latest).
+Grab Windows (`.exe` / `.msi`), Linux `.deb`, or AppImage (`x86_64` / `aarch64`)
+from the [latest release](https://github.com/hdmain/immich-desktop/releases/latest).
+Snap Store ships `amd64` and `arm64`.
 
 ## How to run
 
@@ -66,8 +67,8 @@ Grab Windows (`.exe` / `.msi`), Linux `.deb`, or AppImage from the
 # Snap
 immich-desktop
 
-# AppImage
-chmod +x immich-desktop-x86_64.AppImage
+# AppImage (x86_64 or aarch64)
+chmod +x immich-desktop-x86_64.AppImage   # or immich-desktop-aarch64.AppImage
 ./immich-desktop-x86_64.AppImage
 ```
 
@@ -83,7 +84,7 @@ Plans can shift — track progress and ideas in
 - Video streaming player
 - Offline browsing via local disk cache + queued uploads when offline
 - Themes (light / dark / custom), system tray, autostart, single-instance
-- Packaging: Windows installers, `.deb`, AppImage, Snap Store
+- Packaging: Windows installers, `.deb`, AppImage, Snap Store (`amd64` + `arm64`)
 
 ### Near term
 
@@ -107,7 +108,7 @@ Plans can shift — track progress and ideas in
 - Full-resolution offline packs for selected albums
 - External editor / “open with” workflows
 - Wider Immich API parity as the server evolves
-- Broader packaging (Flatpak / more architectures) as demand appears
+- Broader packaging (Flatpak) as demand appears
 
 ## Project layout
 

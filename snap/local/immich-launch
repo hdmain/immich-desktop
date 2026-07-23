@@ -16,13 +16,20 @@ export QT_PLUGIN_PATH="${qt_plugins}${QT_PLUGIN_PATH:+:${QT_PLUGIN_PATH}}"
 export QT_QPA_PLATFORM_PLUGIN_PATH="${qt_plugins}/platforms"
 export LD_LIBRARY_PATH="${qt_libs}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
-# Qt Multimedia (FFmpeg) + GStreamer plugin discovery inside the snap.
-export QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-ffmpeg}"
+# Qt Multimedia: prefer GStreamer inside the snap. The FFmpeg backend
+# (libffmpegmediaplugin) has been aborting in avformat_open_input on Immich
+# HTTP streams under Snap confinement.
+export QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-gstreamer}"
 gst_plugins="${SNAP}/usr/lib/${arch_triplet}/gstreamer-1.0"
 if [ -d "${gst_plugins}" ]; then
   export GST_PLUGIN_PATH="${gst_plugins}${GST_PLUGIN_PATH:+:${GST_PLUGIN_PATH}}"
   export GST_PLUGIN_SYSTEM_PATH="${gst_plugins}"
 fi
+# Also search the gnome-platform content snap for GStreamer plugins when present.
+if [ -d "${SNAP}/gnome-platform/usr/lib/${arch_triplet}/gstreamer-1.0" ]; then
+  export GST_PLUGIN_PATH="${SNAP}/gnome-platform/usr/lib/${arch_triplet}/gstreamer-1.0${GST_PLUGIN_PATH:+:${GST_PLUGIN_PATH}}"
+fi
+export LIBGL_DRIVERS_PATH="${SNAP}/usr/lib/${arch_triplet}/dri${LIBGL_DRIVERS_PATH:+:${LIBGL_DRIVERS_PATH}}"
 export LIBVA_DRIVERS_PATH="${SNAP}/usr/lib/${arch_triplet}/dri${LIBVA_DRIVERS_PATH:+:${LIBVA_DRIVERS_PATH}}"
 
 # Prefer Wayland when available; otherwise fall back to X11/XWayland.

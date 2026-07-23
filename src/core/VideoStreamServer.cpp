@@ -16,6 +16,44 @@
 
 namespace Aurora {
 
+namespace {
+
+QByteArray httpStatusLine(int status)
+{
+    QByteArray line = "HTTP/1.1 " + QByteArray::number(status);
+    if (status == 206)
+        line += " Partial Content\r\n";
+    else if (status >= 200 && status < 300)
+        line += " OK\r\n";
+    else if (status == 302)
+        line += " Found\r\n";
+    else
+        line += " Error\r\n";
+    return line;
+}
+
+QByteArray contentTypeHeader(QNetworkReply *reply)
+{
+    QByteArray contentType =
+        reply->header(QNetworkRequest::ContentTypeHeader).toString().toUtf8();
+    if (contentType.isEmpty())
+        contentType = reply->rawHeader("Content-Type");
+    if (contentType.isEmpty())
+        contentType = "video/mp4";
+    return contentType;
+}
+
+QByteArray contentLengthHeader(QNetworkReply *reply)
+{
+    const QVariant length = reply->header(QNetworkRequest::ContentLengthHeader);
+    if (length.isValid())
+        return QByteArray::number(length.toLongLong());
+    const QByteArray raw = reply->rawHeader("Content-Length");
+    return raw;
+}
+
+} // namespace
+
 VideoStreamServer::VideoStreamServer(QObject *parent)
     : QObject(parent)
     , m_server(new QTcpServer(this))
@@ -153,50 +191,73 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
         return;
     }
 
-    QNetworkRequest upstream(playbackUrl(match.captured(1)));
+    const QUrl assetUrl = playbackUrl(match.captured(1));
+    startUpstream(client, assetUrl, rangeHeader, isHead, /*sendApiKey=*/true, /*redirects=*/0);
+}
+
+void VideoStreamServer::startUpstream(QTcpSocket *client, const QUrl &url,
+                                      const QByteArray &rangeHeader, bool isHead,
+                                      bool sendApiKey, int redirects)
+{
+    constexpr int kMaxRedirects = 5;
+    if (redirects > kMaxRedirects) {
+        client->write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+        client->disconnectFromHost();
+        return;
+    }
+
+    QNetworkRequest upstream(url);
     upstream.setRawHeader("Accept", "*/*");
-    upstream.setRawHeader("x-api-key", m_apiKey.toUtf8());
+    if (sendApiKey && !m_apiKey.isEmpty())
+        upstream.setRawHeader("x-api-key", m_apiKey.toUtf8());
     if (!rangeHeader.isEmpty())
         upstream.setRawHeader("Range", rangeHeader);
+    // Follow Immich → CDN/S3 ourselves so we can drop the API key on the
+    // final hop and avoid FFmpeg seeing a broken redirect/error body.
     upstream.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                          QNetworkRequest::SameOriginRedirectPolicy);
-    upstream.setTransferTimeout(30000);
+                          QNetworkRequest::ManualRedirectPolicy);
+    upstream.setTransferTimeout(120000);
 
     auto *reply = isHead ? m_network->head(upstream) : m_network->get(upstream);
     reply->setReadBufferSize(512 * 1024);
     const QPointer<QTcpSocket> guardedClient(client);
-    connect(reply, &QNetworkReply::metaDataChanged, this, [guardedClient, reply] {
+
+    connect(reply, &QNetworkReply::metaDataChanged, this,
+            [this, guardedClient, reply, rangeHeader, isHead, redirects] {
         if (!guardedClient ||
             guardedClient->state() != QAbstractSocket::ConnectedState)
             return;
-        if (reply->property("headersSent").toBool())
+        if (reply->property("headersSent").toBool() ||
+            reply->property("redirecting").toBool())
             return;
 
-        int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (status <= 0)
-            status = 200;
-        QByteArray header = "HTTP/1.1 " + QByteArray::number(status);
-        if (status == 206)
-            header += " Partial Content\r\n";
-        else if (status >= 200 && status < 300)
-            header += " OK\r\n";
-        else
-            header += " Error\r\n";
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status >= 301 && status <= 308) {
+            const QUrl location =
+                reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+            const QUrl next = reply->url().resolved(location);
+            if (!next.isValid())
+                return;
+            reply->setProperty("redirecting", true);
+            reply->abort();
+            reply->deleteLater();
+            // Pre-signed CDN URLs must not carry the Immich API key.
+            startUpstream(guardedClient, next, rangeHeader, isHead,
+                          /*sendApiKey=*/false, redirects + 1);
+            return;
+        }
 
-        const auto contentType = reply->header(QNetworkRequest::ContentTypeHeader).toByteArray();
-        header += "Content-Type: " +
-                  (contentType.isEmpty() ? QByteArray("video/mp4") : contentType) + "\r\n";
+        QByteArray header = httpStatusLine(status > 0 ? status : 200);
+        header += "Content-Type: " + contentTypeHeader(reply) + "\r\n";
         header += "Accept-Ranges: bytes\r\n";
         header += "Connection: close\r\n";
-        const auto contentLength =
-            reply->header(QNetworkRequest::ContentLengthHeader).toByteArray();
+        const QByteArray contentLength = contentLengthHeader(reply);
         if (!contentLength.isEmpty())
             header += "Content-Length: " + contentLength + "\r\n";
-
         const QByteArray contentRange = reply->rawHeader("Content-Range");
         if (!contentRange.isEmpty())
             header += "Content-Range: " + contentRange + "\r\n";
-
         header += "\r\n";
         guardedClient->write(header);
         reply->setProperty("headersSent", true);
@@ -206,6 +267,8 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
     *pump = [guardedClient, reply, isHead] {
         if (isHead || !guardedClient ||
             guardedClient->state() != QAbstractSocket::ConnectedState)
+            return;
+        if (reply->property("redirecting").toBool())
             return;
         constexpr qint64 maximumQueuedBytes = 512 * 1024;
         constexpr qint64 chunkSize = 64 * 1024;
@@ -223,6 +286,8 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
 
     connect(reply, &QNetworkReply::finished, this,
             [guardedClient, reply, pump, isHead] {
+        if (reply->property("redirecting").toBool())
+            return;
         (*pump)();
         if (guardedClient &&
             guardedClient->state() == QAbstractSocket::ConnectedState) {

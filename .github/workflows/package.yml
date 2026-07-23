@@ -74,8 +74,18 @@ jobs:
           if-no-files-found: error
 
   linux:
-    name: Linux packages
-    runs-on: ubuntu-22.04
+    name: Linux packages (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            linuxdeploy_arch: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            linuxdeploy_arch: aarch64
 
     steps:
       - name: Check out source
@@ -113,19 +123,20 @@ jobs:
       - name: Create AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          OUTPUT: immich-desktop-x86_64.AppImage
+          LINUXDEPLOY_ARCH: ${{ matrix.linuxdeploy_arch }}
         run: |
           cmake --install build --prefix "$PWD/AppDir/usr"
+          OUTPUT="immich-desktop-${LINUXDEPLOY_ARCH}.AppImage"
           wget -q \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
           wget -q \
-            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${LINUXDEPLOY_ARCH}.AppImage"
+          chmod +x "linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage" "linuxdeploy-plugin-qt-${LINUXDEPLOY_ARCH}.AppImage"
           export PATH="$PWD:$PATH"
           if [ -x /usr/lib/qt6/bin/qmake ]; then
             export QMAKE=/usr/lib/qt6/bin/qmake
           fi
-          ./linuxdeploy-x86_64.AppImage \
+          "./linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage" \
             --appdir AppDir \
             --executable AppDir/usr/bin/immich \
             --desktop-file AppDir/usr/share/applications/immich-desktop.desktop \
@@ -137,15 +148,23 @@ jobs:
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
-          name: linux-packages
+          name: linux-packages-${{ matrix.arch }}
           path: |
             dist/*.deb
             dist/*.AppImage
           if-no-files-found: error
 
   snap:
-    name: Snap package
-    runs-on: ubuntu-24.04
+    name: Snap package (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Check out source
@@ -158,7 +177,7 @@ jobs:
       - name: Upload snap
         uses: actions/upload-artifact@v4
         with:
-          name: linux-snap
+          name: linux-snap-${{ matrix.arch }}
           path: ${{ steps.build.outputs.snap }}
           if-no-files-found: error
 

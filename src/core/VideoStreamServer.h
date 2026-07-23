@@ -31,6 +31,8 @@ private:
     void handleNewConnection();
     void handleClientReadyRead(QTcpSocket *client);
     void serveRequest(QTcpSocket *client, const QByteArray &request);
+    void startUpstream(QTcpSocket *client, const QUrl &url, const QByteArray &rangeHeader,
+                       bool isHead, bool sendApiKey, int redirects);
     QUrl playbackUrl(const QString &assetId) const;
 
     QTcpServer *m_server;

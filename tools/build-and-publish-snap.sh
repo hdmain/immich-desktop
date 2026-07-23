@@ -21,13 +21,21 @@ cd "$DEST"
 echo "Version: $(tr '\n' ' ' < CMakeLists.txt | sed -n 's/.*project([[:space:]]*immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p')"
 
 echo "== Building snap =="
-snapcraft pack --destructive-mode
+# Destructive mode builds only one platform at a time; pick the host arch.
+HOST_ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+case "$HOST_ARCH" in
+  x86_64) HOST_ARCH=amd64 ;;
+  aarch64) HOST_ARCH=arm64 ;;
+esac
+snapcraft pack --destructive-mode --platform "$HOST_ARCH"
 
-SNAP="$(ls -1 immich-desktop_*.snap | head -1)"
-echo "Built: $SNAP ($(du -h "$SNAP" | cut -f1))"
+mapfile -t SNAPS < <(ls -1 immich-desktop_*.snap)
+echo "Built: ${SNAPS[*]}"
 
 echo "== Uploading to $CHANNEL =="
-snapcraft upload "$SNAP" --release="$CHANNEL"
+for SNAP in "${SNAPS[@]}"; do
+  snapcraft upload "$SNAP" --release="$CHANNEL"
+done
 
 echo "== Store status =="
 snapcraft status immich-desktop

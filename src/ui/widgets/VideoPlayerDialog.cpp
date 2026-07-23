@@ -143,8 +143,12 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
         m_statusLabel->setText(tr("Could not start the video stream."));
         m_playButton->setEnabled(false);
     } else {
-        m_player->setSource(streamUrl);
-        QTimer::singleShot(0, m_player, &QMediaPlayer::play);
+        // Defer open so the dialog paints first; also avoids nesting setSource
+        // inside the constructor call stack from the click handler.
+        QTimer::singleShot(0, this, [this, streamUrl] {
+            m_player->setSource(streamUrl);
+            m_player->play();
+        });
     }
     updatePlaybackButton();
 }

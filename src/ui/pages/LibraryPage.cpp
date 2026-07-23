@@ -127,7 +127,10 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_timelineHost->setObjectName(QStringLiteral("timelineHost"));
     m_timelineHost->setAcceptDrops(true);
     m_timelineHost->installEventFilter(this);
-    m_videoHoverPreview = new VideoHoverPreview(m_client, m_timelineHost, this);
+    // Hover preview shares the stream proxy + Qt Multimedia path that has
+    // aborted under Snap; keep full playback only there.
+    if (qEnvironmentVariableIsEmpty("SNAP"))
+        m_videoHoverPreview = new VideoHoverPreview(m_client, m_timelineHost, this);
     m_scrollArea->setObjectName(QStringLiteral("libraryScroll"));
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
@@ -726,6 +729,8 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
 {
     m_currentAsset = asset;
     if (asset.isVideo()) {
+        if (m_videoHoverPreview)
+            m_videoHoverPreview->stop();
         auto *player = new VideoPlayerDialog(m_client, asset, this);
         connect(player, &VideoPlayerDialog::downloadRequested, this,
                 &LibraryPage::downloadAsset);
