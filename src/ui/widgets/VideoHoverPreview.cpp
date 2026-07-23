@@ -76,7 +76,14 @@ void VideoHoverPreview::showForTile(MediaTile *tile)
     m_video->show();
     tile->update();
 
-    beginPlayback(streamUrl);
+    // Defer player I/O so enterEvent/layout stay responsive (Snap/GStreamer can
+    // block inside setSource while the local proxy talks to Immich).
+    const QPointer<MediaTile> guardedTile(tile);
+    QTimer::singleShot(0, this, [this, guardedTile, streamUrl] {
+        if (!guardedTile || m_activeTile.data() != guardedTile.data())
+            return;
+        beginPlayback(streamUrl);
+    });
     m_stopTimer->start(kHoverPreviewMs);
 }
 

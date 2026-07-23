@@ -17,14 +17,30 @@
 namespace Aurora {
 namespace {
 
-bool containsControlOrSeparator(const QByteArray &value)
+// Strip CR/LF/NUL only — enough to stop response-header injection without
+// rejecting valid Immich/CDN Content-Type or Content-Range values that media
+// backends (esp. GStreamer/FFmpeg on Snap) rely on.
+QByteArray sanitizedHeaderValue(const QByteArray &value)
 {
+    if (value.isEmpty())
+        return {};
     for (const char ch : value) {
-        const auto byte = static_cast<unsigned char>(ch);
-        if (byte < 0x20 || byte == 0x7f)
-            return true;
+        if (ch == '\r' || ch == '\n' || ch == '\0')
+            return {};
     }
-    return false;
+    return value;
+}
+
+bool constantTimeEquals(const QString &left, const QString &right)
+{
+    const QByteArray a = left.toUtf8();
+    const QByteArray b = right.toUtf8();
+    if (a.size() != b.size())
+        return false;
+    volatile unsigned char diff = 0;
+    for (int i = 0; i < a.size(); ++i)
+        diff = static_cast<unsigned char>(diff | (a.at(i) ^ b.at(i)));
+    return diff == 0;
 }
 
 } // namespace
@@ -47,13 +63,12 @@ bool VideoStreamServer::start()
 
 void VideoStreamServer::setCredentials(const QUrl &apiBaseUrl, const QString &apiKey)
 {
-    const bool credentialsChanged =
-        apiBaseUrl != m_apiBaseUrl || apiKey != m_apiKey;
+    // Rotate only when the API key changes. Endpoint probe URL flaps (local vs
+    // remote) must not invalidate in-flight player URLs — that hung Snap/GStreamer.
+    const bool keyChanged = apiKey != m_apiKey;
     m_apiBaseUrl = apiBaseUrl;
     m_apiKey = apiKey;
-    // Rotate the bearer so a previous session token cannot keep streaming after
-    // the user switches servers or rotates their API key.
-    if (credentialsChanged)
+    if (keyChanged)
         m_sessionToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
@@ -82,73 +97,9 @@ QUrl VideoStreamServer::playbackUrl(const QString &assetId) const
     return url;
 }
 
-bool VideoStreamServer::constantTimeEquals(const QString &left, const QString &right)
-{
-    const QByteArray a = left.toUtf8();
-    const QByteArray b = right.toUtf8();
-    if (a.size() != b.size())
-        return false;
-    volatile unsigned char diff = 0;
-    for (int i = 0; i < a.size(); ++i)
-        diff = static_cast<unsigned char>(diff | (a.at(i) ^ b.at(i)));
-    return diff == 0;
-}
-
-QByteArray VideoStreamServer::sanitizedHeaderValue(const QByteArray &value)
-{
-    if (value.isEmpty() || containsControlOrSeparator(value))
-        return {};
-    return value;
-}
-
-QByteArray VideoStreamServer::sanitizedContentType(const QByteArray &value)
-{
-    const QByteArray cleaned = sanitizedHeaderValue(value);
-    if (cleaned.isEmpty())
-        return {};
-    static const QRegularExpression pattern(
-        QStringLiteral("^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}"
-                       "/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}"
-                       "(?:[ \\t]*;[ \\t]*[A-Za-z0-9!#$&^_.+-]+=[^\\r\\n;]+)*$"));
-    if (!pattern.match(QString::fromLatin1(cleaned)).hasMatch())
-        return {};
-    return cleaned;
-}
-
-QByteArray VideoStreamServer::sanitizedContentLength(const QByteArray &value)
-{
-    const QByteArray cleaned = sanitizedHeaderValue(value);
-    if (cleaned.isEmpty())
-        return {};
-    for (const char ch : cleaned) {
-        if (ch < '0' || ch > '9')
-            return {};
-    }
-    return cleaned;
-}
-
-QByteArray VideoStreamServer::sanitizedContentRange(const QByteArray &value)
-{
-    const QByteArray cleaned = sanitizedHeaderValue(value);
-    if (cleaned.isEmpty())
-        return {};
-    static const QRegularExpression pattern(
-        QStringLiteral("^bytes (?:\\d+-\\d+/\\d+|\\*/\\d+|\\d+-\\d+/\\*)$"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (!pattern.match(QString::fromLatin1(cleaned)).hasMatch())
-        return {};
-    return cleaned;
-}
-
 void VideoStreamServer::handleNewConnection()
 {
     while (auto *client = m_server->nextPendingConnection()) {
-        if (m_sessions.size() >= kMaxConcurrentUpstream * 2) {
-            client->write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
-            client->disconnectFromHost();
-            client->deleteLater();
-            continue;
-        }
         Session session;
         session.client = client;
         m_sessions.insert(client, session);
@@ -217,12 +168,6 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
         return;
     }
 
-    if (m_activeUpstream >= kMaxConcurrentUpstream) {
-        client->write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
-        client->disconnectFromHost();
-        return;
-    }
-
     QByteArray rangeHeader;
     for (const QByteArray &line : lines) {
         const QByteArray trimmed = line.trimmed();
@@ -255,12 +200,7 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
 
     auto *reply = isHead ? m_network->head(upstream) : m_network->get(upstream);
     reply->setReadBufferSize(512 * 1024);
-    ++m_activeUpstream;
     const QPointer<QTcpSocket> guardedClient(client);
-    connect(reply, &QNetworkReply::destroyed, this, [this] {
-        if (m_activeUpstream > 0)
-            --m_activeUpstream;
-    });
     connect(reply, &QNetworkReply::metaDataChanged, this, [guardedClient, reply] {
         if (!guardedClient ||
             guardedClient->state() != QAbstractSocket::ConnectedState)
@@ -285,7 +225,7 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
                               .toString()
                               .toUtf8();
         }
-        contentType = VideoStreamServer::sanitizedContentType(contentType);
+        contentType = sanitizedHeaderValue(contentType);
         header += "Content-Type: " +
                   (contentType.isEmpty() ? QByteArray("video/mp4") : contentType) + "\r\n";
         header += "Accept-Ranges: bytes\r\n";
@@ -301,12 +241,15 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
             if (ok && length >= 0)
                 contentLength = QByteArray::number(length);
         }
-        contentLength = VideoStreamServer::sanitizedContentLength(contentLength);
-        if (!contentLength.isEmpty())
-            header += "Content-Length: " + contentLength + "\r\n";
+        contentLength = sanitizedHeaderValue(contentLength);
+        if (!contentLength.isEmpty()) {
+            bool ok = false;
+            contentLength.toLongLong(&ok);
+            if (ok)
+                header += "Content-Length: " + contentLength + "\r\n";
+        }
 
-        const QByteArray contentRange =
-            VideoStreamServer::sanitizedContentRange(reply->rawHeader("Content-Range"));
+        const QByteArray contentRange = sanitizedHeaderValue(reply->rawHeader("Content-Range"));
         if (!contentRange.isEmpty())
             header += "Content-Range: " + contentRange + "\r\n";
 
@@ -343,7 +286,15 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
                 guardedClient->write(
                     "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
             } else if (!isHead && reply->bytesAvailable() > 0) {
-                guardedClient->write(reply->readAll());
+                // Cap the final flush so a huge leftover buffer cannot stall the UI thread.
+                constexpr qint64 maximumFlushBytes = 1024 * 1024;
+                while (reply->bytesAvailable() > 0 &&
+                       guardedClient->bytesToWrite() < maximumFlushBytes) {
+                    const QByteArray chunk = reply->read(64 * 1024);
+                    if (chunk.isEmpty())
+                        break;
+                    guardedClient->write(chunk);
+                }
             }
             guardedClient->disconnectFromHost();
         }

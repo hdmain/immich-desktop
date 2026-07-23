@@ -33,20 +33,12 @@ private:
     void serveRequest(QTcpSocket *client, const QByteArray &request);
     QUrl playbackUrl(const QString &assetId) const;
 
-    static bool constantTimeEquals(const QString &left, const QString &right);
-    static QByteArray sanitizedHeaderValue(const QByteArray &value);
-    static QByteArray sanitizedContentType(const QByteArray &value);
-    static QByteArray sanitizedContentLength(const QByteArray &value);
-    static QByteArray sanitizedContentRange(const QByteArray &value);
-
     QTcpServer *m_server;
     QNetworkAccessManager *m_network;
     QUrl m_apiBaseUrl;
     QString m_apiKey;
     QString m_sessionToken;
     QHash<QTcpSocket *, Session> m_sessions;
-    int m_activeUpstream = 0;
-    static constexpr int kMaxConcurrentUpstream = 8;
 };
 
 } // namespace Aurora
