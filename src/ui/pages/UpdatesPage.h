@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class QCheckBox;
+class QFrame;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -19,7 +20,11 @@ public:
 
 private:
     void refreshUi();
+    void refreshStarCard();
+    void openGitHubStarPage();
+    void dismissStarPrompt(bool permanently);
     static QString formatBytes(qint64 bytes);
+    static QUrl githubRepoUrl();
 
     UpdateManager *m_updateManager;
     QLabel *m_versionLabel;
@@ -28,6 +33,7 @@ private:
     QCheckBox *m_autoCheck;
     QPushButton *m_refreshButton;
     QPushButton *m_updateButton;
+    QFrame *m_starCard;
 };
 
 } // namespace Aurora

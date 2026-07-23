@@ -19,7 +19,7 @@
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
 </p>
 
-> **Unofficial project.** Fan-made desktop client — not affiliated with, maintained by, or endorsed by the official Immich project. Immich and its logo belong to their respective owners.
+> **Unofficial project.** Fan-made desktop client — not affiliated with, maintained by, or endorsed by the official Immich project. Immich is a trademark of its respective owners. This app uses its own branding.
 
 ## Showcase
 

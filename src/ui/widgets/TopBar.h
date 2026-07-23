@@ -28,8 +28,10 @@ protected:
 private:
     void toggleMaximized();
     void refreshIcons();
+    void refreshLogo();
 
     ThemeManager *m_themeManager;
+    QLabel *m_logo;
     QLabel *m_title;
     QPushButton *m_updateButton;
     QPushButton *m_minimizeButton;

@@ -1,5 +1,6 @@
 #include "ui/widgets/TopBar.h"
 
+#include "core/Theme.h"
 #include "core/ThemeManager.h"
 #include "ui/IconUtils.h"
 
@@ -17,6 +18,7 @@ namespace Aurora {
 TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     : QWidget(parent)
     , m_themeManager(themeManager)
+    , m_logo(new QLabel(this))
     , m_title(new QLabel(QStringLiteral("Overview"), this))
     , m_updateButton(new QPushButton(this))
     , m_minimizeButton(new QPushButton(this))
@@ -30,21 +32,9 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     layout->setContentsMargins(16, 0, 6, 0);
     layout->setSpacing(8);
 
-    auto *logo = new QLabel(this);
-    const qreal dpr = devicePixelRatioF();
-    constexpr int kLogoHeight = 37; // ~20% smaller than max (46) in the 52px title bar
-    QPixmap logoPixmap(QStringLiteral(":/branding/immich-logo-inline-light.png"));
-    const int logoWidth = logoPixmap.isNull()
-        ? qRound(kLogoHeight * (792.0 / 266.25))
-        : qMax(1, qRound(kLogoHeight * (qreal(logoPixmap.width()) / qreal(logoPixmap.height()))));
-    QPixmap scaled = logoPixmap.scaled(
-        QSize(qRound(logoWidth * dpr), qRound(kLogoHeight * dpr)),
-        Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    scaled.setDevicePixelRatio(dpr);
-    logo->setPixmap(scaled);
-    logo->setFixedSize(logoWidth, kLogoHeight);
-    logo->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-    layout->addWidget(logo);
+    m_logo->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    layout->addWidget(m_logo);
+    refreshLogo();
 
     auto *separator = new QLabel(QStringLiteral("  /  "), this);
     separator->setProperty("subheading", true);
@@ -126,8 +116,32 @@ void TopBar::toggleMaximized()
     refreshIcons();
 }
 
+void TopBar::refreshLogo()
+{
+    constexpr int kLogoHeight = 46;
+    const qreal dpr = devicePixelRatioF();
+    const bool dark = isDarkPalette(m_themeManager->palette());
+    const QString path = dark ? QStringLiteral(":/branding/immich-logo-inline-on-dark.png")
+                              : QStringLiteral(":/branding/immich-logo-inline-on-light.png");
+    QPixmap logoPixmap(path);
+    if (logoPixmap.isNull())
+        logoPixmap = QPixmap(QStringLiteral(":/branding/immich-logo-inline-light.png"));
+
+    const int logoWidth = logoPixmap.isNull()
+        ? qRound(kLogoHeight * 3.5)
+        : qMax(1, qRound(kLogoHeight * (qreal(logoPixmap.width()) / qreal(logoPixmap.height()))));
+    QPixmap scaled = logoPixmap.scaled(
+        QSize(qRound(logoWidth * dpr), qRound(kLogoHeight * dpr)),
+        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    m_logo->setPixmap(scaled);
+    m_logo->setFixedSize(logoWidth, kLogoHeight);
+}
+
 void TopBar::refreshIcons()
 {
+    refreshLogo();
+
     const QColor color = m_themeManager->palette().text;
     const qreal scale = devicePixelRatioF();
     m_updateButton->setIcon(QIcon(renderSvgIcon(

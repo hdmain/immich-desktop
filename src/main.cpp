@@ -76,6 +76,7 @@ int main(int argc, char *argv[])
         window.show();
 
     window.scheduleStartupUpdateCheck();
+    window.scheduleGitHubStarPrompt();
 
     return application.exec();
 }

@@ -111,4 +111,22 @@ void AppSettings::saveWindow(const WindowSettings &window)
     m_settings.sync();
 }
 
+SupportSettings AppSettings::loadSupport() const
+{
+    SupportSettings result;
+    result.githubStarDismissed =
+        m_settings.value(QStringLiteral("support/githubStarDismissed"), false).toBool();
+    result.launchCount =
+        m_settings.value(QStringLiteral("support/launchCount"), 0).toInt();
+    return result;
+}
+
+void AppSettings::saveSupport(const SupportSettings &support)
+{
+    m_settings.setValue(QStringLiteral("support/githubStarDismissed"),
+                        support.githubStarDismissed);
+    m_settings.setValue(QStringLiteral("support/launchCount"), support.launchCount);
+    m_settings.sync();
+}
+
 } // namespace Aurora

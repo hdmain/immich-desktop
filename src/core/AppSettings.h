@@ -37,6 +37,11 @@ struct WindowSettings {
     bool autoStart = false;
 };
 
+struct SupportSettings {
+    bool githubStarDismissed = false;
+    int launchCount = 0;
+};
+
 class AppSettings final {
 public:
     AppSettings();
@@ -52,6 +57,9 @@ public:
 
     WindowSettings loadWindow() const;
     void saveWindow(const WindowSettings &window);
+
+    SupportSettings loadSupport() const;
+    void saveSupport(const SupportSettings &support);
 
 private:
     mutable QSettings m_settings;

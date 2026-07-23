@@ -30,6 +30,7 @@ public:
 
     void raiseToFront();
     void scheduleStartupUpdateCheck();
+    void scheduleGitHubStarPrompt();
 
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
@@ -48,15 +49,18 @@ private:
     void selectPage(int index);
     void updateResizeHandles();
     void notifyUpdateAvailable();
+    void maybeShowGitHubStarPrompt();
 
     TopBar *m_topBar;
     AnimatedStackedWidget *m_pages;
     SettingsPage *m_settingsPage;
     Sidebar *m_sidebar;
+    ThemeManager *m_themeManager;
     UpdateManager *m_updateManager;
     QSystemTrayIcon *m_trayIcon = nullptr;
     QList<ResizeHandle *> m_resizeHandles;
     bool m_autoCheckScheduled = false;
+    bool m_starPromptScheduled = false;
     bool m_forceQuit = false;
 };
 

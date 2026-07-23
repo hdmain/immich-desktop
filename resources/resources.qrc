@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
         <file alias="branding/immich-logo-inline-light.png">immich-logo-inline-light.png</file>
+        <file alias="branding/immich-logo-inline-on-dark.png">immich-logo-inline-on-dark.png</file>
+        <file alias="branding/immich-logo-inline-on-light.png">immich-logo-inline-on-light.png</file>
         <file alias="branding/immich-logo.png">immich-logo.png</file>
         <file alias="branding/immich-logo-16.png">immich-logo-16.png</file>
         <file alias="branding/immich-logo-32.png">immich-logo-32.png</file>
@@ -8,6 +10,13 @@
         <file alias="branding/immich-logo-64.png">immich-logo-64.png</file>
         <file alias="branding/immich-logo-128.png">immich-logo-128.png</file>
         <file alias="branding/immich-logo-256.png">immich-logo-256.png</file>
+        <file alias="branding/immich-logo-on-light.png">immich-logo-on-light.png</file>
+        <file alias="branding/immich-logo-on-light-16.png">immich-logo-on-light-16.png</file>
+        <file alias="branding/immich-logo-on-light-32.png">immich-logo-on-light-32.png</file>
+        <file alias="branding/immich-logo-on-light-48.png">immich-logo-on-light-48.png</file>
+        <file alias="branding/immich-logo-on-light-64.png">immich-logo-on-light-64.png</file>
+        <file alias="branding/immich-logo-on-light-128.png">immich-logo-on-light-128.png</file>
+        <file alias="branding/immich-logo-on-light-256.png">immich-logo-on-light-256.png</file>
         <file alias="fonts/Inter-Bold.ttf">fonts/Inter-Bold.ttf</file>
         <file alias="fonts/Inter-Medium.ttf">fonts/Inter-Medium.ttf</file>
         <file alias="fonts/Inter-Regular.ttf">fonts/Inter-Regular.ttf</file>
@@ -27,6 +36,7 @@
         <file alias="icons/settings.svg">icons/settings.svg</file>
         <file alias="icons/server.svg">icons/server.svg</file>
         <file alias="icons/square.svg">icons/square.svg</file>
+        <file alias="icons/star.svg">icons/star.svg</file>
         <file alias="icons/upload.svg">icons/upload.svg</file>
         <file alias="icons/x.svg">icons/x.svg</file>
     </qresource>

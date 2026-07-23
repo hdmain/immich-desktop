@@ -48,4 +48,9 @@ ThemePreset themePresetFromKey(const QString &key)
     return ThemePreset::Dark;
 }
 
+bool isDarkPalette(const ThemePalette &palette)
+{
+    return palette.background.lightnessF() < 0.5;
+}
+
 } // namespace Aurora

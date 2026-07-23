@@ -30,4 +30,6 @@ struct ThemePalette {
 QString themePresetKey(ThemePreset preset);
 ThemePreset themePresetFromKey(const QString &key);
 
+bool isDarkPalette(const ThemePalette &palette);
+
 } // namespace Aurora

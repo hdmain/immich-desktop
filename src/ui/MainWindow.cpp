@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 
+#include "AppVersion.h"
 #include "core/AppSettings.h"
 #include "core/ImmichClient.h"
 #include "core/ThemeManager.h"
@@ -14,6 +15,7 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -26,6 +28,7 @@
 #include <QShowEvent>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -79,13 +82,14 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     , m_pages(new AnimatedStackedWidget(this))
     , m_settingsPage(new SettingsPage(themeManager, updateManager, immichClient, this))
     , m_sidebar(new Sidebar(themeManager, this))
+    , m_themeManager(themeManager)
     , m_updateManager(updateManager)
 {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
                    Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint |
                    Qt::WindowSystemMenuHint);
     setWindowTitle(QStringLiteral("immich"));
-    setWindowIcon(applicationIcon());
+    setWindowIcon(applicationIconForPalette(m_themeManager->palette()));
     setMinimumSize(900, 620);
     resize(1180, 760);
 
@@ -133,6 +137,12 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
             state != UpdateState::Downloading)
             m_topBar->setUpdateAvailable(false);
     });
+    connect(m_themeManager, &ThemeManager::appearanceChanged, this, [this] {
+        const QIcon icon = applicationIconForPalette(m_themeManager->palette());
+        setWindowIcon(icon);
+        if (m_trayIcon)
+            m_trayIcon->setIcon(icon);
+    });
 
     const QList<Qt::Edges> resizeEdges = {
         Qt::TopEdge, Qt::BottomEdge, Qt::LeftEdge, Qt::RightEdge,
@@ -155,7 +165,7 @@ void MainWindow::setupTrayIcon()
 
     QApplication::setQuitOnLastWindowClosed(false);
 
-    m_trayIcon = new QSystemTrayIcon(applicationIcon(), this);
+    m_trayIcon = new QSystemTrayIcon(applicationIconForPalette(m_themeManager->palette()), this);
     m_trayIcon->setToolTip(tr("immich"));
 
     auto *menu = new QMenu(this);
@@ -250,6 +260,54 @@ void MainWindow::scheduleStartupUpdateCheck()
     QTimer::singleShot(2500, this, [this] {
         m_updateManager->checkForUpdates(true);
     });
+}
+
+void MainWindow::scheduleGitHubStarPrompt()
+{
+    if (m_starPromptScheduled)
+        return;
+    m_starPromptScheduled = true;
+
+    AppSettings store;
+    auto support = store.loadSupport();
+    ++support.launchCount;
+    store.saveSupport(support);
+
+    // Soft ask after a few launches; never nag once dismissed.
+    if (support.githubStarDismissed || support.launchCount < 3)
+        return;
+
+    QTimer::singleShot(8000, this, &MainWindow::maybeShowGitHubStarPrompt);
+}
+
+void MainWindow::maybeShowGitHubStarPrompt()
+{
+    AppSettings store;
+    auto support = store.loadSupport();
+    if (support.githubStarDismissed || !isVisible())
+        return;
+
+    QMessageBox box(this);
+    box.setAttribute(Qt::WA_StyledBackground, true);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(tr("Support immich desktop"));
+    box.setText(tr("If immich desktop is useful, a GitHub star helps a lot."));
+    box.setInformativeText(
+        tr("Stars make the project easier to discover. Thanks for considering it!"));
+    box.addButton(tr("Star on GitHub"), QMessageBox::AcceptRole);
+    box.addButton(tr("Maybe later"), QMessageBox::RejectRole);
+    box.exec();
+
+    support = store.loadSupport();
+    support.githubStarDismissed = true;
+    store.saveSupport(support);
+
+    if (box.clickedButton() &&
+        box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole) {
+        QDesktopServices::openUrl(
+            QUrl(QStringLiteral("https://github.com/%1")
+                     .arg(QString::fromLatin1(Config::GitHubRepository))));
+    }
 }
 
 void MainWindow::notifyUpdateAvailable()

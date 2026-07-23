@@ -1,14 +1,18 @@
 #include "ui/pages/UpdatesPage.h"
 
 #include "AppVersion.h"
+#include "core/AppSettings.h"
 #include "core/UpdateManager.h"
 
 #include <QCheckBox>
+#include <QDesktopServices>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace Aurora {
@@ -22,6 +26,7 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     , m_autoCheck(new QCheckBox(tr("Check for updates automatically"), this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
     , m_updateButton(new QPushButton(tr("Update"), this))
+    , m_starCard(new QFrame(this))
 {
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(24, 24, 24, 24);
@@ -58,6 +63,32 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
 
     m_autoCheck->setCursor(Qt::PointingHandCursor);
     root->addWidget(m_autoCheck);
+
+    m_starCard->setProperty("card", true);
+    auto *starLayout = new QVBoxLayout(m_starCard);
+    starLayout->setContentsMargins(18, 16, 18, 16);
+    starLayout->setSpacing(10);
+    auto *starTitle = new QLabel(tr("Enjoying immich desktop?"), m_starCard);
+    starTitle->setProperty("section", true);
+    auto *starBody = new QLabel(
+        tr("A GitHub star helps others find this unofficial client and supports continued work."),
+        m_starCard);
+    starBody->setProperty("subheading", true);
+    starBody->setWordWrap(true);
+    auto *starButtons = new QHBoxLayout;
+    starButtons->setSpacing(10);
+    auto *starButton = new QPushButton(tr("Star on GitHub"), m_starCard);
+    starButton->setCursor(Qt::PointingHandCursor);
+    starButton->setProperty("primary", true);
+    auto *laterButton = new QPushButton(tr("Maybe later"), m_starCard);
+    laterButton->setCursor(Qt::PointingHandCursor);
+    starButtons->addWidget(starButton);
+    starButtons->addWidget(laterButton);
+    starButtons->addStretch();
+    starLayout->addWidget(starTitle);
+    starLayout->addWidget(starBody);
+    starLayout->addLayout(starButtons);
+    root->addWidget(m_starCard);
     root->addStretch();
 
     connect(m_refreshButton, &QPushButton::clicked, this, [this] {
@@ -65,6 +96,13 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
     });
     connect(m_updateButton, &QPushButton::clicked, m_updateManager, &UpdateManager::applyUpdate);
     connect(m_autoCheck, &QCheckBox::toggled, m_updateManager, &UpdateManager::setAutoCheckEnabled);
+    connect(starButton, &QPushButton::clicked, this, [this] {
+        openGitHubStarPage();
+        dismissStarPrompt(true);
+    });
+    connect(laterButton, &QPushButton::clicked, this, [this] {
+        dismissStarPrompt(true);
+    });
     connect(m_updateManager, &UpdateManager::stateChanged, this, [this](UpdateState) {
         refreshUi();
     });
@@ -90,6 +128,34 @@ UpdatesPage::UpdatesPage(UpdateManager *updateManager, QWidget *parent)
             });
 
     refreshUi();
+    refreshStarCard();
+}
+
+QUrl UpdatesPage::githubRepoUrl()
+{
+    return QUrl(QStringLiteral("https://github.com/%1")
+                    .arg(QString::fromLatin1(Config::GitHubRepository)));
+}
+
+void UpdatesPage::openGitHubStarPage()
+{
+    QDesktopServices::openUrl(githubRepoUrl());
+}
+
+void UpdatesPage::dismissStarPrompt(bool permanently)
+{
+    if (permanently) {
+        AppSettings store;
+        auto support = store.loadSupport();
+        support.githubStarDismissed = true;
+        store.saveSupport(support);
+    }
+    refreshStarCard();
+}
+
+void UpdatesPage::refreshStarCard()
+{
+    m_starCard->setVisible(!AppSettings().loadSupport().githubStarDismissed);
 }
 
 void UpdatesPage::refreshUi()

@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from PyQt6.QtCore import QByteArray, QRectF, QSize, Qt
 from PyQt6.QtGui import QImage, QPainter
 from PyQt6.QtSvg import QSvgRenderer
@@ -16,12 +17,11 @@ from PyQt6.QtWidgets import QApplication
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCES = ROOT / "resources"
 
-LOGO_SVG = RESOURCES / "immich-computer-logo-v3.svg"
-INLINE_SVG = RESOURCES / "immich-inline-computer.svg"
-
-# Canonical names after rename (preferred if present).
+# Dark-bg mark = light/white artwork (for dark UI).
+# Light-bg mark = dark artwork (for light UI).
+SVG_ON_DARK = RESOURCES / "icon_colored_dark_bg.svg"
+SVG_ON_LIGHT = RESOURCES / "icon_colored.svg"
 LOGO_SVG_CANON = RESOURCES / "immich-logo.svg"
-INLINE_SVG_CANON = RESOURCES / "immich-logo-inline.svg"
 
 
 def render_svg(svg_path: Path, width: int, height: int) -> Image.Image:
@@ -46,8 +46,7 @@ def render_svg(svg_path: Path, width: int, height: int) -> Image.Image:
     ).copy()
 
 
-def fill_square(img: Image.Image, size: int, padding_ratio: float = 0.02) -> Image.Image:
-    """Crop transparent margins and scale content to fill a square canvas."""
+def fill_square(img: Image.Image, size: int, padding_ratio: float = 0.01) -> Image.Image:
     alpha = img.getchannel("A")
     bbox = alpha.getbbox()
     if not bbox:
@@ -66,57 +65,107 @@ def fill_square(img: Image.Image, size: int, padding_ratio: float = 0.02) -> Ima
     return canvas
 
 
-def main() -> int:
-    app = QApplication(sys.argv)
+def load_banner_font(size: int) -> ImageFont.ImageFont:
+    candidates = [
+        RESOURCES / "fonts" / "Inter-SemiBold.ttf",
+        RESOURCES / "fonts" / "Inter-Bold.ttf",
+        RESOURCES / "fonts" / "Inter-Medium.ttf",
+    ]
+    for path in candidates:
+        if path.exists():
+            return ImageFont.truetype(str(path), size=size)
+    return ImageFont.load_default()
 
-    logo_svg = LOGO_SVG_CANON if LOGO_SVG_CANON.exists() else LOGO_SVG
-    inline_svg = INLINE_SVG_CANON if INLINE_SVG_CANON.exists() else INLINE_SVG
 
-    if not logo_svg.exists():
-        raise SystemExit(f"Missing logo SVG: {logo_svg}")
-    if not inline_svg.exists():
-        raise SystemExit(f"Missing inline SVG: {inline_svg}")
+def make_inline_banner(
+    icon: Image.Image, height: int, text_rgba: tuple[int, int, int, int]
+) -> Image.Image:
+    mark = icon.resize((height, height), Image.Resampling.LANCZOS)
+    text = "immich desktop"
+    font = load_banner_font(int(height * 0.42))
+    scratch = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(scratch)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
 
-    # Rename sources to canonical names used going forward.
-    if logo_svg == LOGO_SVG and not LOGO_SVG_CANON.exists():
-        LOGO_SVG.replace(LOGO_SVG_CANON)
-        logo_svg = LOGO_SVG_CANON
-        print(f"Renamed {LOGO_SVG.name} -> {LOGO_SVG_CANON.name}")
-    if inline_svg == INLINE_SVG and not INLINE_SVG_CANON.exists():
-        INLINE_SVG.replace(INLINE_SVG_CANON)
-        inline_svg = INLINE_SVG_CANON
-        print(f"Renamed {INLINE_SVG.name} -> {INLINE_SVG_CANON.name}")
+    gap = int(height * 0.18)
+    width = mark.width + gap + text_w + int(height * 0.08)
+    banner = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    banner.paste(mark, (0, 0), mark)
 
-    # App icon (square) — crop padding so the mark fills the canvas.
-    master = fill_square(render_svg(logo_svg, 2048, 2048), 1024, padding_ratio=0.02)
-    master.save(RESOURCES / "immich-logo.png", format="PNG")
-    print("Wrote immich-logo.png")
+    draw = ImageDraw.Draw(banner)
+    x = mark.width + gap
+    y = (height - text_h) // 2 - bbox[1]
+    draw.text((x, y), text, font=font, fill=text_rgba)
+    return banner
+
+
+def write_icon_set(master: Image.Image, variant: str = "") -> None:
+    """variant '' -> immich-logo.png; 'on-light' -> immich-logo-on-light.png"""
+    if variant:
+        master_name = f"immich-logo-{variant}.png"
+        size_fmt = f"immich-logo-{variant}-{{size}}.png"
+    else:
+        master_name = "immich-logo.png"
+        size_fmt = "immich-logo-{size}.png"
+
+    master.save(RESOURCES / master_name, format="PNG")
+    print(f"Wrote {master_name}")
 
     for size in (16, 32, 48, 64, 128, 256, 512):
         resized = master.resize((size, size), Image.Resampling.LANCZOS)
-        out = RESOURCES / f"immich-logo-{size}.png"
+        out = RESOURCES / size_fmt.format(size=size)
         resized.save(out, format="PNG")
         print(f"Wrote {out.name}")
 
-    ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    master.save(
+
+def main() -> int:
+    app = QApplication(sys.argv)
+
+    if not SVG_ON_DARK.exists():
+        raise SystemExit(f"Missing {SVG_ON_DARK}")
+    if not SVG_ON_LIGHT.exists():
+        raise SystemExit(f"Missing {SVG_ON_LIGHT}")
+
+    # Canonical packaging icon = on-dark (white mark).
+    shutil.copyfile(SVG_ON_DARK, LOGO_SVG_CANON)
+    print(f"Synced {SVG_ON_DARK.name} -> {LOGO_SVG_CANON.name}")
+
+    old_inline = RESOURCES / "immich-logo-inline.svg"
+    if old_inline.exists():
+        old_inline.unlink()
+        print(f"Removed {old_inline.name}")
+
+    master_dark_ui = fill_square(render_svg(SVG_ON_DARK, 2048, 2048), 1024)
+    master_light_ui = fill_square(render_svg(SVG_ON_LIGHT, 2048, 2048), 1024)
+
+    # Default / packaging set = for dark UI (white icon).
+    write_icon_set(master_dark_ui, "")
+    master_dark_ui.save(
         RESOURCES / "immich.ico",
         format="ICO",
-        sizes=ico_sizes,
+        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
     )
     print("Wrote immich.ico")
 
-    # Top-bar banner — crop padding so the mark fills the available height.
-    banner_src = render_svg(inline_svg, 1584, 532)
-    alpha = banner_src.getchannel("A")
-    bbox = alpha.getbbox()
-    if bbox:
-        banner_src = banner_src.crop(bbox)
-    banner_h = 256
-    banner_w = max(1, int(round(banner_src.width * (banner_h / banner_src.height))))
-    banner = banner_src.resize((banner_w, banner_h), Image.Resampling.LANCZOS)
-    banner.save(RESOURCES / "immich-logo-inline-light.png", format="PNG")
-    print(f"Wrote immich-logo-inline-light.png ({banner_w}x{banner_h})")
+    # Light UI set = dark icon.
+    write_icon_set(master_light_ui, "on-light")
+
+    # Banners: light text on dark UI, dark text on light UI.
+    banner_on_dark = make_inline_banner(master_dark_ui, 256, (245, 247, 251, 255))
+    banner_on_light = make_inline_banner(master_light_ui, 256, (23, 32, 51, 255))
+    banner_on_dark.save(RESOURCES / "immich-logo-inline-on-dark.png", format="PNG")
+    banner_on_light.save(RESOURCES / "immich-logo-inline-on-light.png", format="PNG")
+    shutil.copyfile(
+        RESOURCES / "immich-logo-inline-on-dark.png",
+        RESOURCES / "immich-logo-inline-light.png",
+    )
+    print(
+        f"Wrote banners "
+        f"({banner_on_dark.width}x{banner_on_dark.height}, "
+        f"{banner_on_light.width}x{banner_on_light.height})"
+    )
 
     return 0
 

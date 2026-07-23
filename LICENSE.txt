@@ -5,7 +5,8 @@ Copyright (c) Immich Desktop Community contributors.
 
 This software is an unofficial, fan-made desktop client and is not
 affiliated with, maintained by, or endorsed by the official Immich
-project. Immich and its logo belong to their respective owners.
+project. Immich is a trademark of its respective owners. This client
+uses its own branding and does not redistribute Immich's official logo.
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -28,5 +29,5 @@ DEALINGS IN THE SOFTWARE.
 Third-party notices:
 - Qt is licensed under LGPL/commercial terms from The Qt Company.
 - Lucide icons are licensed under the ISC License.
-- Immich branding assets remain the property of their respective owners
-  and are used here only for this unofficial fan-made client.
+- Immich is a trademark of its respective owners; this project is unofficial
+  and does not claim affiliation with or endorsement by Immich.
