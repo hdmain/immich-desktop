@@ -9,9 +9,11 @@ class QLabel;
 class QMediaPlayer;
 class QPushButton;
 class QSlider;
-class QVideoWidget;
+class QVideoSink;
 
 namespace Aurora {
+
+class SoftwareVideoWidget;
 
 class VideoPlayerDialog final : public QDialog {
     Q_OBJECT
@@ -34,7 +36,8 @@ private:
     ImmichAsset m_asset;
     QMediaPlayer *m_player;
     QAudioOutput *m_audio;
-    QVideoWidget *m_video;
+    QVideoSink *m_sink;
+    SoftwareVideoWidget *m_video;
     QPushButton *m_playButton;
     QPushButton *m_downloadButton;
     QPushButton *m_trashButton;

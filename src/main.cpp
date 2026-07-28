@@ -21,6 +21,15 @@ int main(int argc, char *argv[])
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
+#if defined(Q_OS_LINUX)
+    // Prefer GStreamer on Linux. FFmpeg's setSource blocks the UI thread while
+    // probing Immich HTTP streams (freeze on play). Snap's launcher also forces
+    // GStreamer. Video output uses QVideoSink software frames so we avoid
+    // GStreamer's GL sink (EGL_BAD_CONTEXT on some Wayland/XWayland sessions).
+    if (qEnvironmentVariableIsEmpty("QT_MEDIA_BACKEND"))
+        qputenv("QT_MEDIA_BACKEND", "gstreamer");
+#endif
+
     QApplication application(argc, argv);
     application.setOrganizationName(QStringLiteral("Immich"));
     application.setOrganizationDomain(QStringLiteral("immich.app"));

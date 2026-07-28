@@ -1,5 +1,6 @@
 #include "ui/widgets/VideoPlayerDialog.h"
 
+#include "ui/widgets/SoftwareVideoWidget.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
 #include <QAudioOutput>
@@ -11,7 +12,8 @@
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <QVideoWidget>
+#include <QVideoFrame>
+#include <QVideoSink>
 
 namespace Aurora {
 
@@ -21,7 +23,8 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     , m_asset(asset)
     , m_player(new QMediaPlayer(this))
     , m_audio(new QAudioOutput(this))
-    , m_video(new QVideoWidget(this))
+    , m_sink(new QVideoSink(this))
+    , m_video(new SoftwareVideoWidget(this))
     , m_playButton(new QPushButton(this))
     , m_downloadButton(new QPushButton(tr("Download"), this))
     , m_trashButton(new QPushButton(tr("Trash"), this))
@@ -37,9 +40,8 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     resize(1000, 700);
 
     m_video->setMinimumSize(640, 360);
-    m_video->setStyleSheet(QStringLiteral("background: black;"));
     m_player->setAudioOutput(m_audio);
-    m_player->setVideoOutput(m_video);
+    m_player->setVideoOutput(m_sink);
     m_audio->setVolume(0.8f);
 
     auto *zoomView = new ZoomPanWidget(this);
@@ -103,6 +105,13 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
         }
         m_seeking = false;
     });
+    connect(m_sink, &QVideoSink::videoFrameChanged, this,
+            [this](const QVideoFrame &frame) {
+                QVideoFrame copy(frame);
+                const QImage image = copy.toImage();
+                if (!image.isNull())
+                    m_video->setFrame(image);
+            });
     connect(m_player, &QMediaPlayer::positionChanged,
             this, &VideoPlayerDialog::updatePosition);
     connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 duration) {
@@ -143,8 +152,7 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
         m_statusLabel->setText(tr("Could not start the video stream."));
         m_playButton->setEnabled(false);
     } else {
-        // Defer open so the dialog paints first; also avoids nesting setSource
-        // inside the constructor call stack from the click handler.
+        // Defer open so the dialog can paint first.
         QTimer::singleShot(0, this, [this, streamUrl] {
             m_player->setSource(streamUrl);
             m_player->play();

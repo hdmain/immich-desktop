@@ -1,16 +1,19 @@
 #include "ui/widgets/VideoHoverPreview.h"
 
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/SoftwareVideoWidget.h"
 
 #include <QAudioOutput>
 #include <QMediaPlayer>
 #include <QTimer>
-#include <QVideoWidget>
+#include <QVideoFrame>
+#include <QVideoSink>
 
 namespace Aurora {
 
 namespace {
 constexpr int kHoverPreviewMs = 2500;
+constexpr int kHoverStartDelayMs = 350;
 } // namespace
 
 VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
@@ -18,20 +21,55 @@ VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
     : QObject(parent)
     , m_client(client)
     , m_hostWidget(hostWidget)
-    , m_video(new QVideoWidget(m_hostWidget))
+    , m_overlay(new SoftwareVideoWidget(m_hostWidget))
     , m_player(new QMediaPlayer(this))
     , m_audio(new QAudioOutput(this))
+    , m_sink(new QVideoSink(this))
+    , m_startTimer(new QTimer(this))
     , m_stopTimer(new QTimer(this))
 {
-    m_video->hide();
-    m_video->setStyleSheet(QStringLiteral("background: black;"));
+    m_overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_overlay->setScaleMode(SoftwareVideoWidget::ScaleMode::Cover);
+    m_overlay->hide();
 
     m_audio->setVolume(0.0f);
     m_player->setAudioOutput(m_audio);
-    m_player->setVideoOutput(m_video);
+    m_player->setVideoOutput(m_sink);
 
+    m_startTimer->setSingleShot(true);
     m_stopTimer->setSingleShot(true);
+
+    connect(m_startTimer, &QTimer::timeout, this, [this] {
+        MediaTile *tile = m_pendingTile.data();
+        const QUrl url = m_pendingUrl;
+        m_pendingTile = nullptr;
+        m_pendingUrl = QUrl();
+        if (!tile || !url.isValid())
+            return;
+
+        m_activeTile = tile;
+        m_overlay->setParent(tile);
+        m_overlay->clearFrame();
+        updateTileGeometry(tile);
+        m_overlay->raise();
+        m_overlay->show();
+        tile->update();
+
+        beginPlayback(url);
+        m_stopTimer->start(kHoverPreviewMs);
+    });
+
     connect(m_stopTimer, &QTimer::timeout, this, &VideoHoverPreview::stop);
+
+    connect(m_sink, &QVideoSink::videoFrameChanged, this,
+            [this](const QVideoFrame &frame) {
+                if (!m_activeTile || !m_overlay->isVisible())
+                    return;
+                QVideoFrame copy(frame);
+                const QImage image = copy.toImage();
+                if (!image.isNull())
+                    m_overlay->setFrame(image);
+            });
 
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this,
             [this](QMediaPlayer::MediaStatus status) {
@@ -66,22 +104,20 @@ void VideoHoverPreview::showForTile(MediaTile *tile)
     if (!streamUrl.isValid())
         return;
 
-    if (m_activeTile && m_activeTile.data() != tile)
-        stop();
+    if (m_activeTile.data() == tile && m_loadedUrl == streamUrl &&
+        m_player->playbackState() == QMediaPlayer::PlayingState)
+        return;
 
-    m_activeTile = tile;
-    m_video->setParent(tile);
-    updateTileGeometry(tile);
-    m_video->raise();
-    m_video->show();
-    tile->update();
-
-    beginPlayback(streamUrl);
-    m_stopTimer->start(kHoverPreviewMs);
+    armStart(tile, streamUrl);
 }
 
 void VideoHoverPreview::hideForTile(MediaTile *tile)
 {
+    if (m_pendingTile.data() == tile) {
+        m_startTimer->stop();
+        m_pendingTile = nullptr;
+        m_pendingUrl = QUrl();
+    }
     if (m_activeTile.data() != tile)
         return;
     scheduleStop();
@@ -89,17 +125,29 @@ void VideoHoverPreview::hideForTile(MediaTile *tile)
 
 void VideoHoverPreview::updateTileGeometry(MediaTile *tile)
 {
-    if (!tile || m_activeTile.data() != tile)
+    if (!tile || m_activeTile.data() != tile || !m_overlay)
         return;
-    m_video->setGeometry(tile->rect());
+    m_overlay->setGeometry(tile->rect());
+}
+
+void VideoHoverPreview::armStart(MediaTile *tile, const QUrl &streamUrl)
+{
+    m_stopTimer->stop();
+    m_startTimer->stop();
+
+    if (m_activeTile && m_activeTile.data() != tile)
+        stop();
+
+    m_pendingTile = tile;
+    m_pendingUrl = streamUrl;
+    m_startTimer->start(kHoverStartDelayMs);
 }
 
 void VideoHoverPreview::beginPlayback(const QUrl &streamUrl)
 {
     m_handlingPlayer = true;
-    m_player->blockSignals(true);
 
-    const bool sameSource = m_player->source() == streamUrl;
+    const bool sameSource = m_loadedUrl == streamUrl;
     const QMediaPlayer::MediaStatus status = m_player->mediaStatus();
     const bool mediaReady = status == QMediaPlayer::LoadedMedia ||
                             status == QMediaPlayer::BufferedMedia;
@@ -109,10 +157,15 @@ void VideoHoverPreview::beginPlayback(const QUrl &streamUrl)
         m_player->play();
     } else {
         m_player->stop();
-        m_player->setSource(streamUrl);
+        m_loadedUrl = streamUrl;
+        QTimer::singleShot(0, this, [this, streamUrl] {
+            if (!m_activeTile || m_loadedUrl != streamUrl)
+                return;
+            m_player->setSource(streamUrl);
+            m_player->play();
+        });
     }
 
-    m_player->blockSignals(false);
     m_handlingPlayer = false;
 }
 
@@ -123,9 +176,22 @@ void VideoHoverPreview::scheduleStop()
     QTimer::singleShot(0, this, &VideoHoverPreview::stop);
 }
 
+void VideoHoverPreview::detachOverlay()
+{
+    if (!m_overlay)
+        return;
+    m_overlay->hide();
+    m_overlay->clearFrame();
+    if (m_overlay->parentWidget() != m_hostWidget)
+        m_overlay->setParent(m_hostWidget);
+}
+
 void VideoHoverPreview::stop()
 {
+    m_startTimer->stop();
     m_stopTimer->stop();
+    m_pendingTile = nullptr;
+    m_pendingUrl = QUrl();
 
     MediaTile *tile = m_activeTile.data();
     m_activeTile = nullptr;
@@ -133,26 +199,12 @@ void VideoHoverPreview::stop()
     if (tile)
         tile->endHoverPreview();
 
-    if (!m_player && !m_video)
-        return;
-
     m_handlingPlayer = true;
-
-    if (m_player) {
-        m_player->blockSignals(true);
+    if (m_player)
         m_player->stop();
-        m_player->setSource(QUrl());
-        m_player->blockSignals(false);
-    }
-
-    // Always detach from the tile before any timeline clear/deleteLater.
-    if (m_video) {
-        m_video->hide();
-        if (m_video->parentWidget() != m_hostWidget)
-            m_video->setParent(m_hostWidget);
-    }
-
     m_handlingPlayer = false;
+
+    detachOverlay();
 }
 
 } // namespace Aurora

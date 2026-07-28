@@ -127,8 +127,8 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_timelineHost->setObjectName(QStringLiteral("timelineHost"));
     m_timelineHost->setAcceptDrops(true);
     m_timelineHost->installEventFilter(this);
-    // Hover preview shares the stream proxy + Qt Multimedia path that has
-    // aborted under Snap; keep full playback only there.
+    // Hover preview via GStreamer + QVideoSink software frames. Still disabled
+    // under Snap (multimedia path has aborted there); full playback remains.
     if (qEnvironmentVariableIsEmpty("SNAP"))
         m_videoHoverPreview = new VideoHoverPreview(m_client, m_timelineHost, this);
     m_scrollArea->setObjectName(QStringLiteral("libraryScroll"));
