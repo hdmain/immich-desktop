@@ -23,6 +23,7 @@ public slots:
     void showConnection();
     void showAppearance();
     void showUpdates();
+    void showAbout();
 
 private:
     AnimatedStackedWidget *m_sections;

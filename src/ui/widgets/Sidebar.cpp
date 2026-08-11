@@ -118,6 +118,8 @@ void Sidebar::showSettingsNavigation()
                   QStringLiteral(":/icons/palette.svg"), 3);
     addNavigation(QStringLiteral("Update"),
                   QStringLiteral(":/icons/refresh-cw.svg"), 4);
+    addNavigation(QStringLiteral("About"),
+                  QStringLiteral(":/icons/star.svg"), 5);
     addNavigation(QStringLiteral("Back"),
                   QStringLiteral(":/icons/arrow-left.svg"), 0, false);
 }

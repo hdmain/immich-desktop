@@ -1,6 +1,7 @@
 #include "ui/pages/SettingsPage.h"
 
 #include "core/ThemeManager.h"
+#include "ui/pages/AboutPage.h"
 #include "ui/pages/AppearancePage.h"
 #include "ui/pages/ConnectionPage.h"
 #include "ui/pages/UpdatesPage.h"
@@ -32,6 +33,7 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     m_sections->addWidget(new ConnectionPage(immichClient, m_sections));
     m_sections->addWidget(new AppearancePage(themeManager, m_sections));
     m_sections->addWidget(new UpdatesPage(updateManager, m_sections));
+    m_sections->addWidget(new AboutPage(m_sections));
     root->addWidget(m_sections, 1);
 }
 
@@ -53,6 +55,11 @@ void SettingsPage::showAppearance()
 void SettingsPage::showUpdates()
 {
     m_sections->setCurrentIndexAnimated(2);
+}
+
+void SettingsPage::showAbout()
+{
+    m_sections->setCurrentIndexAnimated(3);
 }
 
 } // namespace Aurora

@@ -60,6 +60,8 @@ set(IMMICH_SOURCES
     src/ui/IconUtils.h
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
+    src/ui/pages/AboutPage.cpp
+    src/ui/pages/AboutPage.h
     src/ui/pages/AppearancePage.cpp
     src/ui/pages/AppearancePage.h
     src/ui/pages/ConnectionPage.cpp

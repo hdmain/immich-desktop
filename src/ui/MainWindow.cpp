@@ -236,7 +236,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::selectPage(int index)
 {
-    if (index < 0 || index > 4)
+    if (index < 0 || index > 5)
         return;
 
     if (index == 0) {
@@ -252,9 +252,12 @@ void MainWindow::selectPage(int index)
         } else if (index == 3) {
             m_settingsPage->showAppearance();
             m_topBar->setPageTitle(QStringLiteral("Settings / Appearance"));
-        } else {
+        } else if (index == 4) {
             m_settingsPage->showUpdates();
             m_topBar->setPageTitle(QStringLiteral("Settings / Update"));
+        } else {
+            m_settingsPage->showAbout();
+            m_topBar->setPageTitle(QStringLiteral("Settings / About"));
         }
         m_pages->setCurrentIndexAnimated(2);
     }
