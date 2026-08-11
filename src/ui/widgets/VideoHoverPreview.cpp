@@ -1,5 +1,6 @@
 #include "ui/widgets/VideoHoverPreview.h"
 
+#include "core/AppSettings.h"
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/SoftwareVideoWidget.h"
 
@@ -97,6 +98,10 @@ VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
 
 void VideoHoverPreview::showForTile(MediaTile *tile)
 {
+    if (!m_enabled)
+        return;
+    if (!AppSettings().loadPlayback().hoverPreviewEnabled)
+        return;
     if (!tile || !m_client || !tile->asset().isVideo())
         return;
 
@@ -109,6 +114,13 @@ void VideoHoverPreview::showForTile(MediaTile *tile)
         return;
 
     armStart(tile, streamUrl);
+}
+
+void VideoHoverPreview::setEnabled(bool enabled)
+{
+    m_enabled = enabled;
+    if (!enabled)
+        stop();
 }
 
 void VideoHoverPreview::hideForTile(MediaTile *tile)

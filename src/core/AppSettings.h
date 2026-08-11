@@ -37,6 +37,10 @@ struct WindowSettings {
     bool autoStart = false;
 };
 
+struct PlaybackSettings {
+    bool hoverPreviewEnabled = true;
+};
+
 struct SupportSettings {
     bool githubStarDismissed = false;
     int launchCount = 0;
@@ -57,6 +61,9 @@ public:
 
     WindowSettings loadWindow() const;
     void saveWindow(const WindowSettings &window);
+
+    PlaybackSettings loadPlayback() const;
+    void savePlayback(const PlaybackSettings &playback);
 
     SupportSettings loadSupport() const;
     void saveSupport(const SupportSettings &support);

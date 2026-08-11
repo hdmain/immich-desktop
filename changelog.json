@@ -1,4 +1,4 @@
 {
   "version": "0.1.8",
-  "what_changed": "• Fixed Linux video playback freeze: use GStreamer instead of FFmpeg (FFmpeg blocked the UI while probing Immich HTTP streams).\n• Video player and hover preview render via QVideoSink software frames instead of QVideoWidget, avoiding EGL_BAD_CONTEXT / missing DRI2 on Wayland/XWayland.\n• Re-enabled GStreamer hover video preview on native Linux (still disabled under Snap)."
+  "what_changed": "• Fixed Linux video playback freeze: use GStreamer instead of FFmpeg (FFmpeg blocked the UI while probing Immich HTTP streams).\n• Video player and hover preview render via QVideoSink software frames instead of QVideoWidget, avoiding EGL_BAD_CONTEXT / missing DRI2 on Wayland/XWayland.\n• Re-enabled GStreamer hover video preview on native Linux (still disabled under Snap).\n• Added Playback setting to disable video hover previews (Settings → Appearance → Playback) with a note that Snap playback is confined — GitHub .deb/AppImage uses the system's GStreamer/FFmpeg for full video support."
 }

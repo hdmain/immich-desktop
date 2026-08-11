@@ -28,6 +28,7 @@ public:
     void hideForTile(MediaTile *tile);
     void updateTileGeometry(MediaTile *tile);
     void stop();
+    void setEnabled(bool enabled);
 
 private:
     void armStart(MediaTile *tile, const QUrl &streamUrl);
@@ -48,6 +49,7 @@ private:
     QUrl m_pendingUrl;
     QUrl m_loadedUrl;
     bool m_handlingPlayer = false;
+    bool m_enabled = true;
 };
 
 } // namespace Aurora

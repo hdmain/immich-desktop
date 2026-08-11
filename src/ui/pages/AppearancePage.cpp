@@ -4,6 +4,7 @@
 #include "core/AutoStart.h"
 #include "core/ThemeManager.h"
 #include "ui/widgets/ColorButton.h"
+#include "ui/widgets/VideoHoverPreview.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -160,6 +161,38 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     desktopLayout->addWidget(m_autoStart);
     contentRoot->addWidget(desktopCard);
 
+    QVBoxLayout *playbackLayout = nullptr;
+    auto *playbackCard = sectionCard(
+        tr("Playback"),
+        tr("Control preview and playback behavior."),
+        content, &playbackLayout);
+    m_hoverPreview = new QCheckBox(tr("Enable video hover preview"), playbackCard);
+    m_hoverPreview->setCursor(Qt::PointingHandCursor);
+    auto *hoverHelp = new QLabel(
+        tr("Plays a short muted clip when you hover a video tile. "
+           "Disable this if hovering causes freezes or stutter."),
+        playbackCard);
+    hoverHelp->setProperty("subheading", true);
+    hoverHelp->setWordWrap(true);
+    auto *snapHelp = new QLabel(playbackCard);
+    snapHelp->setProperty("subheading", true);
+    snapHelp->setWordWrap(true);
+    snapHelp->setTextFormat(Qt::RichText);
+    snapHelp->setOpenExternalLinks(true);
+    snapHelp->setText(
+        tr("Note: the Snap build runs confined, so hover preview is disabled in the Snap. "
+           "If video playback doesn't work from the Snap, install the GitHub release "
+           "(<a href=\"https://github.com/hdmain/immich-desktop/releases\">.deb / AppImage</a>) — "
+           "it uses your system's GStreamer/FFmpeg without confinement."));
+    playbackLayout->addWidget(m_hoverPreview);
+    playbackLayout->addWidget(hoverHelp);
+    playbackLayout->addWidget(snapHelp);
+    if (qEnvironmentVariableIsEmpty("SNAP") == false) {
+        m_hoverPreview->setEnabled(false);
+        m_hoverPreview->setToolTip(tr("Hover preview is unavailable in the Snap build."));
+    }
+    contentRoot->addWidget(playbackCard);
+
     QVBoxLayout *cacheLayout = nullptr;
     auto *cacheCard = sectionCard(
         tr("Cache"),
@@ -186,6 +219,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
             m_themeManager, &ThemeManager::resetCustomPalette);
     connect(m_closeToTray, &QCheckBox::toggled, this, &AppearancePage::saveCloseToTray);
     connect(m_autoStart, &QCheckBox::toggled, this, &AppearancePage::saveAutoStart);
+    connect(m_hoverPreview, &QCheckBox::toggled, this, &AppearancePage::saveHoverPreview);
     connect(refreshCache, &QPushButton::clicked, this, &AppearancePage::refreshCacheSize);
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { syncControls(); });
@@ -236,6 +270,18 @@ void AppearancePage::saveAutoStart(bool enabled)
     AppSettings().saveWindow(window);
 }
 
+void AppearancePage::saveHoverPreview(bool enabled)
+{
+    PlaybackSettings s = AppSettings().loadPlayback();
+    s.hoverPreviewEnabled = enabled;
+    AppSettings().savePlayback(s);
+    if (auto *w = window()) {
+        for (auto *p : w->findChildren<VideoHoverPreview *>()) {
+            p->setEnabled(enabled && qEnvironmentVariableIsEmpty("SNAP"));
+        }
+    }
+}
+
 void AppearancePage::syncControls()
 {
     const QSignalBlocker comboBlocker(m_themeCombo);
@@ -250,6 +296,12 @@ void AppearancePage::syncControls()
     // Prefer the live OS entry so the checkbox matches what will actually run.
     m_autoStart->setChecked(AutoStart::isSupported() ? AutoStart::isEnabled()
                                                      : window.autoStart);
+
+    if (m_hoverPreview) {
+        const QSignalBlocker hb(m_hoverPreview);
+        const bool on = AppSettings().loadPlayback().hoverPreviewEnabled;
+        m_hoverPreview->setChecked(on && qEnvironmentVariableIsEmpty("SNAP"));
+    }
 }
 
 } // namespace Aurora

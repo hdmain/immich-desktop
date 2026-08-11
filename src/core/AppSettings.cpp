@@ -178,6 +178,21 @@ void AppSettings::saveWindow(const WindowSettings &window)
     m_settings.sync();
 }
 
+PlaybackSettings AppSettings::loadPlayback() const
+{
+    PlaybackSettings result;
+    result.hoverPreviewEnabled =
+        m_settings.value(QStringLiteral("playback/hoverPreviewEnabled"), true).toBool();
+    return result;
+}
+
+void AppSettings::savePlayback(const PlaybackSettings &playback)
+{
+    m_settings.setValue(QStringLiteral("playback/hoverPreviewEnabled"),
+                        playback.hoverPreviewEnabled);
+    m_settings.sync();
+}
+
 SupportSettings AppSettings::loadSupport() const
 {
     SupportSettings result;

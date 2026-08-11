@@ -129,8 +129,11 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_timelineHost->installEventFilter(this);
     // Hover preview via GStreamer + QVideoSink software frames. Still disabled
     // under Snap (multimedia path has aborted there); full playback remains.
-    if (qEnvironmentVariableIsEmpty("SNAP"))
+    if (qEnvironmentVariableIsEmpty("SNAP")) {
         m_videoHoverPreview = new VideoHoverPreview(m_client, m_timelineHost, this);
+        m_videoHoverPreview->setEnabled(
+            AppSettings().loadPlayback().hoverPreviewEnabled);
+    }
     m_scrollArea->setObjectName(QStringLiteral("libraryScroll"));
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
