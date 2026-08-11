@@ -110,6 +110,14 @@ Plans can shift — track progress and ideas in
 - Wider Immich API parity as the server evolves
 - Broader packaging (Flatpak) as demand appears
 
+## Looking for collaborators
+
+I'm looking for people who want to co-build this project — and other projects too (mine or yours). Whether you want to contribute to **immich desktop**, start something new together, or get help on your own repo, reach out and let's figure out what to build.
+
+**Contact — Discord:** `diegosanche3` · **GitHub:** [github.com/hdmain/immich-desktop](https://github.com/hdmain/immich-desktop) · **Issues:** [github.com/hdmain/immich-desktop/issues](https://github.com/hdmain/immich-desktop/issues)
+
+Ways to help right now: bug fixes, UX polish, Immich API coverage (albums, sharing, memories), packaging (Flatpak/Snap), and testing on different distros/GPUs. No pressure on scope — small PRs and ideas are welcome too. See `Settings → About` in the app for the full tech stack and links.
+
 ## Project layout
 
 - `src/core` — settings, Immich client, updates, tray helpers
