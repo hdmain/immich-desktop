@@ -127,6 +127,8 @@ private:
     QString m_activeServerUrl;
     QNetworkAccessManager *m_network;
     ThumbnailCache m_thumbnailCache;
+    ThumbnailCache m_previewCache{QStringLiteral("previews"), 64 * 1024,
+                                  512LL * 1024 * 1024};
     OfflineStore m_offlineStore;
     UploadQueueStore m_uploadQueueStore;
     QThreadPool m_imagePool;

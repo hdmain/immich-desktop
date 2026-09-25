@@ -1420,6 +1420,8 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
                         self->m_thumbnailCache.store(assetId, cacheBytes, pixmap);
                         emit self->thumbnailLoaded(assetId, pixmap);
                     } else {
+                        if (resultSize == QStringLiteral("preview"))
+                            self->m_previewCache.store(assetId, cacheBytes, pixmap);
                         emit self->previewLoaded(assetId, pixmap);
                     }
                 },
@@ -1439,6 +1441,15 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
                     finishImage(image, normalizedJpeg
                                            ? QByteArray()
                                            : encodeThumbnail(image));
+                    return;
+                }
+            }
+        } else if (resultSize == QStringLiteral("preview")) {
+            const QByteArray cachedBytes = self->m_previewCache.readDisk(assetId);
+            if (!cachedBytes.isEmpty()) {
+                const QImage image = self->decodeImage(cachedBytes, 1920);
+                if (!image.isNull()) {
+                    finishImage(image, QByteArray());
                     return;
                 }
             }
@@ -1533,7 +1544,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         }
 
         QByteArray cacheBytes;
-        if (resultSize == QStringLiteral("thumbnail"))
+        if (resultSize == QStringLiteral("thumbnail") || resultSize == QStringLiteral("preview"))
             cacheBytes = encodeThumbnail(image);
         finishImage(image, cacheBytes);
     });
