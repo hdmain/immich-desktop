@@ -168,6 +168,7 @@ private:
     QList<TimeBucketInfo> m_monthBuckets;
     int m_nextBucketIndex = 0;
     QDate m_pendingScrollToDate;
+    int m_jumpTargetBucketIndex = -1;
 
     // Year grid state.
     QList<YearSummary> m_yearSummaries;

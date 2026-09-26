@@ -332,6 +332,8 @@ void LibraryPage::refresh()
 
     m_monthBuckets.clear();
     m_nextBucketIndex = 0;
+    m_jumpTargetBucketIndex = -1;
+    m_pendingScrollToDate = QDate();
 
     if (!m_client->isOnline()) {
         // Falls back to the flat cached snapshot via the existing page path.
@@ -586,6 +588,15 @@ void LibraryPage::handleTimelineBucketLoaded(const QDate &month,
     scheduleLayout();
     updateEmptyState();
     updateAutoCheckTimer();
+
+    if (m_jumpTargetBucketIndex >= 0 && m_nextBucketIndex <= m_jumpTargetBucketIndex) {
+        // Still catching up to a jumpToDate() target - keep loading
+        // sequentially without waiting for the user to scroll.
+        loadNextTimelineBucket();
+        return;
+    }
+    m_jumpTargetBucketIndex = -1;
+
     if (m_pendingScrollToDate.isValid())
         QTimer::singleShot(60, this, &LibraryPage::scrollToPendingDate);
     QTimer::singleShot(0, this, &LibraryPage::maybeLoadMore);
@@ -601,6 +612,8 @@ void LibraryPage::handleTimelineBucketFailed(const QDate &month, const QString &
         return;
     }
 
+    m_jumpTargetBucketIndex = -1;
+    m_pendingScrollToDate = QDate();
     m_loading = false;
     m_refreshButton->setEnabled(true);
     m_status->setText(tr("Couldn't load more: %1").arg(message));
@@ -880,13 +893,23 @@ void LibraryPage::jumpToDate(const QDate &day)
     if (index < 0)
         return;
 
-    clearTimeline();
-    m_nextBucketIndex = index;
+    if (index < m_nextBucketIndex) {
+        // Already loaded as part of the normal scroll - just scroll to it,
+        // keeping everything else that's already on screen intact.
+        m_pendingScrollToDate = day;
+        scrollToPendingDate();
+        return;
+    }
+
+    // Not loaded yet: keep whatever's already loaded and fetch sequentially
+    // from the current cursor through the target month, instead of wiping
+    // the timeline and starting over from just that one month.
+    m_jumpTargetBucketIndex = index;
     m_pendingScrollToDate = day;
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_status->setText(tr("Loading…"));
-    m_client->loadTimelineBucket(m_monthBuckets.at(index).month);
+    loadNextTimelineBucket();
 }
 
 void LibraryPage::scrollToPendingDate()
@@ -894,10 +917,18 @@ void LibraryPage::scrollToPendingDate()
     if (!m_pendingScrollToDate.isValid())
         return;
     for (const DaySection &section : std::as_const(m_sections)) {
-        if (section.date == m_pendingScrollToDate && section.header) {
+        if (section.date != m_pendingScrollToDate)
+            continue;
+        // Compact grid mode hides/ignores per-day headers entirely, so their
+        // geometry is meaningless here - use the day's first tile instead,
+        // which is always positioned correctly regardless of layout mode.
+        if (m_compactGrid) {
+            if (!section.tiles.isEmpty())
+                m_scrollArea->verticalScrollBar()->setValue(qMax(0, section.tiles.first()->y()));
+        } else if (section.header) {
             m_scrollArea->verticalScrollBar()->setValue(qMax(0, section.header->y() - 12));
-            break;
         }
+        break;
     }
     m_pendingScrollToDate = QDate();
 }
