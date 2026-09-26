@@ -34,6 +34,7 @@ class LibraryPage final : public QWidget {
 
 public:
     explicit LibraryPage(ImmichClient *client, QWidget *parent = nullptr);
+    void setCompactGrid(bool enabled);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -197,6 +198,7 @@ private:
     bool m_autoRefreshPending = false;
     bool m_dropActive = false;
     bool m_showingCached = false;
+    bool m_compactGrid = false;
 };
 
 } // namespace Aurora

@@ -26,12 +26,14 @@ private:
     void saveCloseToTray(bool enabled);
     void saveAutoStart(bool enabled);
     void saveHoverPreview(bool enabled);
+    void saveCompactGrid(bool enabled);
 
     ThemeManager *m_themeManager;
     QComboBox *m_themeCombo;
     QCheckBox *m_closeToTray;
     QCheckBox *m_autoStart;
     QCheckBox *m_hoverPreview = nullptr;
+    QCheckBox *m_compactGrid;
     QLabel *m_cacheSizeLabel;
 };
 
