@@ -5,6 +5,7 @@
 #include <QDate>
 #include <QHash>
 #include <QList>
+#include <QMap>
 #include <QSet>
 #include <QWidget>
 
@@ -19,11 +20,13 @@ class QPushButton;
 class QResizeEvent;
 class QScrollArea;
 class QShowEvent;
+class QStackedWidget;
 class QTimer;
 
 namespace Aurora {
 
 class MediaTile;
+class SummaryTile;
 class VideoHoverPreview;
 
 class LibraryPage final : public QWidget {
@@ -31,6 +34,7 @@ class LibraryPage final : public QWidget {
 
 public:
     explicit LibraryPage(ImmichClient *client, QWidget *parent = nullptr);
+    void setCompactGrid(bool enabled);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -71,12 +75,25 @@ private slots:
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
     void handleOnlineChanged(bool online);
     void handleUploadQueueChanged(int pendingCount);
+    void handleTimelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets);
+    void handleTimelineBucketLoaded(const QDate &month,
+                                    const QList<Aurora::ImmichAsset> &assets);
+    void handleTimelineBucketFailed(const QDate &month, const QString &message);
+    void showYearGrid();
+    void backToLibrary();
+    void backToYearGrid();
 
 private:
     struct DaySection {
         QDate date;
         QLabel *header = nullptr;
         QList<MediaTile *> tiles;
+    };
+
+    struct YearSummary {
+        int year = 0;
+        int count = 0;
+        QDate coverMonth;
     };
 
     void requestPage(int page, bool append);
@@ -103,10 +120,35 @@ private:
     bool handleDragEvent(QEvent *event);
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
+    void appendAssetsToTimeline(const QList<ImmichAsset> &assets);
+    void loadNextTimelineBucket();
+    bool hasMoreToLoad() const;
+    void jumpToDate(const QDate &day);
+    void scrollToPendingDate();
+
+    QList<YearSummary> computeYearSummaries() const;
+    void buildYearGrid();
+    void layoutYearGrid();
+    void clearYearGrid();
+    void handleYearTileClicked(int year);
+    void handleYearCoverLoaded(int year, const QList<ImmichAsset> &assets);
+
+    void buildYearDetailUi();
+    void layoutYearDetail();
+    void clearYearDetail();
+    void handleYearDetailBucketLoaded(int year, const QDate &month,
+                                      const QList<ImmichAsset> &assets);
 
     ImmichClient *m_client;
+    QStackedWidget *m_contentStack;
     QScrollArea *m_scrollArea;
     QWidget *m_timelineHost;
+    QScrollArea *m_yearScrollArea;
+    QWidget *m_yearGridHost;
+    QScrollArea *m_yearDetailScrollArea;
+    QWidget *m_yearDetailHost;
+    QLabel *m_yearDetailStatus;
+    QLabel *m_yearGridEmptyState;
     VideoHoverPreview *m_videoHoverPreview = nullptr;
     QLabel *m_status;
     QLabel *m_emptyState;
@@ -114,6 +156,7 @@ private:
     QLineEdit *m_searchField;
     QPushButton *m_uploadButton;
     QPushButton *m_refreshButton;
+    QPushButton *m_yearsButton;
     QTimer *m_layoutTimer;
     QTimer *m_visibilityTimer;
     QTimer *m_autoCheckTimer;
@@ -122,6 +165,26 @@ private:
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
+    QList<TimeBucketInfo> m_monthBuckets;
+    int m_nextBucketIndex = 0;
+    QDate m_pendingScrollToDate;
+    int m_jumpTargetBucketIndex = -1;
+
+    // Year grid state.
+    QList<YearSummary> m_yearSummaries;
+    QList<SummaryTile *> m_yearTiles;
+    QHash<int, SummaryTile *> m_yearTilesByYear;
+    QHash<QString, SummaryTile *> m_summaryTilesByAssetId;
+
+    // Year-detail (month -> day breakdown) state, for one open year at a time.
+    int m_openYearDetail = -1;
+    int m_yearDetailExpectedMonths = 0;
+    int m_yearDetailReceivedMonths = 0;
+    QMap<QDate, QList<ImmichAsset>> m_yearDetailAssetsByMonth; // key: 1st of month
+    QHash<QDate, int> m_pendingYearCoverRequests;   // month -> year
+    QHash<QDate, int> m_pendingYearDetailRequests;  // month -> year
+    QList<QWidget *> m_yearDetailWidgets; // headers + day tiles, for teardown
+
     QString m_nextPage;
     QString m_newestAssetId;
     QString m_searchQuery;
@@ -136,6 +199,7 @@ private:
     bool m_autoRefreshPending = false;
     bool m_dropActive = false;
     bool m_showingCached = false;
+    bool m_compactGrid = false;
 };
 
 } // namespace Aurora

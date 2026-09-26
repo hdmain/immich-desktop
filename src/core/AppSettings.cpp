@@ -193,6 +193,20 @@ void AppSettings::savePlayback(const PlaybackSettings &playback)
     m_settings.sync();
 }
 
+TimelineSettings AppSettings::loadTimeline() const
+{
+    TimelineSettings result;
+    result.compactGrid =
+        m_settings.value(QStringLiteral("timeline/compactGrid"), false).toBool();
+    return result;
+}
+
+void AppSettings::saveTimeline(const TimelineSettings &timeline)
+{
+    m_settings.setValue(QStringLiteral("timeline/compactGrid"), timeline.compactGrid);
+    m_settings.sync();
+}
+
 SupportSettings AppSettings::loadSupport() const
 {
     SupportSettings result;

@@ -6,6 +6,7 @@
 #include "core/ThumbnailCache.h"
 #include "core/UploadQueueStore.h"
 
+#include <QDate>
 #include <QDateTime>
 #include <QHash>
 #include <QImage>
@@ -44,6 +45,9 @@ public:
 
     void testConnection();
     void loadAssets(int page = 1, int pageSize = 80, const QString &query = {});
+    void loadTimelineBuckets();
+    void loadTimelineBucket(const QDate &month);
+    void clearCachedLibrary();
     void pollNewestAssets(int pageSize = 20);
     bool loadExplore();
     void loadAssetsForPerson(const QString &personId, int page = 1, int pageSize = 80);
@@ -69,6 +73,9 @@ signals:
     void connectionTested(bool success, const QString &message);
     void assetsLoaded(const QList<Aurora::ImmichAsset> &assets, const QString &nextPage,
                       const QString &query, bool fromCache = false);
+    void timelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets);
+    void timelineBucketLoaded(const QDate &month, const QList<Aurora::ImmichAsset> &assets);
+    void timelineBucketFailed(const QDate &month, const QString &message);
     void newestAssetsPolled(const QList<Aurora::ImmichAsset> &assets);
     void exploreLoaded(const Aurora::ImmichExploreData &data, bool fromCache = false);
     void filteredAssetsLoaded(const QString &filterKind, const QString &filterValue,

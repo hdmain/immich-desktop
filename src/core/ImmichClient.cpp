@@ -75,6 +75,52 @@ QList<ImmichAsset> assetsFromSearchBody(const QByteArray &body, QString *nextPag
     return assets;
 }
 
+// /timeline/bucket returns a "columnar" response (one array per field,
+// parallel-indexed) rather than an array of asset objects, and omits
+// originalFileName entirely.
+QList<ImmichAsset> assetsFromBucketBody(const QByteArray &body)
+{
+    const QJsonObject root = QJsonDocument::fromJson(body).object();
+    const QJsonArray ids = root.value(QStringLiteral("id")).toArray();
+    const QJsonArray isImage = root.value(QStringLiteral("isImage")).toArray();
+    const QJsonArray isFavorite = root.value(QStringLiteral("isFavorite")).toArray();
+    const QJsonArray isTrashed = root.value(QStringLiteral("isTrashed")).toArray();
+    const QJsonArray ratio = root.value(QStringLiteral("ratio")).toArray();
+    const QJsonArray duration = root.value(QStringLiteral("duration")).toArray();
+    const QJsonArray fileCreatedAt = root.value(QStringLiteral("fileCreatedAt")).toArray();
+    const QJsonArray visibility = root.value(QStringLiteral("visibility")).toArray();
+    const QJsonArray status = root.value(QStringLiteral("status")).toArray();
+
+    auto at = [](const QJsonArray &array, int i) -> QJsonValue {
+        return (i >= 0 && i < array.size()) ? array.at(i) : QJsonValue();
+    };
+
+    QList<ImmichAsset> assets;
+    assets.reserve(ids.size());
+    for (int i = 0; i < ids.size(); ++i) {
+        if (at(isTrashed, i).toBool())
+            continue;
+        if (at(status, i).toString(QStringLiteral("active")) != QStringLiteral("active"))
+            continue;
+        if (at(visibility, i).toString(QStringLiteral("timeline")) !=
+            QStringLiteral("timeline"))
+            continue;
+
+        ImmichAsset asset;
+        asset.id = ids.at(i).toString();
+        if (asset.id.isEmpty())
+            continue;
+        asset.type = at(isImage, i).toBool(true) ? QStringLiteral("IMAGE")
+                                                  : QStringLiteral("VIDEO");
+        asset.favorite = at(isFavorite, i).toBool();
+        asset.aspectRatio = qBound(0.2, at(ratio, i).toDouble(1.0), 8.0);
+        asset.duration = at(duration, i).toString();
+        asset.takenAt = QDateTime::fromString(at(fileCreatedAt, i).toString(), Qt::ISODate);
+        assets.append(asset);
+    }
+    return assets;
+}
+
 bool isValidImmichId(const QString &id)
 {
     static const QRegularExpression pattern(
@@ -483,6 +529,86 @@ void ImmichClient::finishConnectionTest()
 void ImmichClient::loadAssets(int page, int pageSize, const QString &query)
 {
     searchAssets(page, pageSize, false, query);
+}
+
+void ImmichClient::loadTimelineBuckets()
+{
+    if (!ensureConfigured(tr("Load library")))
+        return;
+    if (!m_online) {
+        emit requestFailed(tr("Load library"),
+                           tr("You're offline — Years/Month browsing needs a connection."));
+        return;
+    }
+
+    QUrl url = apiUrl(QStringLiteral("/timeline/buckets"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("size"), QStringLiteral("MONTH"));
+    url.setQuery(query);
+
+    QNetworkRequest request = authenticatedRequest(url);
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Load library"), errorMessage(reply, body));
+            reply->deleteLater();
+            return;
+        }
+
+        QList<TimeBucketInfo> buckets;
+        const QJsonArray items = QJsonDocument::fromJson(body).array();
+        buckets.reserve(items.size());
+        for (const QJsonValue &value : items) {
+            const QJsonObject object = value.toObject();
+            const QString bucketStr = object.value(QStringLiteral("timeBucket")).toString();
+            const QDate month = QDate::fromString(bucketStr.left(10), Qt::ISODate);
+            const int count = object.value(QStringLiteral("count")).toInt();
+            if (month.isValid() && count > 0)
+                buckets.append({month, count});
+        }
+        emit timelineBucketsLoaded(buckets);
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::loadTimelineBucket(const QDate &month)
+{
+    if (!ensureConfigured(tr("Load library")))
+        return;
+    if (!m_online) {
+        emit timelineBucketFailed(month, tr("You're offline."));
+        return;
+    }
+
+    QUrl url = apiUrl(QStringLiteral("/timeline/bucket"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("timeBucket"),
+                       QDate(month.year(), month.month(), 1).toString(Qt::ISODate));
+    query.addQueryItem(QStringLiteral("size"), QStringLiteral("MONTH"));
+    url.setQuery(query);
+
+    QNetworkRequest request = authenticatedRequest(url);
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, month] {
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit timelineBucketFailed(month, errorMessage(reply, body));
+            reply->deleteLater();
+            return;
+        }
+        const QList<ImmichAsset> assets = assetsFromBucketBody(body);
+        m_offlineStore.mergeLibrary(m_connection.serverUrl, assets);
+        emit timelineBucketLoaded(month, assets);
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::clearCachedLibrary()
+{
+    m_offlineStore.saveLibrary(m_connection.serverUrl, {}, {});
 }
 
 void ImmichClient::pollNewestAssets(int pageSize)
