@@ -535,6 +535,11 @@ void ImmichClient::loadTimelineBuckets()
 {
     if (!ensureConfigured(tr("Load library")))
         return;
+    if (!m_online) {
+        emit requestFailed(tr("Load library"),
+                           tr("You're offline — Years/Month browsing needs a connection."));
+        return;
+    }
 
     QUrl url = apiUrl(QStringLiteral("/timeline/buckets"));
     QUrlQuery query;
@@ -572,6 +577,10 @@ void ImmichClient::loadTimelineBucket(const QDate &month)
 {
     if (!ensureConfigured(tr("Load library")))
         return;
+    if (!m_online) {
+        emit timelineBucketFailed(month, tr("You're offline."));
+        return;
+    }
 
     QUrl url = apiUrl(QStringLiteral("/timeline/bucket"));
     QUrlQuery query;

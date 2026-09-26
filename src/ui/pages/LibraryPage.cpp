@@ -1,6 +1,7 @@
 #include "ui/pages/LibraryPage.h"
 
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/SummaryTile.h"
 #include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/VideoPlayerDialog.h"
 #include "ui/widgets/ZoomPanWidget.h"
@@ -37,11 +38,13 @@
 #include <QSet>
 #include <QShortcut>
 #include <QShowEvent>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <utility>
 
 namespace Aurora {
@@ -68,14 +71,22 @@ QString mediaFileFilter()
 LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
+    , m_contentStack(new QStackedWidget(this))
     , m_scrollArea(new QScrollArea(this))
     , m_timelineHost(new QWidget)
+    , m_yearScrollArea(new QScrollArea(this))
+    , m_yearGridHost(new QWidget)
+    , m_yearDetailScrollArea(new QScrollArea(this))
+    , m_yearDetailHost(new QWidget)
+    , m_yearDetailStatus(new QLabel(this))
+    , m_yearGridEmptyState(new QLabel(this))
     , m_status(new QLabel(this))
     , m_emptyState(new QLabel(this))
     , m_dropOverlay(new QLabel(this))
     , m_searchField(new QLineEdit(this))
     , m_uploadButton(new QPushButton(tr("Upload"), this))
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
+    , m_yearsButton(new QPushButton(tr("Years"), this))
     , m_layoutTimer(new QTimer(this))
     , m_visibilityTimer(new QTimer(this))
     , m_autoCheckTimer(new QTimer(this))
@@ -123,6 +134,7 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     toolbarLayout->addWidget(m_searchField);
     toolbarLayout->addWidget(m_uploadButton);
     toolbarLayout->addWidget(m_refreshButton);
+    toolbarLayout->addWidget(m_yearsButton);
 
     m_timelineHost->setObjectName(QStringLiteral("timelineHost"));
     m_timelineHost->setAcceptDrops(true);
@@ -164,9 +176,67 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     m_dropOverlay->hide();
     m_dropOverlay->raise();
 
+    m_yearGridHost->setObjectName(QStringLiteral("yearGridHost"));
+    m_yearScrollArea->setObjectName(QStringLiteral("yearGridScroll"));
+    m_yearScrollArea->setWidgetResizable(false);
+    m_yearScrollArea->setFrameShape(QFrame::NoFrame);
+    m_yearScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_yearScrollArea->setWidget(m_yearGridHost);
+
+    auto *yearPage = new QWidget(this);
+    auto *yearPageLayout = new QVBoxLayout(yearPage);
+    yearPageLayout->setContentsMargins(0, 0, 0, 0);
+    yearPageLayout->setSpacing(0);
+    auto *yearHeaderBar = new QWidget(yearPage);
+    auto *yearHeaderLayout = new QHBoxLayout(yearHeaderBar);
+    yearHeaderLayout->setContentsMargins(16, 12, 16, 10);
+    auto *backToLibraryButton = new QPushButton(tr("← Library"), yearHeaderBar);
+    backToLibraryButton->setCursor(Qt::PointingHandCursor);
+    auto *yearHeading = new QLabel(tr("Years"), yearHeaderBar);
+    yearHeading->setProperty("heading", true);
+    yearHeaderLayout->addWidget(backToLibraryButton);
+    yearHeaderLayout->addWidget(yearHeading, 1);
+    yearPageLayout->addWidget(yearHeaderBar);
+    m_yearGridEmptyState->setAlignment(Qt::AlignCenter);
+    m_yearGridEmptyState->setWordWrap(true);
+    m_yearGridEmptyState->setProperty("subheading", true);
+    m_yearGridEmptyState->setMinimumHeight(120);
+    m_yearGridEmptyState->hide();
+    yearPageLayout->addWidget(m_yearGridEmptyState);
+    yearPageLayout->addWidget(m_yearScrollArea, 1);
+    m_contentStack->addWidget(m_scrollArea);
+    m_contentStack->addWidget(yearPage);
+
+    m_yearDetailHost->setObjectName(QStringLiteral("yearDetailHost"));
+    m_yearDetailScrollArea->setObjectName(QStringLiteral("yearDetailScroll"));
+    m_yearDetailScrollArea->setWidgetResizable(false);
+    m_yearDetailScrollArea->setFrameShape(QFrame::NoFrame);
+    m_yearDetailScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_yearDetailScrollArea->setWidget(m_yearDetailHost);
+
+    auto *yearDetailPage = new QWidget(this);
+    auto *yearDetailPageLayout = new QVBoxLayout(yearDetailPage);
+    yearDetailPageLayout->setContentsMargins(0, 0, 0, 0);
+    yearDetailPageLayout->setSpacing(0);
+    auto *yearDetailHeaderBar = new QWidget(yearDetailPage);
+    auto *yearDetailHeaderLayout = new QHBoxLayout(yearDetailHeaderBar);
+    yearDetailHeaderLayout->setContentsMargins(16, 12, 16, 10);
+    auto *backToYearGridButton = new QPushButton(tr("← Years"), yearDetailHeaderBar);
+    backToYearGridButton->setCursor(Qt::PointingHandCursor);
+    m_yearDetailStatus->setProperty("heading", true);
+    yearDetailHeaderLayout->addWidget(backToYearGridButton);
+    yearDetailHeaderLayout->addWidget(m_yearDetailStatus, 1);
+    yearDetailPageLayout->addWidget(yearDetailHeaderBar);
+    yearDetailPageLayout->addWidget(m_yearDetailScrollArea, 1);
+    m_contentStack->addWidget(yearDetailPage);
+
     root->addWidget(toolbar);
     root->addWidget(m_emptyState);
-    root->addWidget(m_scrollArea, 1);
+    root->addWidget(m_contentStack, 1);
+
+    connect(backToLibraryButton, &QPushButton::clicked, this, &LibraryPage::backToLibrary);
+    connect(backToYearGridButton, &QPushButton::clicked, this, &LibraryPage::backToYearGrid);
+    connect(m_yearsButton, &QPushButton::clicked, this, &LibraryPage::showYearGrid);
 
     connect(m_uploadButton, &QPushButton::clicked, this, &LibraryPage::chooseFilesToUpload);
     connect(m_refreshButton, &QPushButton::clicked, this, &LibraryPage::refresh);
@@ -479,6 +549,17 @@ void LibraryPage::handleTimelineBucketsLoaded(const QList<TimeBucketInfo> &bucke
 void LibraryPage::handleTimelineBucketLoaded(const QDate &month,
                                              const QList<ImmichAsset> &assets)
 {
+    if (m_pendingYearCoverRequests.contains(month)) {
+        const int year = m_pendingYearCoverRequests.take(month);
+        handleYearCoverLoaded(year, assets);
+        return;
+    }
+    if (m_pendingYearDetailRequests.contains(month)) {
+        const int year = m_pendingYearDetailRequests.take(month);
+        handleYearDetailBucketLoaded(year, month, assets);
+        return;
+    }
+
     if (!m_searchQuery.isEmpty())
         return;
     // Ignore a stale reply that no longer matches where the cursor is (e.g.
@@ -496,19 +577,329 @@ void LibraryPage::handleTimelineBucketLoaded(const QDate &month,
     scheduleLayout();
     updateEmptyState();
     updateAutoCheckTimer();
+    if (m_pendingScrollToDate.isValid())
+        QTimer::singleShot(60, this, &LibraryPage::scrollToPendingDate);
     QTimer::singleShot(0, this, &LibraryPage::maybeLoadMore);
 }
 
 void LibraryPage::handleTimelineBucketFailed(const QDate &month, const QString &message)
 {
-    Q_UNUSED(month);
+    if (m_pendingYearCoverRequests.remove(month) > 0)
+        return; // A missing cover thumbnail isn't worth surfacing as an error.
+    if (m_pendingYearDetailRequests.contains(month)) {
+        const int year = m_pendingYearDetailRequests.take(month);
+        handleYearDetailBucketLoaded(year, month, {});
+        return;
+    }
+
     m_loading = false;
     m_refreshButton->setEnabled(true);
     m_status->setText(tr("Couldn't load more: %1").arg(message));
 }
 
+QList<LibraryPage::YearSummary> LibraryPage::computeYearSummaries() const
+{
+    QHash<int, YearSummary> byYear;
+    for (const TimeBucketInfo &bucket : m_monthBuckets) {
+        const int year = bucket.month.year();
+        auto it = byYear.find(year);
+        if (it == byYear.end()) {
+            // m_monthBuckets is ordered newest-first, so the first bucket seen
+            // for a year is already its most recent month.
+            byYear.insert(year, {year, bucket.count, bucket.month});
+        } else {
+            it->count += bucket.count;
+        }
+    }
+    QList<YearSummary> years = byYear.values();
+    std::sort(years.begin(), years.end(),
+             [](const YearSummary &a, const YearSummary &b) { return a.year > b.year; });
+    return years;
+}
+
+void LibraryPage::showYearGrid()
+{
+    m_contentStack->setCurrentIndex(1);
+
+    if (!m_client->isOnline()) {
+        clearYearGrid();
+        m_yearScrollArea->hide();
+        m_yearGridEmptyState->setText(
+            tr("You're offline — Years needs a connection to browse by month."));
+        m_yearGridEmptyState->show();
+        return;
+    }
+    m_yearGridEmptyState->hide();
+    m_yearScrollArea->show();
+
+    if (m_monthBuckets.isEmpty()) {
+        m_client->loadTimelineBuckets();
+        return;
+    }
+    buildYearGrid();
+}
+
+void LibraryPage::backToLibrary()
+{
+    m_contentStack->setCurrentIndex(0);
+    updateEmptyState();
+    scheduleVisibleMediaUpdate();
+}
+
+void LibraryPage::backToYearGrid()
+{
+    m_contentStack->setCurrentIndex(1);
+}
+
+void LibraryPage::clearYearGrid()
+{
+    for (SummaryTile *tile : std::as_const(m_yearTiles))
+        tile->deleteLater();
+    m_yearTiles.clear();
+    m_yearTilesByYear.clear();
+    m_pendingYearCoverRequests.clear();
+}
+
+void LibraryPage::buildYearGrid()
+{
+    clearYearGrid();
+    m_yearSummaries = computeYearSummaries();
+
+    for (const YearSummary &summary : std::as_const(m_yearSummaries)) {
+        auto *tile = new SummaryTile(QString::number(summary.year), summary.count,
+                                     m_yearGridHost);
+        connect(tile, &SummaryTile::clicked, this, [this, year = summary.year] {
+            handleYearTileClicked(year);
+        });
+        m_yearTiles.append(tile);
+        m_yearTilesByYear.insert(summary.year, tile);
+
+        if (summary.coverMonth.isValid()) {
+            m_pendingYearCoverRequests.insert(summary.coverMonth, summary.year);
+            m_client->loadTimelineBucket(summary.coverMonth);
+        }
+    }
+    layoutYearGrid();
+}
+
+void LibraryPage::layoutYearGrid()
+{
+    const int viewportWidth = m_yearScrollArea->viewport()->width();
+    const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
+    constexpr int kTileGap = 10;
+    constexpr int kTileWidth = 220;
+    constexpr int kTileHeight = 150;
+    const int columns = qMax(1, (availableWidth + kTileGap) / (kTileWidth + kTileGap));
+    const int cellWidth = (availableWidth - (columns - 1) * kTileGap) / columns;
+
+    int x = kSidePad;
+    int y = kSidePad;
+    int col = 0;
+    for (SummaryTile *tile : std::as_const(m_yearTiles)) {
+        tile->setGeometry(x, y, cellWidth, kTileHeight);
+        tile->show();
+        ++col;
+        if (col >= columns) {
+            col = 0;
+            x = kSidePad;
+            y += kTileHeight + kTileGap;
+        } else {
+            x += cellWidth + kTileGap;
+        }
+    }
+    if (col != 0)
+        y += kTileHeight + kTileGap;
+    m_yearGridHost->resize(viewportWidth, qMax(kTileHeight + 2 * kSidePad, y + kSidePad));
+}
+
+void LibraryPage::handleYearTileClicked(int year)
+{
+    m_openYearDetail = year;
+    m_yearDetailAssetsByMonth.clear();
+    m_pendingYearDetailRequests.clear();
+    m_yearDetailExpectedMonths = 0;
+    m_yearDetailReceivedMonths = 0;
+    clearYearDetail();
+    m_contentStack->setCurrentIndex(2);
+
+    if (!m_client->isOnline()) {
+        m_yearDetailStatus->setText(
+            tr("%1 — you're offline, can't load months.").arg(year));
+        return;
+    }
+
+    for (const TimeBucketInfo &bucket : std::as_const(m_monthBuckets)) {
+        if (bucket.month.year() != year)
+            continue;
+        ++m_yearDetailExpectedMonths;
+        m_pendingYearDetailRequests.insert(bucket.month, year);
+        m_client->loadTimelineBucket(bucket.month);
+    }
+    m_yearDetailStatus->setText(tr("%1 — loading…").arg(year));
+}
+
+void LibraryPage::handleYearCoverLoaded(int year, const QList<ImmichAsset> &assets)
+{
+    if (assets.isEmpty())
+        return;
+    SummaryTile *tile = m_yearTilesByYear.value(year);
+    if (!tile)
+        return;
+    const QString assetId = assets.first().id;
+    m_summaryTilesByAssetId.insert(assetId, tile);
+    m_client->loadThumbnail(assetId);
+}
+
+void LibraryPage::handleYearDetailBucketLoaded(int year, const QDate &month,
+                                               const QList<ImmichAsset> &assets)
+{
+    if (year != m_openYearDetail)
+        return;
+    m_yearDetailAssetsByMonth.insert(month, assets);
+    ++m_yearDetailReceivedMonths;
+    if (m_yearDetailReceivedMonths >= m_yearDetailExpectedMonths)
+        buildYearDetailUi();
+}
+
+void LibraryPage::clearYearDetail()
+{
+    for (QWidget *widget : std::as_const(m_yearDetailWidgets))
+        widget->deleteLater();
+    m_yearDetailWidgets.clear();
+}
+
+void LibraryPage::buildYearDetailUi()
+{
+    clearYearDetail();
+    m_yearDetailStatus->setText(QString::number(m_openYearDetail));
+
+    const QLocale locale;
+    // Most recent month first, matching the rest of the app's newest-first
+    // convention.
+    QList<QDate> months = m_yearDetailAssetsByMonth.keys();
+    std::sort(months.begin(), months.end(), std::greater<QDate>());
+
+    for (const QDate &month : months) {
+        const QList<ImmichAsset> &assets = m_yearDetailAssetsByMonth.value(month);
+        if (assets.isEmpty())
+            continue;
+
+        QMap<QDate, QList<ImmichAsset>> byDay;
+        for (const ImmichAsset &asset : assets) {
+            const QDate day = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
+            if (day.isValid())
+                byDay[day].append(asset);
+        }
+        if (byDay.isEmpty())
+            continue;
+
+        auto *header = new QLabel(locale.monthName(month.month(), QLocale::LongFormat),
+                                  m_yearDetailHost);
+        header->setObjectName(QStringLiteral("timelineDayHeader"));
+        header->setProperty("section", true);
+        m_yearDetailWidgets.append(header);
+
+        QList<QDate> days = byDay.keys();
+        std::sort(days.begin(), days.end(), std::greater<QDate>());
+        for (const QDate &day : days) {
+            const QList<ImmichAsset> &dayAssets = byDay.value(day);
+            auto *tile = new SummaryTile(QString::number(day.day()), dayAssets.size(),
+                                         m_yearDetailHost);
+            tile->setShowCount(false);
+            connect(tile, &SummaryTile::clicked, this, [this, day] { jumpToDate(day); });
+            m_yearDetailWidgets.append(tile);
+
+            const QString assetId = dayAssets.first().id;
+            m_summaryTilesByAssetId.insert(assetId, tile);
+            m_client->loadThumbnail(assetId);
+        }
+    }
+    layoutYearDetail();
+}
+
+void LibraryPage::layoutYearDetail()
+{
+    const int viewportWidth = m_yearDetailScrollArea->viewport()->width();
+    const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
+    constexpr int kTileGap = 8;
+    constexpr int kTileSize = 110;
+    const int columns = qMax(1, (availableWidth + kTileGap) / (kTileSize + kTileGap));
+
+    int y = kSidePad;
+    int col = 0;
+    bool rowStarted = false;
+    for (QWidget *widget : std::as_const(m_yearDetailWidgets)) {
+        if (auto *header = qobject_cast<QLabel *>(widget)) {
+            if (rowStarted) {
+                y += kTileSize + kTileGap;
+                rowStarted = false;
+            }
+            header->setGeometry(kSidePad, y, availableWidth, 26);
+            header->show();
+            y += 32;
+            col = 0;
+            continue;
+        }
+        if (col == columns) {
+            col = 0;
+            y += kTileSize + kTileGap;
+        }
+        widget->setGeometry(kSidePad + col * (kTileSize + kTileGap), y, kTileSize, kTileSize);
+        widget->show();
+        ++col;
+        rowStarted = true;
+    }
+    if (rowStarted)
+        y += kTileSize + kTileGap;
+    m_yearDetailHost->resize(viewportWidth, y + kSidePad);
+}
+
+void LibraryPage::jumpToDate(const QDate &day)
+{
+    m_contentStack->setCurrentIndex(0);
+    if (!day.isValid() || m_monthBuckets.isEmpty())
+        return;
+
+    const QDate targetMonth(day.year(), day.month(), 1);
+    int index = -1;
+    for (int i = 0; i < m_monthBuckets.size(); ++i) {
+        if (m_monthBuckets.at(i).month == targetMonth) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+        return;
+
+    clearTimeline();
+    m_nextBucketIndex = index;
+    m_pendingScrollToDate = day;
+    m_loading = true;
+    m_refreshButton->setEnabled(false);
+    m_status->setText(tr("Loading…"));
+    m_client->loadTimelineBucket(m_monthBuckets.at(index).month);
+}
+
+void LibraryPage::scrollToPendingDate()
+{
+    if (!m_pendingScrollToDate.isValid())
+        return;
+    for (const DaySection &section : std::as_const(m_sections)) {
+        if (section.date == m_pendingScrollToDate && section.header) {
+            m_scrollArea->verticalScrollBar()->setValue(qMax(0, section.header->y() - 12));
+            break;
+        }
+    }
+    m_pendingScrollToDate = QDate();
+}
+
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)
 {
+    if (SummaryTile *summaryTile = m_summaryTilesByAssetId.take(assetId)) {
+        summaryTile->setThumbnail(thumbnail);
+        return;
+    }
+
     m_requestedThumbnails.remove(assetId);
     const QPointer<MediaTile> tile = m_tilesById.value(assetId);
     if (tile && m_tilesById.value(assetId) == tile.data() && isTileNearViewport(tile)) {
@@ -607,54 +998,8 @@ void LibraryPage::layoutTimeline()
     const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
     int y = 8;
 
-    for (int sectionIndex = 0; sectionIndex < m_sections.size();) {
+    for (int sectionIndex = 0; sectionIndex < m_sections.size(); ++sectionIndex) {
         DaySection &section = m_sections[sectionIndex];
-
-        // Consecutive one-item days share one gallery row. Each item keeps its
-        // own date heading, so chronology remains clear without wasting space.
-        if (section.tiles.size() == 1) {
-            struct SparseCell {
-                DaySection *section;
-                int width;
-            };
-            QList<SparseCell> cells;
-            int occupiedWidth = 0;
-
-            while (sectionIndex < m_sections.size() &&
-                   m_sections[sectionIndex].tiles.size() == 1) {
-                DaySection &candidate = m_sections[sectionIndex];
-                const qreal ratio = candidate.tiles.first()->aspectRatio();
-                const bool hasSingletonNeighbor =
-                    !cells.isEmpty() ||
-                    (sectionIndex + 1 < m_sections.size() &&
-                     m_sections[sectionIndex + 1].tiles.size() == 1);
-                const int maximumCellWidth = hasSingletonNeighbor
-                    ? qMax(96, (availableWidth - 14) / 2)
-                    : qMin(320, availableWidth);
-                const int cellWidth = qBound(
-                    96, qRound(ratio * kTargetRowHeight),
-                    qMin(320, maximumCellWidth));
-                const int required = cellWidth + (cells.isEmpty() ? 0 : 14);
-                if (!cells.isEmpty() && occupiedWidth + required > availableWidth)
-                    break;
-
-                cells.append({&candidate, cellWidth});
-                occupiedWidth += required;
-                ++sectionIndex;
-            }
-
-            int x = kSidePad;
-            for (const SparseCell &cell : std::as_const(cells)) {
-                cell.section->header->setGeometry(x, y, cell.width, 26);
-                cell.section->header->show();
-                MediaTile *tile = cell.section->tiles.first();
-                tile->setGeometry(x, y + 30, cell.width, kTargetRowHeight);
-                tile->show();
-                x += cell.width + 14;
-            }
-            y += 30 + kTargetRowHeight + 13;
-            continue;
-        }
 
         if (section.header) {
             section.header->setGeometry(kSidePad, y, availableWidth, 26);
@@ -710,7 +1055,6 @@ void LibraryPage::layoutTimeline()
         // Short trailing rows (e.g. a single photo) keep a capped natural size.
         flushRow(false);
         y += 10;
-        ++sectionIndex;
     }
 
     m_timelineHost->resize(viewportWidth, y + 16);
@@ -738,6 +1082,14 @@ bool LibraryPage::isTileNearViewport(const MediaTile *tile) const
 
 void LibraryPage::updateVisibleMedia()
 {
+    // Don't evict tile thumbnails just because the Library page isn't the
+    // active stack page (Years/Year-detail showing instead) - that's not the
+    // same as being scrolled far off-screen, and clearing them here meant
+    // returning from Years showed a grid of blanks until something else
+    // happened to trigger a reload.
+    if (m_contentStack->currentWidget() != m_scrollArea)
+        return;
+
     for (auto it = m_tilesById.cbegin(); it != m_tilesById.cend(); ++it) {
         MediaTile *tile = it.value();
         const QString assetId = it.key();
@@ -756,8 +1108,15 @@ void LibraryPage::updateVisibleMedia()
 void LibraryPage::updateEmptyState()
 {
     const bool empty = m_assets.isEmpty();
-    m_emptyState->setVisible(empty);
-    m_scrollArea->setVisible(!empty);
+    // Only touch visibility of the Library page's own widgets when it's
+    // actually the active stack page - otherwise this fights with
+    // QStackedWidget's page management (e.g. a background new-photos poll
+    // can call this while Years/Year-detail is showing) and forces the
+    // Library grid visible again, overlapping whichever page is current.
+    if (m_contentStack->currentWidget() == m_scrollArea) {
+        m_emptyState->setVisible(empty);
+        m_scrollArea->setVisible(!empty);
+    }
     if (!empty)
         return;
     if (!m_client->isConfigured()) {
@@ -1371,6 +1730,8 @@ void LibraryPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     layoutTimeline();
+    layoutYearGrid();
+    layoutYearDetail();
     if (m_dropActive)
         m_dropOverlay->setGeometry(rect());
 }
