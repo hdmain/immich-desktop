@@ -178,6 +178,12 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
         applySearch();
     });
     connect(m_client, &ImmichClient::assetsLoaded, this, &LibraryPage::showAssets);
+    connect(m_client, &ImmichClient::timelineBucketsLoaded,
+            this, &LibraryPage::handleTimelineBucketsLoaded);
+    connect(m_client, &ImmichClient::timelineBucketLoaded,
+            this, &LibraryPage::handleTimelineBucketLoaded);
+    connect(m_client, &ImmichClient::timelineBucketFailed,
+            this, &LibraryPage::handleTimelineBucketFailed);
     connect(m_client, &ImmichClient::newestAssetsPolled,
             this, &LibraryPage::handleNewestAssetsPolled);
     connect(m_client, &ImmichClient::thumbnailLoaded, this, &LibraryPage::showThumbnail);
@@ -239,26 +245,70 @@ void LibraryPage::refresh()
 {
     if (m_loading)
         return;
-    requestPage(1, false);
+
+    if (!m_searchQuery.isEmpty()) {
+        requestPage(1, false);
+        return;
+    }
+
+    m_monthBuckets.clear();
+    m_nextBucketIndex = 0;
+
+    if (!m_client->isOnline()) {
+        // Falls back to the flat cached snapshot via the existing page path.
+        requestPage(1, false);
+        return;
+    }
+
+    clearTimeline();
+    m_loading = true;
+    m_refreshButton->setEnabled(false);
+    m_status->setText(tr("Loading your library…"));
+    m_client->clearCachedLibrary();
+    m_client->loadTimelineBuckets();
+}
+
+bool LibraryPage::hasMoreToLoad() const
+{
+    if (!m_searchQuery.isEmpty())
+        return !m_nextPage.isEmpty();
+    return m_nextBucketIndex < m_monthBuckets.size();
 }
 
 void LibraryPage::loadMore()
 {
-    bool ok = false;
-    const int page = m_nextPage.toInt(&ok);
-    if (!m_loading && ok && page > 0)
-        requestPage(page, true);
+    if (m_loading)
+        return;
+
+    if (!m_searchQuery.isEmpty()) {
+        bool ok = false;
+        const int page = m_nextPage.toInt(&ok);
+        if (ok && page > 0)
+            requestPage(page, true);
+        return;
+    }
+
+    loadNextTimelineBucket();
 }
 
 void LibraryPage::maybeLoadMore()
 {
-    if (m_loading || m_nextPage.isEmpty() || !m_scrollArea->isVisible())
+    if (m_loading || !hasMoreToLoad() || !m_scrollArea->isVisible())
         return;
 
     const QScrollBar *scrollBar = m_scrollArea->verticalScrollBar();
     const int preloadDistance = qMax(500, m_scrollArea->viewport()->height());
     if (scrollBar->maximum() - scrollBar->value() <= preloadDistance)
         loadMore();
+}
+
+void LibraryPage::loadNextTimelineBucket()
+{
+    if (m_nextBucketIndex >= m_monthBuckets.size())
+        return;
+    m_loading = true;
+    m_refreshButton->setEnabled(false);
+    m_client->loadTimelineBucket(m_monthBuckets.at(m_nextBucketIndex).month);
 }
 
 void LibraryPage::checkForNewPhotos()
@@ -362,6 +412,28 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
     if (!m_appendRequest)
         clearTimeline();
 
+    appendAssetsToTimeline(assets);
+
+    m_nextPage = fromCache ? QString() : nextPage;
+    m_loading = false;
+    m_autoRefreshPending = false;
+    m_refreshButton->setEnabled(true);
+    if (!m_searchQuery.isEmpty()) {
+        m_status->setText(tr("%n result(s) for “%1”", nullptr, m_assets.size())
+                              .arg(m_searchQuery));
+    } else if (fromCache) {
+        m_status->setText(tr("%n cached item(s) · offline", nullptr, m_assets.size()));
+    } else {
+        m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
+        updateEndpointHint();
+    }
+    scheduleLayout();
+    updateEmptyState();
+    updateAutoCheckTimer();
+}
+
+void LibraryPage::appendAssetsToTimeline(const QList<ImmichAsset> &assets)
+{
     for (const ImmichAsset &asset : assets) {
         if (m_tilesById.contains(asset.id))
             continue;
@@ -383,25 +455,56 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         connect(tile, &MediaTile::deleteRequested, this, &LibraryPage::deleteAssetPermanently);
     }
 
-    if (!m_appendRequest && !m_assets.isEmpty())
+    if (!m_assets.isEmpty())
         m_newestAssetId = m_assets.first().id;
+}
 
-    m_nextPage = fromCache ? QString() : nextPage;
-    m_loading = false;
-    m_autoRefreshPending = false;
-    m_refreshButton->setEnabled(true);
-    if (!m_searchQuery.isEmpty()) {
-        m_status->setText(tr("%n result(s) for “%1”", nullptr, m_assets.size())
-                              .arg(m_searchQuery));
-    } else if (fromCache) {
-        m_status->setText(tr("%n cached item(s) · offline", nullptr, m_assets.size()));
-    } else {
-        m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
-        updateEndpointHint();
+void LibraryPage::handleTimelineBucketsLoaded(const QList<TimeBucketInfo> &buckets)
+{
+    if (!m_searchQuery.isEmpty())
+        return;
+
+    m_monthBuckets = buckets;
+    m_nextBucketIndex = 0;
+
+    if (m_monthBuckets.isEmpty()) {
+        m_loading = false;
+        m_refreshButton->setEnabled(true);
+        updateEmptyState();
+        return;
     }
+    loadNextTimelineBucket();
+}
+
+void LibraryPage::handleTimelineBucketLoaded(const QDate &month,
+                                             const QList<ImmichAsset> &assets)
+{
+    if (!m_searchQuery.isEmpty())
+        return;
+    // Ignore a stale reply that no longer matches where the cursor is (e.g.
+    // a refresh reset things while this request was in flight).
+    if (m_nextBucketIndex >= m_monthBuckets.size() ||
+        m_monthBuckets.at(m_nextBucketIndex).month != month)
+        return;
+
+    appendAssetsToTimeline(assets);
+    ++m_nextBucketIndex;
+    m_loading = false;
+    m_refreshButton->setEnabled(true);
+    m_status->setText(tr("%n item(s)", nullptr, m_assets.size()));
+    updateEndpointHint();
     scheduleLayout();
     updateEmptyState();
     updateAutoCheckTimer();
+    QTimer::singleShot(0, this, &LibraryPage::maybeLoadMore);
+}
+
+void LibraryPage::handleTimelineBucketFailed(const QDate &month, const QString &message)
+{
+    Q_UNUSED(month);
+    m_loading = false;
+    m_refreshButton->setEnabled(true);
+    m_status->setText(tr("Couldn't load more: %1").arg(message));
 }
 
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)

@@ -36,4 +36,9 @@ struct ImmichExploreData {
     QList<ImmichAsset> recentAssets;
 };
 
+struct TimeBucketInfo {
+    QDate month; // Always the 1st of the month.
+    int count = 0;
+};
+
 } // namespace Aurora

@@ -71,6 +71,10 @@ private slots:
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
     void handleOnlineChanged(bool online);
     void handleUploadQueueChanged(int pendingCount);
+    void handleTimelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets);
+    void handleTimelineBucketLoaded(const QDate &month,
+                                    const QList<Aurora::ImmichAsset> &assets);
+    void handleTimelineBucketFailed(const QDate &month, const QString &message);
 
 private:
     struct DaySection {
@@ -103,6 +107,9 @@ private:
     bool handleDragEvent(QEvent *event);
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
+    void appendAssetsToTimeline(const QList<ImmichAsset> &assets);
+    void loadNextTimelineBucket();
+    bool hasMoreToLoad() const;
 
     ImmichClient *m_client;
     QScrollArea *m_scrollArea;
@@ -122,6 +129,8 @@ private:
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
+    QList<TimeBucketInfo> m_monthBuckets;
+    int m_nextBucketIndex = 0;
     QString m_nextPage;
     QString m_newestAssetId;
     QString m_searchQuery;
