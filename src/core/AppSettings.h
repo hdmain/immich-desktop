@@ -41,6 +41,10 @@ struct PlaybackSettings {
     bool hoverPreviewEnabled = true;
 };
 
+struct TimelineSettings {
+    bool compactGrid = false;
+};
+
 struct SupportSettings {
     bool githubStarDismissed = false;
     int launchCount = 0;
@@ -64,6 +68,9 @@ public:
 
     PlaybackSettings loadPlayback() const;
     void savePlayback(const PlaybackSettings &playback);
+
+    TimelineSettings loadTimeline() const;
+    void saveTimeline(const TimelineSettings &timeline);
 
     SupportSettings loadSupport() const;
     void saveSupport(const SupportSettings &support);

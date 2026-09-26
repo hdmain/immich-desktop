@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 #include "core/AutoStart.h"
 #include "core/ThemeManager.h"
+#include "ui/pages/LibraryPage.h"
 #include "ui/widgets/ColorButton.h"
 #include "ui/widgets/VideoHoverPreview.h"
 
@@ -193,6 +194,23 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     }
     contentRoot->addWidget(playbackCard);
 
+    QVBoxLayout *timelineLayout = nullptr;
+    auto *timelineCard = sectionCard(
+        tr("Timeline"),
+        tr("Choose how your library is laid out."),
+        content, &timelineLayout);
+    m_compactGrid = new QCheckBox(tr("Compact grid (no date headers)"), timelineCard);
+    m_compactGrid->setCursor(Qt::PointingHandCursor);
+    auto *compactGridHelp = new QLabel(
+        tr("Uniform square thumbnails packed edge to edge, like a phone's photo grid, "
+           "instead of date-grouped rows of varying sizes."),
+        timelineCard);
+    compactGridHelp->setProperty("subheading", true);
+    compactGridHelp->setWordWrap(true);
+    timelineLayout->addWidget(m_compactGrid);
+    timelineLayout->addWidget(compactGridHelp);
+    contentRoot->addWidget(timelineCard);
+
     QVBoxLayout *cacheLayout = nullptr;
     auto *cacheCard = sectionCard(
         tr("Cache"),
@@ -220,6 +238,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     connect(m_closeToTray, &QCheckBox::toggled, this, &AppearancePage::saveCloseToTray);
     connect(m_autoStart, &QCheckBox::toggled, this, &AppearancePage::saveAutoStart);
     connect(m_hoverPreview, &QCheckBox::toggled, this, &AppearancePage::saveHoverPreview);
+    connect(m_compactGrid, &QCheckBox::toggled, this, &AppearancePage::saveCompactGrid);
     connect(refreshCache, &QPushButton::clicked, this, &AppearancePage::refreshCacheSize);
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { syncControls(); });
@@ -301,6 +320,20 @@ void AppearancePage::syncControls()
         const QSignalBlocker hb(m_hoverPreview);
         const bool on = AppSettings().loadPlayback().hoverPreviewEnabled;
         m_hoverPreview->setChecked(on && qEnvironmentVariableIsEmpty("SNAP"));
+    }
+
+    const QSignalBlocker compactGridBlocker(m_compactGrid);
+    m_compactGrid->setChecked(AppSettings().loadTimeline().compactGrid);
+}
+
+void AppearancePage::saveCompactGrid(bool enabled)
+{
+    TimelineSettings s = AppSettings().loadTimeline();
+    s.compactGrid = enabled;
+    AppSettings().saveTimeline(s);
+    if (auto *w = window()) {
+        for (auto *page : w->findChildren<LibraryPage *>())
+            page->setCompactGrid(enabled);
     }
 }
 
