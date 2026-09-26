@@ -95,6 +95,7 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     connect(m_searchDebounce, &QTimer::timeout, this, &LibraryPage::applySearch);
     setObjectName(QStringLiteral("libraryPage"));
     setAcceptDrops(true);
+    m_compactGrid = AppSettings().loadTimeline().compactGrid;
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
@@ -233,6 +234,14 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
         if (m_client->isConfigured())
             refresh();
     });
+}
+
+void LibraryPage::setCompactGrid(bool enabled)
+{
+    if (m_compactGrid == enabled)
+        return;
+    m_compactGrid = enabled;
+    scheduleLayout();
 }
 
 void LibraryPage::refresh()
@@ -502,6 +511,36 @@ void LibraryPage::layoutTimeline()
 {
     const int viewportWidth = m_scrollArea->viewport()->width();
     const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
+
+    if (m_compactGrid) {
+        constexpr int kGridGap = 3;
+        constexpr int kTargetCellSize = 132;
+        const int startY = 8;
+        const int columns = qMax(1, (availableWidth + kGridGap) / (kTargetCellSize + kGridGap));
+        const int cellSize = (availableWidth - (columns - 1) * kGridGap) / columns;
+
+        int index = 0;
+        for (DaySection &section : m_sections) {
+            if (section.header)
+                section.header->hide();
+            for (MediaTile *tile : section.tiles) {
+                const int col = index % columns;
+                const int row = index / columns;
+                tile->setGeometry(kSidePad + col * (cellSize + kGridGap),
+                                  startY + row * (cellSize + kGridGap), cellSize, cellSize);
+                tile->show();
+                ++index;
+            }
+        }
+
+        const int totalRows = (index + columns - 1) / columns;
+        m_timelineHost->resize(viewportWidth,
+                               startY + totalRows * (cellSize + kGridGap) + 16);
+        scheduleVisibleMediaUpdate();
+        QTimer::singleShot(0, this, &LibraryPage::maybeLoadMore);
+        return;
+    }
+
     int y = 8;
 
     for (int sectionIndex = 0; sectionIndex < m_sections.size();) {
