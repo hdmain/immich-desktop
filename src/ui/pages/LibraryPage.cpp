@@ -424,7 +424,7 @@ void LibraryPage::handleNewestAssetsPolled(const QList<ImmichAsset> &assets)
         return;
 
     m_autoRefreshPending = true;
-    m_status->setText(tr("New photo%1 found — refreshing…")
+    m_status->setText(tr("New photo%1 found , refreshing…")
                           .arg(newCount == 1 ? QString() : QStringLiteral("s")));
     refresh();
 }
@@ -647,7 +647,7 @@ void LibraryPage::showYearGrid()
         clearYearGrid();
         m_yearScrollArea->hide();
         m_yearGridEmptyState->setText(
-            tr("You're offline — Years needs a connection to browse by month."));
+            tr("You're offline , Years needs a connection to browse by month."));
         m_yearGridEmptyState->show();
         return;
     }
@@ -746,7 +746,7 @@ void LibraryPage::handleYearTileClicked(int year)
 
     if (!m_client->isOnline()) {
         m_yearDetailStatus->setText(
-            tr("%1 — you're offline, can't load months.").arg(year));
+            tr("%1 - you're offline, can't load months.").arg(year));
         return;
     }
 
@@ -757,7 +757,7 @@ void LibraryPage::handleYearTileClicked(int year)
         m_pendingYearDetailRequests.insert(bucket.month, year);
         m_client->loadTimelineBucket(bucket.month);
     }
-    m_yearDetailStatus->setText(tr("%1 — loading…").arg(year));
+    m_yearDetailStatus->setText(tr("%1 - loading…").arg(year));
 }
 
 void LibraryPage::handleYearCoverLoaded(int year, const QList<ImmichAsset> &assets)
@@ -1243,8 +1243,8 @@ void LibraryPage::handleOnlineChanged(bool online)
     if (online) {
         if (m_showingCached || m_client->pendingUploadCount() > 0) {
             m_status->setText(m_client->pendingUploadCount() > 0
-                                  ? tr("Back online — resuming uploads…")
-                                  : tr("Back online — refreshing…"));
+                                  ? tr("Back online , resuming uploads…")
+                                  : tr("Back online , refreshing…"));
             if (m_showingCached)
                 refresh();
         }
@@ -1362,7 +1362,7 @@ void LibraryPage::copyAsset(const ImmichAsset &asset)
         return;
     }
     if (asset.isVideo()) {
-        m_status->setText(tr("Copy works for photos — download videos instead."));
+        m_status->setText(tr("Copy works for photos , download videos instead."));
         return;
     }
 

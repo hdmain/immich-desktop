@@ -537,7 +537,7 @@ void ImmichClient::loadTimelineBuckets()
         return;
     if (!m_online) {
         emit requestFailed(tr("Load library"),
-                           tr("You're offline — Years/Month browsing needs a connection."));
+                           tr("You're offline , Years/Month browsing needs a connection."));
         return;
     }
 
@@ -922,7 +922,7 @@ void ImmichClient::loadPersonThumbnail(const QString &personId)
 
     if (!m_online) {
         emit imageLoadFailed(personId, QStringLiteral("person"),
-                             tr("Offline — person photo not cached."));
+                             tr("Offline - person photo not cached."));
         return;
     }
 
@@ -1158,7 +1158,7 @@ bool ImmichClient::startUpload(const QString &filePath)
                 tr("Could not open %1 after several tries: %2")
                     .arg(info.fileName(), message));
         } else {
-            // Defer retry — never recurse into processUploadQueue here.
+            // Defer retry , never recurse into processUploadQueue here.
             requeueUpload(filePath, false);
             scheduleUploadRetry(2000 * attempts);
             emit requestFailed(
@@ -1239,7 +1239,7 @@ bool ImmichClient::startUpload(const QString &filePath)
                 requeueUpload(filePath, true);
                 emit requestFailed(
                     tr("Upload"),
-                    tr("%1 interrupted — queued for retry when online.")
+                    tr("%1 interrupted , queued for retry when online.")
                         .arg(QFileInfo(filePath).fileName()));
             } else {
                 m_uploadRetryCounts.remove(filePath);

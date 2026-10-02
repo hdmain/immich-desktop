@@ -1,0 +1,13 @@
+---
+description: Always commit finished work without waiting to be asked
+alwaysApply: true
+---
+
+# Always commit after work
+
+When a task that changes the repo is finished, create a git commit unless the user explicitly says not to.
+
+- Follow the repo's commit message style (concise, why-focused).
+- Never commit secrets (`.env`, `*.creds`, Snapcraft credentials, tokens).
+- Do not push unless the user asks (or a prior rule/request already covers push for that task).
+- If the only leftover is secret/untracked junk, still commit the real code changes and leave secrets untracked.

@@ -49,7 +49,7 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     m_serverUrl->setClearButtonEnabled(true);
     m_localServerUrl->setText(current.localServerUrl);
     m_localServerUrl->setPlaceholderText(
-        tr("Optional — e.g. http://192.168.1.10:2283"));
+        tr("Optional - e.g. http://192.168.1.10:2283"));
     m_localServerUrl->setClearButtonEnabled(true);
     m_apiKey->setText(current.apiKey);
     m_apiKey->setPlaceholderText(tr("Paste an Immich API key"));

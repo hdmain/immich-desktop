@@ -42,5 +42,5 @@ echo "Wrote $EXPORT_FILE"
 echo
 echo "Next:"
 echo "  1) Put the file contents into GitHub secret SNAPCRAFT_STORE_CREDENTIALS"
-echo "  2) Tag a release (vX.Y.Z) — CI builds and publishes amd64+arm64 to stable"
+echo "  2) Tag a release (vX.Y.Z) - CI builds and publishes amd64+arm64 to stable"
 echo "  3) Or locally: bash tools/build-and-publish-snap.sh stable"

@@ -96,7 +96,7 @@ AboutPage::AboutPage(QWidget *parent)
         l->addWidget(headingLabel(tr("What is this?"), c));
         l->addWidget(bodyLabel(
             tr("immich desktop is an unofficial, fan-made desktop app for "
-               "<a href=\"https://immich.app\">Immich</a> — the self-hosted photo and video manager. "
+               "<a href=\"https://immich.app\">Immich</a> , the self-hosted photo and video manager. "
                "It connects to your own Immich server via an API key and lets you browse your timeline, "
                "search, explore people &amp; places, upload/download, stream video, and keep browsing "
                "offline through a local thumbnail cache and queued uploads. "
@@ -134,25 +134,25 @@ AboutPage::AboutPage(QWidget *parent)
         auto *c = card(content, &l);
         l->addWidget(headingLabel(tr("Tech stack"), c));
         l->addWidget(bodyLabel(
-            tr("Everything this build is made with — frameworks, packaging, and key libraries:"),
+            tr("Everything this build is made with , frameworks, packaging, and key libraries:"),
             c));
         const QStringList items = {
-            QStringLiteral("Qt 6 — Core, Gui, Widgets, Network, Svg"),
-            QStringLiteral("Qt Multimedia (+ MultimediaWidgets) — video playback & audio (QMediaPlayer, QVideoSink)"),
-            QStringLiteral("GStreamer / FFmpeg — media backends behind Qt Multimedia (selected at runtime)"),
-            QStringLiteral("CMake + Ninja — build system"),
-            QStringLiteral("C++20 — language standard"),
-            QStringLiteral("QSettings (INI) — AppSettings persistence (appearance, updates, server, playback)"),
-            QStringLiteral("QSystemTrayIcon — tray, notifications, close-to-tray"),
-            QStringLiteral("QLocalServer / QLocalSocket — SingleInstance (single-instance + raise)"),
-            QStringLiteral("Inter font family — bundled UI typeface (via FontLoader)"),
-            QStringLiteral("Lucide icons — SVG icon set"),
-            QStringLiteral("linuxdeploy + linuxdeploy-plugin-qt — AppImage bundling"),
-            QStringLiteral("CPack — DEB / NSIS / WiX (MSI) installers"),
-            QStringLiteral("Snapcraft (core24 + gnome extension) — Snap package"),
-            QStringLiteral("Flatpak (org.kde.Platform / Sdk) — Flatpak manifest"),
-            QStringLiteral("GitHub Actions — CI for Windows/Linux/Snap + tagged releases"),
-            QStringLiteral("NSIS & WiX Toolset — Windows installers"),
+            QStringLiteral("Qt 6 - Core, Gui, Widgets, Network, Svg"),
+            QStringLiteral("Qt Multimedia (+ MultimediaWidgets) - video playback & audio (QMediaPlayer, QVideoSink)"),
+            QStringLiteral("GStreamer / FFmpeg - media backends behind Qt Multimedia (selected at runtime)"),
+            QStringLiteral("CMake + Ninja - build system"),
+            QStringLiteral("C++20 - language standard"),
+            QStringLiteral("QSettings (INI) - AppSettings persistence (appearance, updates, server, playback)"),
+            QStringLiteral("QSystemTrayIcon - tray, notifications, close-to-tray"),
+            QStringLiteral("QLocalServer / QLocalSocket - SingleInstance (single-instance + raise)"),
+            QStringLiteral("Inter font family - bundled UI typeface (via FontLoader)"),
+            QStringLiteral("Lucide icons - SVG icon set"),
+            QStringLiteral("linuxdeploy + linuxdeploy-plugin-qt - AppImage bundling"),
+            QStringLiteral("CPack - DEB / NSIS / WiX (MSI) installers"),
+            QStringLiteral("Snapcraft (core24 + gnome extension) - Snap package"),
+            QStringLiteral("Flatpak (org.kde.Platform / Sdk) - Flatpak manifest"),
+            QStringLiteral("GitHub Actions - CI for Windows/Linux/Snap + tagged releases"),
+            QStringLiteral("NSIS & WiX Toolset - Windows installers"),
         };
         auto *bullets = new QLabel(c);
         bullets->setProperty("subheading", true);
@@ -174,7 +174,7 @@ AboutPage::AboutPage(QWidget *parent)
         l->addWidget(headingLabel(tr("Get in touch & collaborate"), c));
         l->addWidget(bodyLabel(
             tr("Want to build this together, report a bug, or propose a feature? "
-               "Reach out on GitHub or Discord — contributions of all sizes are welcome."),
+               "Reach out on GitHub or Discord , contributions of all sizes are welcome."),
             c));
         auto *discordRow = new QLabel(c);
         discordRow->setProperty("subheading", true);

@@ -27,4 +27,6 @@ Thumbs.db
 .snapcraft-store-credentials.json
 .snapcraft-store-credentials.b64
 .snapcraft-store-credentials*
+snapcraft.creds
+*.creds
 *.export-login

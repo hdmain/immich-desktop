@@ -422,7 +422,7 @@ void ExplorePage::openAssetCollection(const QString &title, const QList<ImmichAs
             const ImmichAsset asset = assets.at(i);
             auto *card = new ExploreCard(ExploreCard::Style::Media, host);
             grid->addWidget(card, i / columns, i % columns);
-            // Bind thumbnails to the card lifetime — do not track in m_assetCards,
+            // Bind thumbnails to the card lifetime , do not track in m_assetCards,
             // which is cleared on explore refresh and would leave dangling dialog cards.
             connect(m_client, &ImmichClient::thumbnailLoaded, card,
                     [card, assetId = asset.id](const QString &id, const QPixmap &thumbnail) {

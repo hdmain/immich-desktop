@@ -19,7 +19,7 @@
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
 </p>
 
-> **Unofficial project.** Fan-made desktop client — not affiliated with, maintained by, or endorsed by the official Immich project. Immich is a trademark of its respective owners. This app uses its own branding.
+> **Unofficial project.** Fan-made desktop client , not affiliated with, maintained by, or endorsed by the official Immich project. Immich is a trademark of its respective owners. This app uses its own branding.
 
 ## Showcase
 
@@ -27,14 +27,14 @@
 
 ## Features
 
-- **Library** — Immich-style timeline with compact rows and grouped days
-- **Explore** — people, places, and discovery views
-- **Search** — find photos and videos across your library
-- **Upload & download** — send media to the server or save it locally
-- **Video streaming** — built-in player with seek, volume, and buffering
-- **Offline mode** — keep browsing with a local thumbnail/disk cache
-- **Themes** — light, dark, and custom palettes
-- **Desktop extras** — system tray, close-to-tray, autostart, single-instance
+- **Library** - Immich-style timeline with compact rows and grouped days
+- **Explore** - people, places, and discovery views
+- **Search** - find photos and videos across your library
+- **Upload & download** - send media to the server or save it locally
+- **Video streaming** - built-in player with seek, volume, and buffering
+- **Offline mode** - keep browsing with a local thumbnail/disk cache
+- **Themes** - light, dark, and custom palettes
+- **Desktop extras** - system tray, close-to-tray, autostart, single-instance
 
 ## Install
 
@@ -74,7 +74,7 @@ chmod +x immich-desktop-x86_64.AppImage   # or immich-desktop-aarch64.AppImage
 
 ## Roadmap
 
-Plans can shift — track progress and ideas in
+Plans can shift , track progress and ideas in
 [Issues](https://github.com/hdmain/immich-desktop/issues).
 
 ### Shipped
@@ -88,19 +88,19 @@ Plans can shift — track progress and ideas in
 
 ### Near term
 
-- **Albums** — browse, create, add/remove assets, cover photos
-- **Bulk actions** — multi-select favorite, archive, download, trash, album assign
-- **Upload reliability** — pause/resume, per-file progress, clearer failure recovery
-- **Explore polish** — map improvements, people naming/merge hooks, better empty states
-- **Keyboard & UX** — shortcuts, smoother timeline scrolling, denser grid options
+- **Albums** - browse, create, add/remove assets, cover photos
+- **Bulk actions** - multi-select favorite, archive, download, trash, album assign
+- **Upload reliability** - pause/resume, per-file progress, clearer failure recovery
+- **Explore polish** - map improvements, people naming/merge hooks, better empty states
+- **Keyboard & UX** - shortcuts, smoother timeline scrolling, denser grid options
 
 ### Next
 
-- **Sharing** — album links, partner sharing, copy public URLs from the desktop
-- **Memories & faces** — Immich memories feed and richer face/person management
-- **Smart library tools** — duplicates, archive views, advanced filters (type, camera, date)
-- **Notifications** — tray alerts for finished uploads and available updates
-- **Sync health** — connection status, last sync time, cache size controls
+- **Sharing** - album links, partner sharing, copy public URLs from the desktop
+- **Memories & faces** - Immich memories feed and richer face/person management
+- **Smart library tools** - duplicates, archive views, advanced filters (type, camera, date)
+- **Notifications** - tray alerts for finished uploads and available updates
+- **Sync health** - connection status, last sync time, cache size controls
 
 ### Later
 
@@ -112,19 +112,19 @@ Plans can shift — track progress and ideas in
 
 ## Looking for collaborators
 
-I'm looking for people who want to co-build this project — and other projects too (mine or yours). Whether you want to contribute to **immich desktop**, start something new together, or get help on your own repo, reach out and let's figure out what to build.
+I'm looking for people who want to co-build this project , and other projects too (mine or yours). Whether you want to contribute to **immich desktop**, start something new together, or get help on your own repo, reach out and let's figure out what to build.
 
-**Contact — Discord:** `diegosanche3` · **GitHub:** [github.com/hdmain/immich-desktop](https://github.com/hdmain/immich-desktop) · **Issues:** [github.com/hdmain/immich-desktop/issues](https://github.com/hdmain/immich-desktop/issues)
+**Contact - Discord:** `diegosanche3` · **GitHub:** [github.com/hdmain/immich-desktop](https://github.com/hdmain/immich-desktop) · **Issues:** [github.com/hdmain/immich-desktop/issues](https://github.com/hdmain/immich-desktop/issues)
 
-Ways to help right now: bug fixes, UX polish, Immich API coverage (albums, sharing, memories), packaging (Flatpak/Snap), and testing on different distros/GPUs. No pressure on scope — small PRs and ideas are welcome too. See `Settings → About` in the app for the full tech stack and links.
+Ways to help right now: bug fixes, UX polish, Immich API coverage (albums, sharing, memories), packaging (Flatpak/Snap), and testing on different distros/GPUs. No pressure on scope , small PRs and ideas are welcome too. See `Settings → About` in the app for the full tech stack and links.
 
 ## Project layout
 
-- `src/core` — settings, Immich client, updates, tray helpers
-- `src/ui` — shell, pages, and widgets
-- `resources` — icons, fonts, desktop metadata
-- `snap` — Snap packaging
+- `src/core` - settings, Immich client, updates, tray helpers
+- `src/ui` - shell, pages, and widgets
+- `resources` - icons, fonts, desktop metadata
+- `snap` - Snap packaging
 
 ## License
 
-MIT — see [LICENSE.txt](LICENSE.txt).
+MIT - see [LICENSE.txt](LICENSE.txt).

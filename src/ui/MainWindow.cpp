@@ -330,7 +330,7 @@ void MainWindow::refreshTrayIcon()
     const auto &palette = m_themeManager->palette();
     if (m_immichClient && m_immichClient->isUploading()) {
         m_trayIcon->setIcon(trayUploadIcon(palette));
-        m_trayIcon->setToolTip(tr("immich — uploading"));
+        m_trayIcon->setToolTip(tr("immich - uploading"));
         return;
     }
 
@@ -338,7 +338,7 @@ void MainWindow::refreshTrayIcon()
                                    m_updateManager->state() == UpdateState::Downloading;
     if ((m_immichClient && m_immichClient->isDownloading()) || downloadingUpdate) {
         m_trayIcon->setIcon(trayDownloadIcon(palette));
-        m_trayIcon->setToolTip(tr("immich — downloading"));
+        m_trayIcon->setToolTip(tr("immich - downloading"));
         return;
     }
 
@@ -472,7 +472,7 @@ void MainWindow::applyWindowCorners()
     constexpr DWORD cornerPreferenceAttribute = 33; // DWMWA_WINDOW_CORNER_PREFERENCE
     DwmSetWindowAttribute(handle, cornerPreferenceAttribute,
                           &cornerPreference, sizeof(cornerPreference));
-    // Avoid QWidget::setMask on Windows — it breaks border hit-testing/resizing.
+    // Avoid QWidget::setMask on Windows , it breaks border hit-testing/resizing.
     clearMask();
 #else
     if (squareCorners) {

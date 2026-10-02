@@ -183,7 +183,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
     snapHelp->setText(
         tr("Note: the Snap build runs confined, so hover preview is disabled in the Snap. "
            "If video playback doesn't work from the Snap, install the GitHub release "
-           "(<a href=\"https://github.com/hdmain/immich-desktop/releases\">.deb / AppImage</a>) — "
+           "(<a href=\"https://github.com/hdmain/immich-desktop/releases\">.deb / AppImage</a>) , "
            "it uses your system's GStreamer/FFmpeg without confinement."));
     playbackLayout->addWidget(m_hoverPreview);
     playbackLayout->addWidget(hoverHelp);
