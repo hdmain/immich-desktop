@@ -1,13 +1,14 @@
 ---
-description: Always commit finished work without waiting to be asked
+description: Always commit and push finished work to GitHub
 alwaysApply: true
 ---
 
-# Always commit after work
+# Always commit and push after work
 
-When a task that changes the repo is finished, create a git commit unless the user explicitly says not to.
+When a task that changes the repo is finished, create a git commit and push to GitHub (`origin`) unless the user explicitly says not to.
 
 - Follow the repo's commit message style (concise, why-focused).
 - Never commit secrets (`.env`, `*.creds`, Snapcraft credentials, tokens).
-- Do not push unless the user asks (or a prior rule/request already covers push for that task).
-- If the only leftover is secret/untracked junk, still commit the real code changes and leave secrets untracked.
+- After a successful commit, push the current branch (`git push -u origin HEAD` if needed).
+- Do not force-push to main/master unless the user explicitly asks.
+- If the only leftover is secret/untracked junk, still commit and push the real code changes and leave secrets untracked.
