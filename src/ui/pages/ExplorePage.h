@@ -6,8 +6,11 @@
 #include <QHash>
 #include <QList>
 #include <QMultiHash>
+#include <QPointer>
 #include <QWidget>
 
+class QDialog;
+class QGridLayout;
 class QKeyEvent;
 class QLabel;
 class QMouseEvent;
@@ -72,7 +75,12 @@ private:
 
     void clearSections();
     void updateEmptyState();
-    void openAssetCollection(const QString &title, const QList<ImmichAsset> &assets);
+    void openAssetCollection(const QString &title, const QString &filterKind,
+                             const QString &filterValue, const QList<ImmichAsset> &assets,
+                             const QString &nextPage);
+    void appendCollectionAssets(const QList<ImmichAsset> &assets);
+    void updateCollectionLoadMore(const QString &nextPage);
+    void requestCollectionNextPage();
     void populateSection(SectionRow *section, bool visible);
 
     ImmichClient *m_client;
@@ -88,6 +96,14 @@ private:
     QHash<QString, ExploreCard *> m_personCards;
     QMultiHash<QString, ExploreCard *> m_assetCards;
     QString m_pendingCollectionTitle;
+    QPointer<QDialog> m_collectionDialog;
+    QPointer<QGridLayout> m_collectionGrid;
+    QPointer<QPushButton> m_collectionLoadMore;
+    QString m_collectionFilterKind;
+    QString m_collectionFilterValue;
+    QString m_collectionNextPage;
+    int m_collectionAssetCount = 0;
+    bool m_collectionLoadingMore = false;
     bool m_loadedOnce = false;
     bool m_loading = false;
 };

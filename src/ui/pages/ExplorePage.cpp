@@ -345,6 +345,10 @@ void ExplorePage::showRequestError(const QString &operation, const QString &mess
 {
     if (operation != tr("Load explore"))
         return;
+    if (m_collectionLoadingMore) {
+        m_collectionLoadingMore = false;
+        updateCollectionLoadMore(m_collectionNextPage);
+    }
     m_loading = false;
     m_refreshButton->setEnabled(true);
     m_status->setText(tr("%1 failed: %2").arg(operation, message));
@@ -385,22 +389,103 @@ void ExplorePage::openPlace(const ImmichPlace &place)
 void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &filterValue,
                                      const QList<ImmichAsset> &assets, const QString &nextPage)
 {
-    Q_UNUSED(nextPage);
+    const bool appendToOpen =
+        m_collectionLoadingMore && m_collectionDialog &&
+        m_collectionFilterKind == filterKind && m_collectionFilterValue == filterValue;
+    m_collectionLoadingMore = false;
+
+    if (appendToOpen) {
+        appendCollectionAssets(assets);
+        updateCollectionLoadMore(nextPage);
+        return;
+    }
+
     QString title = m_pendingCollectionTitle;
     if (title.isEmpty()) {
         title = filterKind == QStringLiteral("city") ? filterValue : tr("Photos");
     }
     m_pendingCollectionTitle.clear();
-    openAssetCollection(title, assets);
+    openAssetCollection(title, filterKind, filterValue, assets, nextPage);
 }
 
-void ExplorePage::openAssetCollection(const QString &title, const QList<ImmichAsset> &assets)
+void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
 {
+    if (!m_collectionDialog || !m_collectionGrid)
+        return;
+
+    auto *host = m_collectionGrid->parentWidget();
+    if (!host)
+        return;
+
+    constexpr int columns = 4;
+    for (const ImmichAsset &asset : assets) {
+        auto *card = new ExploreCard(ExploreCard::Style::Media, host);
+        m_collectionGrid->addWidget(card, m_collectionAssetCount / columns,
+                                    m_collectionAssetCount % columns);
+        ++m_collectionAssetCount;
+        connect(m_client, &ImmichClient::thumbnailLoaded, card,
+                [card, assetId = asset.id](const QString &id, const QPixmap &thumbnail) {
+                    if (id == assetId)
+                        card->setPixmap(thumbnail);
+                });
+        connect(card, &ExploreCard::activated, this, [this, asset] { openAsset(asset); });
+        m_client->loadThumbnail(asset.id);
+    }
+}
+
+void ExplorePage::updateCollectionLoadMore(const QString &nextPage)
+{
+    m_collectionNextPage = nextPage;
+    if (!m_collectionLoadMore)
+        return;
+    bool ok = false;
+    const int page = nextPage.toInt(&ok);
+    m_collectionLoadMore->setEnabled(ok && page > 0);
+    m_collectionLoadMore->setVisible(ok && page > 0);
+    m_collectionLoadMore->setText(tr("Load more"));
+}
+
+void ExplorePage::requestCollectionNextPage()
+{
+    bool ok = false;
+    const int page = m_collectionNextPage.toInt(&ok);
+    if (!ok || page <= 0 || m_collectionFilterKind.isEmpty() ||
+        m_collectionFilterValue.isEmpty())
+        return;
+
+    m_collectionLoadingMore = true;
+    if (m_collectionLoadMore) {
+        m_collectionLoadMore->setEnabled(false);
+        m_collectionLoadMore->setText(tr("Loading…"));
+    }
+
+    if (m_collectionFilterKind == QStringLiteral("person"))
+        m_client->loadAssetsForPerson(m_collectionFilterValue, page);
+    else if (m_collectionFilterKind == QStringLiteral("city"))
+        m_client->loadAssetsForCity(m_collectionFilterValue, page);
+    else
+        m_collectionLoadingMore = false;
+}
+
+void ExplorePage::openAssetCollection(const QString &title, const QString &filterKind,
+                                      const QString &filterValue,
+                                      const QList<ImmichAsset> &assets,
+                                      const QString &nextPage)
+{
+    if (m_collectionDialog)
+        m_collectionDialog->close();
+
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setAttribute(Qt::WA_StyledBackground, true);
     dialog->setWindowTitle(title);
     dialog->resize(900, 640);
+
+    m_collectionDialog = dialog;
+    m_collectionFilterKind = filterKind;
+    m_collectionFilterValue = filterValue;
+    m_collectionAssetCount = 0;
+    m_collectionNextPage.clear();
 
     auto *layout = new QVBoxLayout(dialog);
     auto *scroll = new QScrollArea(dialog);
@@ -410,6 +495,7 @@ void ExplorePage::openAssetCollection(const QString &title, const QList<ImmichAs
     auto *grid = new QGridLayout(host);
     grid->setContentsMargins(8, 8, 8, 8);
     grid->setSpacing(8);
+    m_collectionGrid = grid;
 
     if (assets.isEmpty()) {
         auto *empty = new QLabel(tr("No photos found."), host);
@@ -417,28 +503,32 @@ void ExplorePage::openAssetCollection(const QString &title, const QList<ImmichAs
         empty->setProperty("subheading", true);
         grid->addWidget(empty, 0, 0);
     } else {
-        constexpr int columns = 4;
-        for (int i = 0; i < assets.size(); ++i) {
-            const ImmichAsset asset = assets.at(i);
-            auto *card = new ExploreCard(ExploreCard::Style::Media, host);
-            grid->addWidget(card, i / columns, i % columns);
-            // Bind thumbnails to the card lifetime , do not track in m_assetCards,
-            // which is cleared on explore refresh and would leave dangling dialog cards.
-            connect(m_client, &ImmichClient::thumbnailLoaded, card,
-                    [card, assetId = asset.id](const QString &id, const QPixmap &thumbnail) {
-                        if (id == assetId)
-                            card->setPixmap(thumbnail);
-                    });
-            connect(card, &ExploreCard::activated, this, [this, asset] { openAsset(asset); });
-            m_client->loadThumbnail(asset.id);
-        }
+        appendCollectionAssets(assets);
     }
 
     scroll->setWidget(host);
     layout->addWidget(scroll, 1);
+
+    auto *loadMore = new QPushButton(tr("Load more"), dialog);
+    m_collectionLoadMore = loadMore;
+    connect(loadMore, &QPushButton::clicked, this, &ExplorePage::requestCollectionNextPage);
+    layout->addWidget(loadMore);
+    updateCollectionLoadMore(nextPage);
+
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     layout->addWidget(buttons);
+
+    connect(dialog, &QObject::destroyed, this, [this] {
+        m_collectionGrid.clear();
+        m_collectionLoadMore.clear();
+        m_collectionFilterKind.clear();
+        m_collectionFilterValue.clear();
+        m_collectionNextPage.clear();
+        m_collectionAssetCount = 0;
+        m_collectionLoadingMore = false;
+    });
+
     dialog->show();
 }
 
