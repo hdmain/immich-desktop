@@ -250,8 +250,11 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
 
     m_collectionScroll = new QScrollArea(m_collectionPage);
     m_collectionScroll->setObjectName(QStringLiteral("libraryScroll"));
-    m_collectionScroll->setWidgetResizable(true);
+    // Manual geometry like Library: resizable=true would clamp the host to the
+    // viewport height and make the person/place gallery unscrollable.
+    m_collectionScroll->setWidgetResizable(false);
     m_collectionScroll->setFrameShape(QFrame::NoFrame);
+    m_collectionScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_collectionHost = new QWidget;
     m_collectionHost->setObjectName(QStringLiteral("timelineHost"));
     m_collectionScroll->setWidget(m_collectionHost);
