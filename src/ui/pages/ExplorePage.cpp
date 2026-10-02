@@ -1,29 +1,40 @@
 #include "ui/pages/ExplorePage.h"
 
+#include "core/AppSettings.h"
+#include "ui/widgets/MediaTile.h"
+#include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/VideoPlayerDialog.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
 #include <QFrame>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QShowEvent>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace Aurora {
 
 namespace {
+constexpr int kSidePad = 16;
+constexpr int kGap = 4;
+constexpr int kTargetRowHeight = 220;
+constexpr int kMinRowHeight = 140;
+constexpr int kMaxRowHeight = 320;
 
 QPixmap circularPixmap(const QPixmap &source, const QSize &size)
 {
-    if (source.isNull() || size.isEmpty())
+    if (source.isNull() || !size.isValid() || size.width() <= 0 || size.height() <= 0)
         return {};
     const QPixmap scaled =
         source.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
@@ -35,12 +46,11 @@ QPixmap circularPixmap(const QPixmap &source, const QSize &size)
     QPainterPath path;
     path.addEllipse(QRect(QPoint(0, 0), size));
     painter.setClipPath(path);
-    const int x = (scaled.width() - size.width()) / 2;
-    const int y = (scaled.height() - size.height()) / 2;
+    const int x = qMax(0, (scaled.width() - size.width()) / 2);
+    const int y = qMax(0, (scaled.height() - size.height()) / 2);
     painter.drawPixmap(0, 0, scaled, x, y, size.width(), size.height());
     return circular;
 }
-
 } // namespace
 
 ExploreCard::ExploreCard(Style style, QWidget *parent)
@@ -99,7 +109,7 @@ void ExploreCard::setPixmap(const QPixmap &pixmap)
             "QLabel { background: transparent; border-radius: 48px; }"));
     } else {
         m_image->setPixmap(pixmap.scaled(m_image->size(), Qt::KeepAspectRatioByExpanding,
-                                         Qt::SmoothTransformation));
+                                         Qt::FastTransformation));
     }
 }
 
@@ -124,6 +134,7 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
     , m_stack(new QStackedWidget(this))
+    , m_collectionCompactGrid(AppSettings().loadTimeline().compactGrid)
 {
     setObjectName(QStringLiteral("explorePage"));
 
@@ -132,7 +143,7 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     root->setSpacing(0);
     root->addWidget(m_stack, 1);
 
-    // ---- Browse page ----
+    // ---- Browse ----
     m_browsePage = new QWidget;
     auto *browseRoot = new QVBoxLayout(m_browsePage);
     browseRoot->setContentsMargins(0, 0, 0, 0);
@@ -204,13 +215,14 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     browseRoot->addWidget(m_emptyState);
     browseRoot->addWidget(m_browseScroll, 1);
 
-    // ---- Collection page ----
+    // ---- Collection (Library-style) ----
     m_collectionPage = new QWidget;
     auto *collectionRoot = new QVBoxLayout(m_collectionPage);
     collectionRoot->setContentsMargins(0, 0, 0, 0);
     collectionRoot->setSpacing(0);
 
     auto *collectionToolbar = new QWidget(m_collectionPage);
+    collectionToolbar->setObjectName(QStringLiteral("libraryToolbar"));
     auto *collectionToolbarLayout = new QHBoxLayout(collectionToolbar);
     collectionToolbarLayout->setContentsMargins(16, 12, 16, 12);
     collectionToolbarLayout->setSpacing(14);
@@ -219,10 +231,8 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     m_collectionBack->setCursor(Qt::PointingHandCursor);
 
     m_collectionHero = new QLabel(collectionToolbar);
-    m_collectionHero->setFixedSize(72, 72);
+    m_collectionHero->setFixedSize(64, 64);
     m_collectionHero->setAlignment(Qt::AlignCenter);
-    m_collectionHero->setStyleSheet(QStringLiteral(
-        "QLabel { background: rgba(127,127,127,40); border-radius: 36px; }"));
 
     auto *collectionText = new QVBoxLayout;
     collectionText->setSpacing(2);
@@ -239,22 +249,40 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     collectionToolbarLayout->addLayout(collectionText, 1);
 
     m_collectionScroll = new QScrollArea(m_collectionPage);
+    m_collectionScroll->setObjectName(QStringLiteral("libraryScroll"));
     m_collectionScroll->setWidgetResizable(true);
     m_collectionScroll->setFrameShape(QFrame::NoFrame);
     m_collectionHost = new QWidget;
-    m_collectionGrid = new QGridLayout(m_collectionHost);
-    m_collectionGrid->setContentsMargins(16, 8, 16, 16);
-    m_collectionGrid->setSpacing(10);
+    m_collectionHost->setObjectName(QStringLiteral("timelineHost"));
     m_collectionScroll->setWidget(m_collectionHost);
+    m_collectionScroll->viewport()->installEventFilter(this);
+    connect(m_collectionScroll->verticalScrollBar(), &QScrollBar::valueChanged, this,
+            [this](int) { scheduleCollectionVisibility(); });
+
+    m_collectionHoverPreview =
+        new VideoHoverPreview(m_client, m_collectionHost, this);
+    m_collectionHoverPreview->setEnabled(
+        AppSettings().loadPlayback().hoverPreviewEnabled);
 
     m_collectionLoadMore = new QPushButton(tr("Load more"), m_collectionPage);
     m_collectionLoadMore->setVisible(false);
+
+    m_collectionLayoutTimer = new QTimer(this);
+    m_collectionLayoutTimer->setSingleShot(true);
+    m_collectionLayoutTimer->setInterval(40);
+    connect(m_collectionLayoutTimer, &QTimer::timeout, this, &ExplorePage::layoutCollection);
+
+    m_collectionVisibilityTimer = new QTimer(this);
+    m_collectionVisibilityTimer->setSingleShot(true);
+    m_collectionVisibilityTimer->setInterval(60);
+    connect(m_collectionVisibilityTimer, &QTimer::timeout, this,
+            &ExplorePage::updateVisibleCollectionThumbs);
 
     collectionRoot->addWidget(collectionToolbar);
     collectionRoot->addWidget(m_collectionScroll, 1);
     collectionRoot->addWidget(m_collectionLoadMore);
 
-    // ---- Preview page ----
+    // ---- Preview ----
     m_previewPage = new QWidget;
     auto *previewRoot = new QVBoxLayout(m_previewPage);
     previewRoot->setContentsMargins(0, 0, 0, 0);
@@ -273,7 +301,6 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
 
     m_previewView = new ZoomPanWidget(m_previewPage);
     m_previewView->setPlaceholderText(tr("Loading preview…"));
-
     previewRoot->addWidget(previewToolbar);
     previewRoot->addWidget(m_previewView, 1);
 
@@ -302,6 +329,7 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
                 refresh();
         } else {
             clearSections();
+            clearCollectionTimeline();
             setPage(Page::Browse);
             updateEmptyState();
         }
@@ -319,8 +347,24 @@ void ExplorePage::setPage(Page page)
 void ExplorePage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    m_collectionCompactGrid = AppSettings().loadTimeline().compactGrid;
     if (m_client->isConfigured() && !m_loadedOnce)
         refresh();
+}
+
+void ExplorePage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_stack->currentIndex() == static_cast<int>(Page::Collection))
+        scheduleCollectionLayout();
+}
+
+bool ExplorePage::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_collectionScroll->viewport() &&
+        event->type() == QEvent::Resize)
+        scheduleCollectionLayout();
+    return QWidget::eventFilter(watched, event);
 }
 
 void ExplorePage::refresh()
@@ -360,7 +404,7 @@ void ExplorePage::clearSections()
     clearRow(&m_placesSection);
     clearRow(&m_recentSection);
     m_personCards.clear();
-    m_assetCards.clear();
+    m_browseAssetCards.clear();
 }
 
 void ExplorePage::populateSection(SectionRow *section, bool visible)
@@ -399,7 +443,7 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         card->setPixmap({});
         placesLayout->insertWidget(placesLayout->count() - 1, card);
         m_placesSection.cards.append(card);
-        m_assetCards.insert(place.sampleAsset.id, card);
+        m_browseAssetCards.insert(place.sampleAsset.id, card);
         connect(card, &ExploreCard::activated, this, [this, place] { openPlace(place); });
         m_client->loadThumbnail(place.sampleAsset.id);
     }
@@ -411,8 +455,11 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         card->setPixmap({});
         recentLayout->insertWidget(recentLayout->count() - 1, card);
         m_recentSection.cards.append(card);
-        m_assetCards.insert(asset.id, card);
-        connect(card, &ExploreCard::activated, this, [this, asset] { openAsset(asset); });
+        m_browseAssetCards.insert(asset.id, card);
+        connect(card, &ExploreCard::activated, this, [this, asset] {
+            m_previewFromCollection = false;
+            openAsset(asset);
+        });
         m_client->loadThumbnail(asset.id);
     }
     populateSection(&m_recentSection, !data.recentAssets.isEmpty());
@@ -430,38 +477,60 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
     updateEmptyState();
 }
 
+void ExplorePage::setCollectionHero(const QPixmap &thumb, bool personStyle)
+{
+    if (thumb.isNull()) {
+        m_collectionHero->clear();
+        m_collectionHero->setStyleSheet(
+            personStyle
+                ? QStringLiteral(
+                      "QLabel { background: rgba(127,127,127,40); border-radius: 32px; }")
+                : QStringLiteral(
+                      "QLabel { background: rgba(127,127,127,40); border-radius: 12px; }"));
+        return;
+    }
+
+    if (personStyle) {
+        m_collectionHero->setPixmap(circularPixmap(thumb, m_collectionHero->size()));
+        m_collectionHero->setStyleSheet(QStringLiteral(
+            "QLabel { background: transparent; border-radius: 32px; }"));
+    } else {
+        m_collectionHero->setPixmap(
+            thumb.scaled(m_collectionHero->size(), Qt::KeepAspectRatioByExpanding,
+                         Qt::FastTransformation));
+        m_collectionHero->setStyleSheet(QStringLiteral(
+            "QLabel { background: transparent; border-radius: 12px; }"));
+    }
+}
+
 void ExplorePage::showPersonThumbnail(const QString &personId, const QPixmap &thumbnail)
 {
-    const QPointer<ExploreCard> card = m_personCards.value(personId);
-    if (card)
+    if (!thumbnail.isNull())
+        m_personThumbCache.insert(personId, thumbnail);
+
+    if (ExploreCard *card = m_personCards.value(personId))
         card->setPixmap(thumbnail);
 
     if (m_collectionPersonStyle && m_collectionFilterKind == QStringLiteral("person") &&
-        m_collectionFilterValue == personId && !thumbnail.isNull()) {
-        m_collectionHero->setPixmap(circularPixmap(thumbnail, m_collectionHero->size()));
-        m_collectionHero->setStyleSheet(QStringLiteral(
-            "QLabel { background: transparent; border-radius: 36px; }"));
-    }
+        m_collectionFilterValue == personId && !thumbnail.isNull() &&
+        m_stack->currentIndex() == static_cast<int>(Page::Collection))
+        setCollectionHero(thumbnail, true);
 }
 
 void ExplorePage::showAssetThumbnail(const QString &assetId, const QPixmap &thumbnail)
 {
-    const auto cards = m_assetCards.values(assetId);
-    for (ExploreCard *raw : cards) {
-        const QPointer<ExploreCard> card = raw;
-        if (card)
-            card->setPixmap(thumbnail);
+    for (ExploreCard *raw : m_browseAssetCards.values(assetId)) {
+        if (raw)
+            raw->setPixmap(thumbnail);
     }
+
+    if (const QPointer<MediaTile> tile = m_collectionTiles.value(assetId))
+        tile->setThumbnail(thumbnail);
 
     if (!m_collectionPersonStyle && m_collectionFilterKind == QStringLiteral("city") &&
         m_stack->currentIndex() == static_cast<int>(Page::Collection) &&
-        assetId == m_collectionHeroAssetId && !thumbnail.isNull()) {
-        m_collectionHero->setPixmap(
-            thumbnail.scaled(m_collectionHero->size(), Qt::KeepAspectRatioByExpanding,
-                             Qt::SmoothTransformation));
-        m_collectionHero->setStyleSheet(QStringLiteral(
-            "QLabel { background: transparent; border-radius: 16px; }"));
-    }
+        assetId == m_collectionHeroAssetId && !thumbnail.isNull())
+        setCollectionHero(thumbnail, false);
 }
 
 void ExplorePage::showPreviewImage(const QString &assetId, const QPixmap &preview)
@@ -508,17 +577,15 @@ void ExplorePage::updateEmptyState()
 
 void ExplorePage::openPerson(const ImmichPerson &person)
 {
-    m_pendingCollectionTitle = person.name.isEmpty() ? tr("Unknown person") : person.name;
+    const QString title = person.name.isEmpty() ? tr("Unknown person") : person.name;
+    m_pendingCollectionTitle = title;
     m_pendingPersonStyle = true;
-    m_pendingHeroThumb = {};
-    if (const ExploreCard *card = m_personCards.value(person.id)) {
-        // Best-effort: card already painted a circular face; reload for hero.
-        Q_UNUSED(card);
-    }
-    m_client->loadPersonThumbnail(person.id);
 
-    showCollectionPage(m_pendingCollectionTitle, tr("Loading photos…"),
-                       QStringLiteral("person"), person.id, {}, true);
+    const QPixmap cachedFace = m_personThumbCache.value(person.id);
+    showCollectionPage(title, tr("Loading photos…"), QStringLiteral("person"), person.id,
+                       cachedFace, true);
+    // Force a fresh face fetch so the hero updates even if a prior request is in flight.
+    m_client->loadPersonThumbnail(person.id);
     m_client->loadAssetsForPerson(person.id);
 }
 
@@ -526,7 +593,6 @@ void ExplorePage::openPlace(const ImmichPlace &place)
 {
     m_pendingCollectionTitle = place.city;
     m_pendingPersonStyle = false;
-    m_pendingHeroThumb = {};
     showCollectionPage(place.city, tr("Loading photos…"), QStringLiteral("city"), place.city,
                        {}, false);
     m_collectionHeroAssetId = place.sampleAsset.id;
@@ -543,50 +609,66 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     m_collectionFilterValue = filterValue;
     m_collectionHeroAssetId.clear();
     m_collectionPersonStyle = personStyle;
-    m_collectionAssetCount = 0;
     m_collectionNextPage.clear();
     m_collectionLoadingMore = false;
+    m_collectionCompactGrid = AppSettings().loadTimeline().compactGrid;
 
-    clearCollectionGrid();
+    clearCollectionTimeline();
 
     m_collectionTitle->setText(title);
     m_collectionSubtitle->setText(subtitle);
-    m_collectionHero->clear();
-    m_collectionHero->setText(QString());
-    m_collectionHero->setStyleSheet(
-        personStyle
-            ? QStringLiteral(
-                  "QLabel { background: rgba(127,127,127,40); border-radius: 36px; }")
-            : QStringLiteral(
-                  "QLabel { background: rgba(127,127,127,40); border-radius: 16px; }"));
-    if (!heroThumb.isNull()) {
-        if (personStyle) {
-            m_collectionHero->setPixmap(circularPixmap(heroThumb, m_collectionHero->size()));
-            m_collectionHero->setStyleSheet(QStringLiteral(
-                "QLabel { background: transparent; border-radius: 36px; }"));
-        } else {
-            m_collectionHero->setPixmap(
-                heroThumb.scaled(m_collectionHero->size(), Qt::KeepAspectRatioByExpanding,
-                                 Qt::SmoothTransformation));
-            m_collectionHero->setStyleSheet(QStringLiteral(
-                "QLabel { background: transparent; border-radius: 16px; }"));
-        }
-    }
+    setCollectionHero(heroThumb, personStyle);
 
     m_collectionLoadMore->setVisible(false);
     setPage(Page::Collection);
 }
 
-void ExplorePage::clearCollectionGrid()
+void ExplorePage::clearCollectionTimeline()
 {
-    if (!m_collectionGrid)
-        return;
-    while (QLayoutItem *item = m_collectionGrid->takeAt(0)) {
-        if (item->widget())
-            item->widget()->deleteLater();
-        delete item;
+    if (m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
+
+    for (DaySection &section : m_collectionSections) {
+        if (section.header)
+            section.header->deleteLater();
+        for (MediaTile *tile : section.tiles)
+            tile->deleteLater();
     }
-    m_collectionAssetCount = 0;
+    m_collectionSections.clear();
+    m_collectionTiles.clear();
+    m_collectionRequestedThumbs.clear();
+    m_collectionHost->resize(m_collectionScroll->viewport()->width(), 1);
+}
+
+ExplorePage::DaySection *ExplorePage::sectionForDate(const QDate &date)
+{
+    for (DaySection &section : m_collectionSections) {
+        if (section.date == date)
+            return &section;
+    }
+
+    DaySection section;
+    section.date = date;
+    section.header = new QLabel(formatDayHeader(date), m_collectionHost);
+    section.header->setObjectName(QStringLiteral("timelineDayHeader"));
+    section.header->setProperty("section", true);
+    m_collectionSections.append(section);
+    return &m_collectionSections.last();
+}
+
+QString ExplorePage::formatDayHeader(const QDate &date) const
+{
+    if (!date.isValid())
+        return tr("Unknown date");
+    const QDate today = QDate::currentDate();
+    if (date == today)
+        return tr("Today");
+    if (date == today.addDays(-1))
+        return tr("Yesterday");
+    const QLocale locale;
+    if (date.year() == today.year())
+        return locale.toString(date, QStringLiteral("dddd, MMMM d"));
+    return locale.toString(date, QStringLiteral("dddd, MMMM d, yyyy"));
 }
 
 void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &filterValue,
@@ -605,43 +687,183 @@ void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &f
                                       ? m_pendingCollectionTitle
                                       : (filterKind == QStringLiteral("city") ? filterValue
                                                                               : tr("Photos"));
-            showCollectionPage(title, {}, filterKind, filterValue, m_pendingHeroThumb,
+            const QPixmap hero =
+                (filterKind == QStringLiteral("person"))
+                    ? m_personThumbCache.value(filterValue)
+                    : QPixmap();
+            showCollectionPage(title, {}, filterKind, filterValue, hero,
                                m_pendingPersonStyle || filterKind == QStringLiteral("person"));
+        } else {
+            clearCollectionTimeline();
         }
         m_pendingCollectionTitle.clear();
-        clearCollectionGrid();
     }
 
-    if (assets.isEmpty() && m_collectionAssetCount == 0) {
-        auto *empty = new QLabel(tr("No photos found."), m_collectionHost);
-        empty->setAlignment(Qt::AlignCenter);
-        empty->setProperty("subheading", true);
-        m_collectionGrid->addWidget(empty, 0, 0);
+    if (assets.isEmpty() && m_collectionTiles.isEmpty()) {
         m_collectionSubtitle->setText(tr("Nothing here yet"));
         updateCollectionLoadMore({});
+        scheduleCollectionLayout();
         return;
     }
 
     appendCollectionAssets(assets);
-    const QString countText = tr("%n photo(s)", nullptr, m_collectionAssetCount);
-    m_collectionSubtitle->setText(countText);
+    m_collectionSubtitle->setText(tr("%n item(s)", nullptr, m_collectionTiles.size()));
     updateCollectionLoadMore(nextPage);
+    scheduleCollectionLayout();
+    scheduleCollectionVisibility();
 }
 
 void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
 {
-    constexpr int columns = 4;
     for (const ImmichAsset &asset : assets) {
-        auto *card = new ExploreCard(ExploreCard::Style::Media, m_collectionHost);
-        m_collectionGrid->addWidget(card, m_collectionAssetCount / columns,
-                                    m_collectionAssetCount % columns);
-        ++m_collectionAssetCount;
-        m_assetCards.insert(asset.id, card);
-        connect(card, &ExploreCard::activated, this, [this, asset] {
+        if (m_collectionTiles.contains(asset.id))
+            continue;
+
+        const QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
+        DaySection *section = sectionForDate(date);
+        auto *tile = new MediaTile(asset, m_collectionHost);
+        tile->setHoverPreview(m_collectionHoverPreview);
+        section->tiles.append(tile);
+        m_collectionTiles.insert(asset.id, tile);
+        connect(tile, &MediaTile::activated, this, [this, asset] {
             m_previewFromCollection = true;
             openAsset(asset);
         });
-        m_client->loadThumbnail(asset.id);
+    }
+}
+
+void ExplorePage::scheduleCollectionLayout()
+{
+    if (!m_collectionLayoutTimer->isActive())
+        m_collectionLayoutTimer->start();
+}
+
+void ExplorePage::scheduleCollectionVisibility()
+{
+    if (!m_collectionVisibilityTimer->isActive())
+        m_collectionVisibilityTimer->start();
+}
+
+void ExplorePage::layoutCollection()
+{
+    if (m_stack->currentIndex() != static_cast<int>(Page::Collection))
+        return;
+
+    const int viewportWidth = m_collectionScroll->viewport()->width();
+    const int availableWidth = qMax(240, viewportWidth - 2 * kSidePad);
+
+    if (m_collectionCompactGrid) {
+        constexpr int kGridGap = 3;
+        constexpr int kTargetCellSize = 132;
+        const int startY = 8;
+        const int columns = qMax(1, (availableWidth + kGridGap) / (kTargetCellSize + kGridGap));
+        const int cellSize = (availableWidth - (columns - 1) * kGridGap) / columns;
+
+        int index = 0;
+        for (DaySection &section : m_collectionSections) {
+            if (section.header)
+                section.header->hide();
+            for (MediaTile *tile : section.tiles) {
+                const int col = index % columns;
+                const int row = index / columns;
+                tile->setGeometry(kSidePad + col * (cellSize + kGridGap),
+                                  startY + row * (cellSize + kGridGap), cellSize, cellSize);
+                tile->show();
+                ++index;
+            }
+        }
+        const int totalRows = (index + columns - 1) / columns;
+        m_collectionHost->resize(viewportWidth,
+                                 startY + qMax(1, totalRows) * (cellSize + kGridGap) + 16);
+        scheduleCollectionVisibility();
+        return;
+    }
+
+    int y = 8;
+    for (DaySection &section : m_collectionSections) {
+        if (section.header) {
+            section.header->setGeometry(kSidePad, y, availableWidth, 26);
+            section.header->show();
+            y += 32;
+        }
+
+        QList<MediaTile *> row;
+        qreal rowAspectSum = 0.0;
+
+        auto flushRow = [&](bool justifyToWidth) {
+            if (row.isEmpty())
+                return;
+            const int gaps = kGap * qMax(0, row.size() - 1);
+            qreal height = kTargetRowHeight;
+            const qreal naturalWidth = rowAspectSum * height + gaps;
+            if (justifyToWidth || naturalWidth > availableWidth) {
+                height = (availableWidth - gaps) / qMax(0.01, rowAspectSum);
+                height = qBound(qreal(kMinRowHeight), height, qreal(kMaxRowHeight));
+            } else {
+                height = qBound(qreal(kMinRowHeight), height, qreal(kMaxRowHeight));
+            }
+
+            const bool fillWidth = justifyToWidth || naturalWidth > availableWidth;
+            int x = kSidePad;
+            int used = 0;
+            for (int i = 0; i < row.size(); ++i) {
+                MediaTile *tile = row.at(i);
+                int width = qRound(tile->aspectRatio() * height);
+                if (fillWidth && i == row.size() - 1)
+                    width = availableWidth - used;
+                width = qMax(40, width);
+                tile->setGeometry(x, y, width, qRound(height));
+                tile->show();
+                x += width + kGap;
+                used += width + (i == row.size() - 1 ? 0 : kGap);
+            }
+            y += qRound(height) + kGap;
+            row.clear();
+            rowAspectSum = 0.0;
+        };
+
+        for (MediaTile *tile : section.tiles) {
+            const qreal ratio = tile->aspectRatio();
+            const qreal projected =
+                (rowAspectSum + ratio) * kTargetRowHeight + kGap * row.size();
+            if (!row.isEmpty() && projected > availableWidth)
+                flushRow(true);
+            row.append(tile);
+            rowAspectSum += ratio;
+        }
+        flushRow(false);
+        y += 10;
+    }
+
+    m_collectionHost->resize(viewportWidth, qMax(y + 16, 80));
+    scheduleCollectionVisibility();
+}
+
+void ExplorePage::updateVisibleCollectionThumbs()
+{
+    if (m_stack->currentIndex() != static_cast<int>(Page::Collection))
+        return;
+
+    const int viewportHeight = m_collectionScroll->viewport()->height();
+    const int scrollTop = m_collectionScroll->verticalScrollBar()->value();
+    const QRect buffered(0, qMax(0, scrollTop - viewportHeight), m_collectionHost->width(),
+                         viewportHeight * 3);
+
+    constexpr int kMaxRequests = 20;
+    int requested = 0;
+    for (auto it = m_collectionTiles.cbegin(); it != m_collectionTiles.cend(); ++it) {
+        MediaTile *tile = it.value().data();
+        if (!tile || !buffered.intersects(tile->geometry()))
+            continue;
+        if (tile->hasThumbnail() || tile->hasThumbnailError() ||
+            m_collectionRequestedThumbs.contains(it.key()))
+            continue;
+        m_collectionRequestedThumbs.insert(it.key());
+        m_client->loadThumbnail(it.key());
+        if (++requested >= kMaxRequests) {
+            scheduleCollectionVisibility();
+            break;
+        }
     }
 }
 
@@ -678,9 +900,12 @@ void ExplorePage::requestCollectionNextPage()
 
 void ExplorePage::backToBrowse()
 {
+    if (m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
     m_collectionLoadingMore = false;
     m_collectionFilterKind.clear();
     m_collectionFilterValue.clear();
+    clearCollectionTimeline();
     setPage(Page::Browse);
     updateEmptyState();
 }
@@ -706,8 +931,8 @@ void ExplorePage::showPreviewPage(const ImmichAsset &asset)
 void ExplorePage::openAsset(const ImmichAsset &asset)
 {
     if (asset.isVideo()) {
-        // Full video controls stay in the dedicated player; collection/browse
-        // navigation remains in-page for photos and albums.
+        if (m_collectionHoverPreview)
+            m_collectionHoverPreview->stop();
         auto *player = new VideoPlayerDialog(m_client, asset, this);
         player->show();
         return;

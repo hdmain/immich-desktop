@@ -2,26 +2,32 @@
 
 #include "core/ImmichClient.h"
 
+#include <QDate>
 #include <QFrame>
 #include <QHash>
 #include <QList>
 #include <QMultiHash>
 #include <QPixmap>
 #include <QPointer>
+#include <QSet>
 #include <QWidget>
 
-class QGridLayout;
+class QEvent;
 class QKeyEvent;
 class QLabel;
 class QMouseEvent;
 class QPushButton;
+class QResizeEvent;
 class QScrollArea;
 class QShowEvent;
 class QStackedWidget;
+class QTimer;
 class QVBoxLayout;
 
 namespace Aurora {
 
+class MediaTile;
+class VideoHoverPreview;
 class ZoomPanWidget;
 
 class ExploreCard final : public QFrame {
@@ -55,6 +61,8 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void refresh();
@@ -71,6 +79,8 @@ private slots:
     void backToBrowse();
     void backToCollection();
     void requestCollectionNextPage();
+    void layoutCollection();
+    void updateVisibleCollectionThumbs();
 
 private:
     enum class Page : int { Browse = 0, Collection = 1, Preview = 2 };
@@ -82,17 +92,28 @@ private:
         QList<ExploreCard *> cards;
     };
 
+    struct DaySection {
+        QDate date;
+        QLabel *header = nullptr;
+        QList<MediaTile *> tiles;
+    };
+
     void clearSections();
     void updateEmptyState();
     void populateSection(SectionRow *section, bool visible);
     void showCollectionPage(const QString &title, const QString &subtitle,
                             const QString &filterKind, const QString &filterValue,
                             const QPixmap &heroThumb, bool personStyle);
-    void clearCollectionGrid();
+    void clearCollectionTimeline();
     void appendCollectionAssets(const QList<ImmichAsset> &assets);
     void updateCollectionLoadMore(const QString &nextPage);
     void showPreviewPage(const ImmichAsset &asset);
     void setPage(Page page);
+    void setCollectionHero(const QPixmap &thumb, bool personStyle);
+    void scheduleCollectionLayout();
+    void scheduleCollectionVisibility();
+    DaySection *sectionForDate(const QDate &date);
+    QString formatDayHeader(const QDate &date) const;
 
     ImmichClient *m_client;
     QStackedWidget *m_stack = nullptr;
@@ -109,9 +130,10 @@ private:
     SectionRow m_placesSection;
     SectionRow m_recentSection;
     QHash<QString, ExploreCard *> m_personCards;
-    QMultiHash<QString, ExploreCard *> m_assetCards;
+    QMultiHash<QString, ExploreCard *> m_browseAssetCards;
+    QHash<QString, QPixmap> m_personThumbCache;
 
-    // Collection detail
+    // Collection detail (Library-style timeline for one person/place)
     QWidget *m_collectionPage = nullptr;
     QPushButton *m_collectionBack = nullptr;
     QLabel *m_collectionHero = nullptr;
@@ -119,18 +141,22 @@ private:
     QLabel *m_collectionSubtitle = nullptr;
     QScrollArea *m_collectionScroll = nullptr;
     QWidget *m_collectionHost = nullptr;
-    QGridLayout *m_collectionGrid = nullptr;
     QPushButton *m_collectionLoadMore = nullptr;
+    VideoHoverPreview *m_collectionHoverPreview = nullptr;
+    QTimer *m_collectionLayoutTimer = nullptr;
+    QTimer *m_collectionVisibilityTimer = nullptr;
+    QList<DaySection> m_collectionSections;
+    QHash<QString, QPointer<MediaTile>> m_collectionTiles;
+    QSet<QString> m_collectionRequestedThumbs;
     QString m_collectionFilterKind;
     QString m_collectionFilterValue;
     QString m_collectionHeroAssetId;
     QString m_collectionNextPage;
     QString m_pendingCollectionTitle;
-    QPixmap m_pendingHeroThumb;
     bool m_pendingPersonStyle = false;
-    int m_collectionAssetCount = 0;
     bool m_collectionLoadingMore = false;
     bool m_collectionPersonStyle = false;
+    bool m_collectionCompactGrid = false;
 
     // Preview
     QWidget *m_previewPage = nullptr;
