@@ -7,15 +7,14 @@
 #include <QUrl>
 #include <QWidget>
 
-class QAudioOutput;
-class QMediaPlayer;
+class QThread;
 class QTimer;
-class QVideoSink;
 
 namespace Aurora {
 
 class MediaTile;
 class SoftwareVideoWidget;
+class HoverPreviewEngine;
 
 class VideoHoverPreview final : public QObject {
     Q_OBJECT
@@ -23,6 +22,7 @@ class VideoHoverPreview final : public QObject {
 public:
     explicit VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
                                QObject *parent = nullptr);
+    ~VideoHoverPreview() override;
 
     void showForTile(MediaTile *tile);
     void hideForTile(MediaTile *tile);
@@ -35,20 +35,19 @@ private:
     void beginPlayback(const QUrl &streamUrl);
     void scheduleStop();
     void detachOverlay();
+    void teardownWorker();
 
     ImmichClient *m_client = nullptr;
     QWidget *m_hostWidget = nullptr;
     QPointer<MediaTile> m_activeTile;
     QPointer<MediaTile> m_pendingTile;
     SoftwareVideoWidget *m_overlay = nullptr;
-    QMediaPlayer *m_player = nullptr;
-    QAudioOutput *m_audio = nullptr;
-    QVideoSink *m_sink = nullptr;
     QTimer *m_startTimer = nullptr;
     QTimer *m_stopTimer = nullptr;
+    QThread *m_thread = nullptr;
+    HoverPreviewEngine *m_engine = nullptr;
     QUrl m_pendingUrl;
     QUrl m_loadedUrl;
-    bool m_handlingPlayer = false;
     bool m_enabled = true;
 };
 

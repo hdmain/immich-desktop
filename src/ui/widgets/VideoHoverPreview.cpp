@@ -6,6 +6,8 @@
 
 #include <QAudioOutput>
 #include <QMediaPlayer>
+#include <QMetaObject>
+#include <QThread>
 #include <QTimer>
 #include <QVideoFrame>
 #include <QVideoSink>
@@ -17,25 +19,89 @@ constexpr int kHoverPreviewMs = 2500;
 constexpr int kHoverStartDelayMs = 350;
 } // namespace
 
+// Runs QMediaPlayer + frame decode off the UI thread. One instance per hover.
+class HoverPreviewEngine final : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+
+public slots:
+    void play(const QUrl &url)
+    {
+        ensurePlayer();
+        m_player->stop();
+        m_player->setSource(url);
+        m_player->play();
+    }
+
+    void stop()
+    {
+        if (!m_player)
+            return;
+        m_player->stop();
+        m_player->setSource(QUrl());
+    }
+
+signals:
+    void frameReady(const QImage &image);
+    void failed();
+    void timedOut();
+
+private:
+    void ensurePlayer()
+    {
+        if (m_player)
+            return;
+
+        m_player = new QMediaPlayer(this);
+        m_audio = new QAudioOutput(this);
+        m_sink = new QVideoSink(this);
+        m_audio->setVolume(0.0f);
+        m_player->setAudioOutput(m_audio);
+        m_player->setVideoOutput(m_sink);
+
+        connect(m_sink, &QVideoSink::videoFrameChanged, this,
+                [this](const QVideoFrame &frame) {
+                    QVideoFrame copy(frame);
+                    const QImage image = copy.toImage();
+                    if (!image.isNull())
+                        emit frameReady(image.copy());
+                });
+        connect(m_player, &QMediaPlayer::errorOccurred, this,
+                [this](QMediaPlayer::Error, const QString &) { emit failed(); });
+        connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
+            if (position >= kHoverPreviewMs)
+                emit timedOut();
+        });
+        connect(m_player, &QMediaPlayer::mediaStatusChanged, this,
+                [this](QMediaPlayer::MediaStatus status) {
+                    if (status == QMediaPlayer::LoadedMedia ||
+                        status == QMediaPlayer::BufferedMedia) {
+                        m_player->setPosition(0);
+                        if (m_player->playbackState() != QMediaPlayer::PlayingState)
+                            m_player->play();
+                    }
+                });
+    }
+
+    QMediaPlayer *m_player = nullptr;
+    QAudioOutput *m_audio = nullptr;
+    QVideoSink *m_sink = nullptr;
+};
+
 VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
                                      QObject *parent)
     : QObject(parent)
     , m_client(client)
     , m_hostWidget(hostWidget)
     , m_overlay(new SoftwareVideoWidget(m_hostWidget))
-    , m_player(new QMediaPlayer(this))
-    , m_audio(new QAudioOutput(this))
-    , m_sink(new QVideoSink(this))
     , m_startTimer(new QTimer(this))
     , m_stopTimer(new QTimer(this))
 {
     m_overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_overlay->setScaleMode(SoftwareVideoWidget::ScaleMode::Cover);
     m_overlay->hide();
-
-    m_audio->setVolume(0.0f);
-    m_player->setAudioOutput(m_audio);
-    m_player->setVideoOutput(m_sink);
 
     m_startTimer->setSingleShot(true);
     m_stopTimer->setSingleShot(true);
@@ -61,39 +127,11 @@ VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
     });
 
     connect(m_stopTimer, &QTimer::timeout, this, &VideoHoverPreview::stop);
+}
 
-    connect(m_sink, &QVideoSink::videoFrameChanged, this,
-            [this](const QVideoFrame &frame) {
-                if (!m_activeTile || !m_overlay->isVisible())
-                    return;
-                QVideoFrame copy(frame);
-                const QImage image = copy.toImage();
-                if (!image.isNull())
-                    m_overlay->setFrame(image);
-            });
-
-    connect(m_player, &QMediaPlayer::mediaStatusChanged, this,
-            [this](QMediaPlayer::MediaStatus status) {
-                if (!m_activeTile || m_handlingPlayer)
-                    return;
-                if (status != QMediaPlayer::LoadedMedia &&
-                    status != QMediaPlayer::BufferedMedia)
-                    return;
-
-                m_handlingPlayer = true;
-                m_player->setPosition(0);
-                m_player->play();
-                m_handlingPlayer = false;
-            });
-
-    connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
-        if (!m_activeTile || m_handlingPlayer || position < kHoverPreviewMs)
-            return;
-        scheduleStop();
-    });
-
-    connect(m_player, &QMediaPlayer::errorOccurred, this,
-            [this](QMediaPlayer::Error, const QString &) { scheduleStop(); });
+VideoHoverPreview::~VideoHoverPreview()
+{
+    teardownWorker();
 }
 
 void VideoHoverPreview::showForTile(MediaTile *tile)
@@ -109,8 +147,9 @@ void VideoHoverPreview::showForTile(MediaTile *tile)
     if (!streamUrl.isValid())
         return;
 
-    if (m_activeTile.data() == tile && m_loadedUrl == streamUrl &&
-        m_player->playbackState() == QMediaPlayer::PlayingState)
+    // Already previewing this tile on a live worker thread - keep it.
+    if (m_activeTile.data() == tile && m_thread && m_thread->isRunning() &&
+        m_loadedUrl == streamUrl)
         return;
 
     armStart(tile, streamUrl);
@@ -157,34 +196,66 @@ void VideoHoverPreview::armStart(MediaTile *tile, const QUrl &streamUrl)
 
 void VideoHoverPreview::beginPlayback(const QUrl &streamUrl)
 {
-    m_handlingPlayer = true;
+    teardownWorker();
 
-    const bool sameSource = m_loadedUrl == streamUrl;
-    const QMediaPlayer::MediaStatus status = m_player->mediaStatus();
-    const bool mediaReady = status == QMediaPlayer::LoadedMedia ||
-                            status == QMediaPlayer::BufferedMedia;
+    m_loadedUrl = streamUrl;
+    // No parent: lifetime is managed explicitly in teardownWorker().
+    m_thread = new QThread;
+    m_engine = new HoverPreviewEngine;
+    m_engine->moveToThread(m_thread);
 
-    if (sameSource && mediaReady) {
-        m_player->setPosition(0);
-        m_player->play();
-    } else {
-        m_player->stop();
-        m_loadedUrl = streamUrl;
-        QTimer::singleShot(0, this, [this, streamUrl] {
-            if (!m_activeTile || m_loadedUrl != streamUrl)
-                return;
-            m_player->setSource(streamUrl);
-            m_player->play();
-        });
+    connect(m_thread, &QThread::started, m_engine, [engine = m_engine, streamUrl] {
+        engine->play(streamUrl);
+    });
+    connect(m_engine, &HoverPreviewEngine::frameReady, this,
+            [this](const QImage &image) {
+                if (!m_activeTile || !m_overlay || !m_overlay->isVisible())
+                    return;
+                m_overlay->setFrame(image);
+            },
+            Qt::QueuedConnection);
+    connect(m_engine, &HoverPreviewEngine::failed, this, &VideoHoverPreview::scheduleStop,
+            Qt::QueuedConnection);
+    connect(m_engine, &HoverPreviewEngine::timedOut, this, &VideoHoverPreview::scheduleStop,
+            Qt::QueuedConnection);
+
+    m_thread->start();
+}
+
+void VideoHoverPreview::teardownWorker()
+{
+    QThread *thread = m_thread;
+    HoverPreviewEngine *engine = m_engine;
+    m_thread = nullptr;
+    m_engine = nullptr;
+    m_loadedUrl = QUrl();
+
+    if (!thread && !engine)
+        return;
+
+    if (engine) {
+        engine->disconnect(this);
+        if (thread && thread->isRunning())
+            QMetaObject::invokeMethod(engine, "stop", Qt::BlockingQueuedConnection);
     }
 
-    m_handlingPlayer = false;
+    if (thread) {
+        thread->quit();
+        if (!thread->wait(2500)) {
+            thread->terminate();
+            thread->wait(500);
+        }
+    }
+
+    if (engine) {
+        engine->moveToThread(QThread::currentThread());
+        delete engine;
+    }
+    delete thread;
 }
 
 void VideoHoverPreview::scheduleStop()
 {
-    if (m_handlingPlayer)
-        return;
     QTimer::singleShot(0, this, &VideoHoverPreview::stop);
 }
 
@@ -208,15 +279,14 @@ void VideoHoverPreview::stop()
     MediaTile *tile = m_activeTile.data();
     m_activeTile = nullptr;
 
+    teardownWorker();
+
     if (tile)
         tile->endHoverPreview();
-
-    m_handlingPlayer = true;
-    if (m_player)
-        m_player->stop();
-    m_handlingPlayer = false;
 
     detachOverlay();
 }
 
 } // namespace Aurora
+
+#include "VideoHoverPreview.moc"
