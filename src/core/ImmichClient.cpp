@@ -345,16 +345,27 @@ void ImmichClient::probeEndpoints()
     }
 
     m_endpointProbeInFlight = true;
-    QNetworkRequest request(apiUrlForBase(m_connection.localServerUrl,
-                                          QStringLiteral("/server/ping")));
+    const QString probedLocalUrl = m_connection.localServerUrl;
+    const QString probedRemoteUrl = m_connection.serverUrl;
+    QNetworkRequest request(apiUrlForBase(probedLocalUrl, QStringLiteral("/server/ping")));
     request.setRawHeader("Accept", "application/json");
     request.setTransferTimeout(1500);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::SameOriginRedirectPolicy);
 
     auto *reply = m_network->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, probedLocalUrl, probedRemoteUrl] {
         m_endpointProbeInFlight = false;
+        // Ignore stale probes after the user changes connection settings.
+        if (m_connection.localServerUrl != probedLocalUrl ||
+            m_connection.serverUrl != probedRemoteUrl) {
+            reply->deleteLater();
+            if (isConfigured())
+                probeEndpoints();
+            return;
+        }
+
         const QByteArray body = reply->readAll();
         const bool reachable = reply->error() == QNetworkReply::NoError;
         bool pong = false;
@@ -366,10 +377,10 @@ void ImmichClient::probeEndpoints()
         }
 
         if (reachable && pong) {
-            setActiveServerUrl(m_connection.localServerUrl, true);
+            setActiveServerUrl(probedLocalUrl, true);
             setOnline(true);
         } else {
-            setActiveServerUrl(m_connection.serverUrl, false);
+            setActiveServerUrl(probedRemoteUrl, false);
         }
 
         reply->deleteLater();
@@ -537,7 +548,7 @@ void ImmichClient::loadTimelineBuckets()
         return;
     if (!m_online) {
         emit requestFailed(tr("Load library"),
-                           tr("You're offline , Years/Month browsing needs a connection."));
+                           tr("You're offline - Years/Month browsing needs a connection."));
         return;
     }
 
@@ -725,6 +736,7 @@ bool ImmichClient::loadExplore()
     }
 
     m_exploreBuffer = ImmichExploreData{};
+    m_exploreError.clear();
     m_explorePeoplePending = true;
     m_exploreDataPending = true;
 
@@ -761,7 +773,12 @@ bool ImmichClient::loadExplore()
             }
         }
         peopleReply->deleteLater();
-        finishExploreLoad(true, false, error);
+        if (!error.isEmpty()) {
+            if (!m_exploreError.isEmpty())
+                m_exploreError += QLatin1Char('\n');
+            m_exploreError += error;
+        }
+        finishExploreLoad(true, false, m_exploreError);
     });
 
     QNetworkRequest exploreRequest =
@@ -803,7 +820,12 @@ bool ImmichClient::loadExplore()
             }
         }
         exploreReply->deleteLater();
-        finishExploreLoad(false, true, error);
+        if (!error.isEmpty()) {
+            if (!m_exploreError.isEmpty())
+                m_exploreError += QLatin1Char('\n');
+            m_exploreError += error;
+        }
+        finishExploreLoad(false, true, m_exploreError);
     });
     return true;
 }
@@ -830,7 +852,13 @@ void ImmichClient::finishExploreLoad(bool peopleDone, bool exploreDone, const QS
     if (!empty) {
         setOnline(true);
         m_offlineStore.saveExplore(m_connection.serverUrl, m_exploreBuffer);
+        emit exploreLoaded(m_exploreBuffer, false);
+        // Surface a partial failure so the UI can note missing people/places.
+        if (!error.isEmpty())
+            emit requestFailed(tr("Load explore"), error);
+        return;
     }
+
     emit exploreLoaded(m_exploreBuffer, false);
 }
 
@@ -1158,7 +1186,7 @@ bool ImmichClient::startUpload(const QString &filePath)
                 tr("Could not open %1 after several tries: %2")
                     .arg(info.fileName(), message));
         } else {
-            // Defer retry , never recurse into processUploadQueue here.
+            // Defer retry - never recurse into processUploadQueue here.
             requeueUpload(filePath, false);
             scheduleUploadRetry(2000 * attempts);
             emit requestFailed(
@@ -1239,7 +1267,7 @@ bool ImmichClient::startUpload(const QString &filePath)
                 requeueUpload(filePath, true);
                 emit requestFailed(
                     tr("Upload"),
-                    tr("%1 interrupted , queued for retry when online.")
+                    tr("%1 interrupted - queued for retry when online.")
                         .arg(QFileInfo(filePath).fileName()));
             } else {
                 m_uploadRetryCounts.remove(filePath);

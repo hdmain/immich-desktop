@@ -138,9 +138,15 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
         m_notifiedUpdateVersion.clear();
     });
     connect(m_updateManager, &UpdateManager::stateChanged, this, [this](UpdateState state) {
-        if (state != UpdateState::Available && state != UpdateState::ReadyToInstall &&
-            state != UpdateState::Downloading)
+        // Keep the badge when a check/download fails but an update is still known.
+        if (state == UpdateState::Failed) {
+            const UpdateInfo info = m_updateManager->availableUpdate();
+            if (!info.version.isEmpty())
+                m_topBar->setUpdateAvailable(true, info.version);
+        } else if (state != UpdateState::Available && state != UpdateState::ReadyToInstall &&
+                   state != UpdateState::Downloading && state != UpdateState::Checking) {
             m_topBar->setUpdateAvailable(false);
+        }
         refreshTrayIcon();
     });
     connect(m_themeManager, &ThemeManager::appearanceChanged, this, [this] {

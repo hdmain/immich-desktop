@@ -345,7 +345,7 @@ void LibraryPage::refresh()
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_status->setText(tr("Loading your library…"));
-    m_client->clearCachedLibrary();
+    // Keep the previous offline snapshot until a successful reload replaces it.
     m_client->loadTimelineBuckets();
 }
 
@@ -407,6 +407,12 @@ void LibraryPage::applySearch()
         return;
     m_searchQuery = query;
     updateAutoCheckTimer();
+    // Clearing search must return to timeline buckets, not flat /search/metadata.
+    if (m_searchQuery.isEmpty() && m_client->isOnline()) {
+        m_loading = false; // allow refresh() even if a search request is still in flight
+        refresh();
+        return;
+    }
     requestPage(1, false);
 }
 
@@ -552,8 +558,21 @@ void LibraryPage::handleTimelineBucketsLoaded(const QList<TimeBucketInfo> &bucke
         m_loading = false;
         m_refreshButton->setEnabled(true);
         updateEmptyState();
+        if (m_contentStack->currentIndex() == 1)
+            showYearGrid();
         return;
     }
+
+    // Years view only needs the bucket list for the year grid; don't start
+    // filling the main library timeline in the background.
+    if (m_contentStack->currentIndex() != 0) {
+        m_loading = false;
+        m_refreshButton->setEnabled(true);
+        if (m_contentStack->currentIndex() == 1)
+            buildYearGrid();
+        return;
+    }
+
     loadNextTimelineBucket();
 }
 
@@ -647,7 +666,7 @@ void LibraryPage::showYearGrid()
         clearYearGrid();
         m_yearScrollArea->hide();
         m_yearGridEmptyState->setText(
-            tr("You're offline , Years needs a connection to browse by month."));
+            tr("You're offline - Years needs a connection to browse by month."));
         m_yearGridEmptyState->show();
         return;
     }
@@ -655,6 +674,7 @@ void LibraryPage::showYearGrid()
     m_yearScrollArea->show();
 
     if (m_monthBuckets.isEmpty()) {
+        m_status->setText(tr("Loading…"));
         m_client->loadTimelineBuckets();
         return;
     }
@@ -675,6 +695,12 @@ void LibraryPage::backToYearGrid()
 
 void LibraryPage::clearYearGrid()
 {
+    for (auto it = m_summaryTilesByAssetId.begin(); it != m_summaryTilesByAssetId.end(); ) {
+        if (m_yearTiles.contains(it.value()))
+            it = m_summaryTilesByAssetId.erase(it);
+        else
+            ++it;
+    }
     for (SummaryTile *tile : std::as_const(m_yearTiles))
         tile->deleteLater();
     m_yearTiles.clear();
@@ -785,8 +811,18 @@ void LibraryPage::handleYearDetailBucketLoaded(int year, const QDate &month,
 
 void LibraryPage::clearYearDetail()
 {
-    for (QWidget *widget : std::as_const(m_yearDetailWidgets))
+    for (QWidget *widget : std::as_const(m_yearDetailWidgets)) {
+        if (auto *tile = qobject_cast<SummaryTile *>(widget)) {
+            for (auto it = m_summaryTilesByAssetId.begin();
+                 it != m_summaryTilesByAssetId.end(); ) {
+                if (it.value() == tile)
+                    it = m_summaryTilesByAssetId.erase(it);
+                else
+                    ++it;
+            }
+        }
         widget->deleteLater();
+    }
     m_yearDetailWidgets.clear();
 }
 
@@ -928,15 +964,18 @@ void LibraryPage::scrollToPendingDate()
         } else if (section.header) {
             m_scrollArea->verticalScrollBar()->setValue(qMax(0, section.header->y() - 12));
         }
-        break;
+        m_pendingScrollToDate = QDate();
+        return;
     }
-    m_pendingScrollToDate = QDate();
+    // Day not in the timeline yet - keep the pending target for a later bucket.
 }
 
 void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail)
 {
-    if (SummaryTile *summaryTile = m_summaryTilesByAssetId.take(assetId)) {
-        summaryTile->setThumbnail(thumbnail);
+    if (SummaryTile *raw = m_summaryTilesByAssetId.take(assetId)) {
+        const QPointer<SummaryTile> summaryTile(raw);
+        if (summaryTile)
+            summaryTile->setThumbnail(thumbnail);
         return;
     }
 

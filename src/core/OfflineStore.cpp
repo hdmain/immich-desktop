@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QHash>
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
@@ -119,14 +120,20 @@ void OfflineStore::mergeLibrary(const QString &serverUrl, const QList<ImmichAsse
     QList<ImmichAsset> existing;
     QString query;
     loadLibrary(serverUrl, &existing, &query);
-    QSet<QString> seen;
-    for (const ImmichAsset &asset : existing)
-        seen.insert(asset.id);
+    QHash<QString, int> indexById;
+    indexById.reserve(existing.size() + assets.size());
+    for (int i = 0; i < existing.size(); ++i)
+        indexById.insert(existing.at(i).id, i);
     for (const ImmichAsset &asset : assets) {
-        if (seen.contains(asset.id))
+        if (asset.id.isEmpty())
             continue;
-        existing.append(asset);
-        seen.insert(asset.id);
+        const auto it = indexById.constFind(asset.id);
+        if (it != indexById.cend())
+            existing[*it] = asset;
+        else {
+            indexById.insert(asset.id, existing.size());
+            existing.append(asset);
+        }
     }
     saveLibrary(serverUrl, existing, query);
 }

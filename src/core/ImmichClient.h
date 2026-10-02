@@ -160,6 +160,7 @@ private:
     bool m_connectionTestPending = false;
     bool m_explorePeoplePending = false;
     bool m_exploreDataPending = false;
+    QString m_exploreError;
 };
 
 } // namespace Aurora
