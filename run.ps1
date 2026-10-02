@@ -74,10 +74,14 @@ if (-not $NoBuild) {
     $mingwRoot = Get-ChildItem "C:\Qt\Tools" -Directory -Filter "mingw*_64" |
         Sort-Object Name -Descending |
         Select-Object -First 1
-    $ninja = "C:\Qt\Tools\Ninja\ninja.exe"
+    $ninjaCandidates = @(
+        "C:\Qt\Tools\Ninja\ninja.exe"
+        (Get-Command ninja -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    $ninja = $ninjaCandidates | Select-Object -First 1
 
-    if (-not $mingwRoot -or -not (Test-Path $ninja)) {
-        throw "The Qt MinGW compiler or Ninja was not found under C:\Qt\Tools."
+    if (-not $mingwRoot -or -not $ninja) {
+        throw "The Qt MinGW compiler was not found under C:\Qt\Tools, or ninja is missing (install Qt Ninja or put ninja on PATH)."
     }
 
     $compiler = (Join-Path $mingwRoot.FullName "bin\g++.exe") -replace '\\', '/'

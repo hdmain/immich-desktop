@@ -7,24 +7,17 @@ set -euo pipefail
 # Defaults to stable and every immich-desktop_*.snap under dist-snap/.
 
 CHANNEL="${1:-stable}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
 if [[ $# -gt 1 ]]; then
   shift
   SNAPS=("$@")
 else
-  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-  # Prefer native Linux path; fall back to the WSL mount used historically.
-  if compgen -G "${ROOT}/dist-snap/immich-desktop_"*.snap > /dev/null; then
-    mapfile -t SNAPS < <(compgen -G "${ROOT}/dist-snap/immich-desktop_"*.snap | sort)
-  elif compgen -G "/mnt/c/Users/makss/Desktop/python/immich-desktop/dist-snap/immich-desktop_"*.snap > /dev/null; then
-    mapfile -t SNAPS < <(compgen -G "/mnt/c/Users/makss/Desktop/python/immich-desktop/dist-snap/immich-desktop_"*.snap | sort)
-  else
-    echo "No snap packages found under dist-snap/" >&2
-    exit 1
-  fi
+  mapfile -t SNAPS < <(compgen -G "${ROOT}/dist-snap/immich-desktop_"*.snap | sort || true)
 fi
 
 if [[ ${#SNAPS[@]} -eq 0 ]]; then
-  echo "No snap packages to upload" >&2
+  echo "No snap packages found under dist-snap/" >&2
   exit 1
 fi
 

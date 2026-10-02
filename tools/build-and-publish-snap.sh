@@ -1,21 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC="/mnt/c/Users/makss/Desktop/python/immich-desktop"
-DEST="${HOME}/immich-desktop-snap-build"
+# Build immich-desktop snap and upload to the Snap Store.
+# Usage: tools/build-and-publish-snap.sh [channel]
+# Default channel: stable
+#
+# Intended to run inside WSL/Linux with snapcraft installed.
+# Copies the Windows-mounted tree into ~ so snapcraft does not build
+# from a slow /mnt/c path.
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Prefer a native Linux copy when the repo lives on /mnt/c (WSL).
+if [[ "$ROOT" == /mnt/* ]]; then
+  DEST="${HOME}/immich-desktop-snap-build"
+else
+  DEST="$ROOT"
+fi
 CHANNEL="${1:-stable}"
 
-echo "== Preparing build tree =="
-rm -rf "$DEST"
-mkdir -p "$DEST"
-rsync -a --delete \
-  --exclude=.git \
-  --exclude=build \
-  --exclude=build-* \
-  --exclude=dist \
-  --exclude=dist-* \
-  --exclude=.snapcraft-store-credentials.* \
-  "$SRC/" "$DEST/"
+if [[ "$DEST" != "$ROOT" ]]; then
+  echo "== Preparing build tree =="
+  echo "Source: $ROOT"
+  echo "Build:  $DEST"
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+  rsync -a --delete \
+    --exclude=.git \
+    --exclude=build \
+    --exclude=build-* \
+    --exclude=dist \
+    --exclude=dist-* \
+    --exclude=.snapcraft-store-credentials.* \
+    "$ROOT/" "$DEST/"
+fi
 
 cd "$DEST"
 echo "Version: $(tr '\n' ' ' < CMakeLists.txt | sed -n 's/.*project([[:space:]]*immich[[:space:]]*VERSION[[:space:]]*\([0-9.]*\).*/\1/p')"
@@ -31,6 +48,11 @@ snapcraft pack --destructive-mode --platform "$HOST_ARCH"
 
 mapfile -t SNAPS < <(ls -1 immich-desktop_*.snap)
 echo "Built: ${SNAPS[*]}"
+
+mkdir -p "$ROOT/dist-snap"
+for SNAP in "${SNAPS[@]}"; do
+  cp -f "$SNAP" "$ROOT/dist-snap/"
+done
 
 echo "== Uploading to $CHANNEL =="
 for SNAP in "${SNAPS[@]}"; do
