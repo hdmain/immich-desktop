@@ -18,6 +18,7 @@
 #include <QDesktopServices>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QIcon>
 #include <QMenu>
 #include <QMessageBox>
@@ -34,6 +35,7 @@
 
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
+#include <psapi.h>
 #include <windows.h>
 #include <windowsx.h>
 #endif
@@ -240,6 +242,27 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
+void MainWindow::hideEvent(QHideEvent *event)
+{
+    QMainWindow::hideEvent(event);
+    // Tray / hide: drop decoded image caches. Page widgets also clear their
+    // tile pixmaps via their own hideEvent.
+    releaseIdleMemory();
+}
+
+void MainWindow::releaseIdleMemory()
+{
+    if (m_immichClient)
+        m_immichClient->releaseMemoryCaches();
+
+#ifdef Q_OS_WIN
+    // Ask Windows to trim the working set so Task Manager reflects freed
+    // image memory while the app sits in the tray.
+    if (HANDLE process = GetCurrentProcess())
+        EmptyWorkingSet(process);
+#endif
+}
+
 void MainWindow::selectPage(int index)
 {
     if (index < 0 || index > 5)
@@ -434,6 +457,8 @@ void MainWindow::changeEvent(QEvent *event)
     if (event->type() == QEvent::WindowStateChange) {
         applyWindowCorners();
         updateResizeHandles();
+        if (isMinimized())
+            releaseIdleMemory();
     }
 }
 

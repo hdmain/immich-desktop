@@ -1203,15 +1203,29 @@ void LibraryPage::updateVisibleMedia()
     if (m_contentStack->currentWidget() != m_scrollArea)
         return;
 
-    // Avoid clear/reload thrash while scrolling - keep decoded tiles in RAM and
-    // only fetch a bounded batch for the current viewport each tick.
+    const int viewportHeight = m_scrollArea->viewport()->height();
+    const int scrollTop = m_scrollArea->verticalScrollBar()->value();
+    // Keep ~1 viewport of padding loaded; drop everything farther away so
+    // long scroll sessions don't retain every decoded thumb in tile widgets.
+    const QRect keepRect(0, qMax(0, scrollTop - viewportHeight), m_timelineHost->width(),
+                         viewportHeight * 3);
+
     constexpr int kMaxThumbnailRequestsPerTick = 16;
     int requested = 0;
     for (auto it = m_tilesById.cbegin(); it != m_tilesById.cend(); ++it) {
         MediaTile *tile = it.value();
         const QString assetId = it.key();
-        if (!isTileNearViewport(tile))
+        if (!tile)
             continue;
+
+        if (!keepRect.intersects(tile->geometry())) {
+            if (tile->hasThumbnail()) {
+                tile->clearThumbnail();
+                m_requestedThumbnails.remove(assetId);
+            }
+            continue;
+        }
+
         if (tile->hasThumbnail() || tile->hasThumbnailError() ||
             m_requestedThumbnails.contains(assetId))
             continue;
@@ -1862,6 +1876,9 @@ void LibraryPage::hideEvent(QHideEvent *event)
     QWidget::hideEvent(event);
     for (MediaTile *tile : std::as_const(m_tilesById))
         tile->clearThumbnail();
+    // Allow thumbs to be requested again on show (clearThumbnail alone left
+    // ids stuck in this set and the grid stayed blank).
+    m_requestedThumbnails.clear();
     setDropHighlight(false);
     updateAutoCheckTimer();
 }

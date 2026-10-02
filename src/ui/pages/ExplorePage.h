@@ -13,6 +13,7 @@
 #include <QWidget>
 
 class QEvent;
+class QHideEvent;
 class QKeyEvent;
 class QLabel;
 class QMouseEvent;
@@ -61,6 +62,7 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -112,6 +114,7 @@ private:
     void setCollectionHero(const QPixmap &thumb, bool personStyle);
     void scheduleCollectionLayout();
     void scheduleCollectionVisibility();
+    void releaseUiPixmaps();
     DaySection *sectionForDate(const QDate &date);
     QString formatDayHeader(const QDate &date) const;
 

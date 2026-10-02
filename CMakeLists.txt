@@ -139,7 +139,7 @@ target_link_libraries(immich PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(immich PRIVATE crypt32 dwmapi)
+    target_link_libraries(immich PRIVATE crypt32 dwmapi Psapi)
 
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIRECTORY "${QT_QMAKE_EXECUTABLE}" DIRECTORY)

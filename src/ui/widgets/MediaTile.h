@@ -54,12 +54,10 @@ protected:
 
 private:
     static QString formatDuration(const QString &raw);
-    void invalidateScaledThumbnail();
 
     VideoHoverPreview *m_hoverPreview = nullptr;
     ImmichAsset m_asset;
     QPixmap m_thumbnail;
-    QPixmap m_scaledThumbnail;
     QPoint m_pressPos;
     qreal m_resolvedAspectRatio;
     QString m_error;

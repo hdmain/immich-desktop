@@ -23,6 +23,14 @@ void SummaryTile::setThumbnail(const QPixmap &thumbnail)
     update();
 }
 
+void SummaryTile::clearThumbnail()
+{
+    if (m_thumbnail.isNull())
+        return;
+    m_thumbnail = QPixmap();
+    update();
+}
+
 void SummaryTile::setTileSize(const QSize &size)
 {
     setFixedSize(size);
@@ -45,11 +53,15 @@ void SummaryTile::paintEvent(QPaintEvent *)
     painter.fillRect(rect(), QColor(20, 20, 20));
 
     if (!m_thumbnail.isNull()) {
-        const QPixmap scaled = m_thumbnail.scaled(
-            size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-        const int x = (scaled.width() - width()) / 2;
-        const int y = (scaled.height() - height()) / 2;
-        painter.drawPixmap(0, 0, scaled, x, y, width(), height());
+        const QSizeF tileSize = size();
+        const QSizeF srcSize = m_thumbnail.size();
+        const qreal scale =
+            qMax(tileSize.width() / srcSize.width(), tileSize.height() / srcSize.height());
+        const qreal srcW = tileSize.width() / scale;
+        const qreal srcH = tileSize.height() / scale;
+        const QRectF source((srcSize.width() - srcW) * 0.5, (srcSize.height() - srcH) * 0.5,
+                            srcW, srcH);
+        painter.drawPixmap(QRectF(rect()), m_thumbnail, source);
     }
 
     const int gradientHeight = qMax(36, height() / 3);

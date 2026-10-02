@@ -55,6 +55,9 @@ public:
     void loadThumbnail(const QString &assetId);
     void loadPreview(const QString &assetId);
     void loadPersonThumbnail(const QString &personId);
+    // Drop in-RAM thumbnail/preview pixmaps (disk cache kept). Call when the
+    // window is hidden to tray/minimized so idle RSS stays low.
+    void releaseMemoryCaches();
     void uploadAssets(const QStringList &filePaths);
     void downloadAsset(const QString &assetId, const QString &destinationPath,
                        const QString &suggestedFileName = {});
@@ -134,7 +137,7 @@ private:
     QString m_activeServerUrl;
     QNetworkAccessManager *m_network;
     ThumbnailCache m_thumbnailCache;
-    ThumbnailCache m_previewCache{QStringLiteral("previews"), 64 * 1024,
+    ThumbnailCache m_previewCache{QStringLiteral("previews"), 8 * 1024,
                                   512LL * 1024 * 1024};
     OfflineStore m_offlineStore;
     UploadQueueStore m_uploadQueueStore;

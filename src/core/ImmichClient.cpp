@@ -139,7 +139,7 @@ ImmichClient::ImmichClient(QObject *parent)
     , m_endpointProbeTimer(new QTimer(this))
     , m_reachabilityTimer(new QTimer(this))
 {
-    m_imagePool.setMaxThreadCount(8);
+    m_imagePool.setMaxThreadCount(4);
     m_endpointProbeTimer->setInterval(12 * 1000);
     connect(m_endpointProbeTimer, &QTimer::timeout, this, &ImmichClient::probeEndpoints);
     m_reachabilityTimer->setInterval(15 * 1000);
@@ -306,11 +306,17 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
     }
 
     if (changed) {
-        m_thumbnailCache.clearMemory();
+        releaseMemoryCaches();
         if (m_streamServer)
             ensureStreamServer();
         emit configurationChanged(isConfigured());
     }
+}
+
+void ImmichClient::releaseMemoryCaches()
+{
+    m_thumbnailCache.clearMemory();
+    m_previewCache.clearMemory();
 }
 
 void ImmichClient::setActiveServerUrl(const QString &url, bool usingLocal)

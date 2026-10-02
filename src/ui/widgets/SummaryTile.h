@@ -19,6 +19,7 @@ public:
     explicit SummaryTile(const QString &label, int count, QWidget *parent = nullptr);
 
     void setThumbnail(const QPixmap &thumbnail);
+    void clearThumbnail();
     void setTileSize(const QSize &size);
     void setShowCount(bool show);
 

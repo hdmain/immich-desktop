@@ -8,6 +8,7 @@
 
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLocale>
@@ -353,6 +354,35 @@ void ExplorePage::showEvent(QShowEvent *event)
     m_collectionCompactGrid = AppSettings().loadTimeline().compactGrid;
     if (m_client->isConfigured() && !m_loadedOnce)
         refresh();
+    if (m_stack->currentIndex() == static_cast<int>(Page::Collection)) {
+        if (m_collectionPersonStyle && m_collectionFilterKind == QStringLiteral("person") &&
+            !m_collectionFilterValue.isEmpty())
+            m_client->loadPersonThumbnail(m_collectionFilterValue);
+        scheduleCollectionVisibility();
+    }
+}
+
+void ExplorePage::hideEvent(QHideEvent *event)
+{
+    if (m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
+    releaseUiPixmaps();
+    QWidget::hideEvent(event);
+}
+
+void ExplorePage::releaseUiPixmaps()
+{
+    for (auto it = m_collectionTiles.begin(); it != m_collectionTiles.end(); ++it) {
+        if (MediaTile *tile = it.value().data())
+            tile->clearThumbnail();
+    }
+    m_collectionRequestedThumbs.clear();
+    m_personThumbCache.clear();
+
+    if (m_previewView)
+        m_previewView->setPixmap({});
+    if (m_collectionHero)
+        setCollectionHero({}, m_collectionPersonStyle);
 }
 
 void ExplorePage::resizeEvent(QResizeEvent *event)
@@ -856,8 +886,17 @@ void ExplorePage::updateVisibleCollectionThumbs()
     int requested = 0;
     for (auto it = m_collectionTiles.cbegin(); it != m_collectionTiles.cend(); ++it) {
         MediaTile *tile = it.value().data();
-        if (!tile || !buffered.intersects(tile->geometry()))
+        if (!tile)
             continue;
+
+        if (!buffered.intersects(tile->geometry())) {
+            if (tile->hasThumbnail()) {
+                tile->clearThumbnail();
+                m_collectionRequestedThumbs.remove(it.key());
+            }
+            continue;
+        }
+
         if (tile->hasThumbnail() || tile->hasThumbnailError() ||
             m_collectionRequestedThumbs.contains(it.key()))
             continue;

@@ -6,6 +6,7 @@
 
 class QCloseEvent;
 class QEvent;
+class QHideEvent;
 class QResizeEvent;
 class QShowEvent;
 class QSystemTrayIcon;
@@ -37,6 +38,7 @@ protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void showEvent(QShowEvent *event) override;
 
@@ -44,6 +46,7 @@ private:
     void setupTrayIcon();
     void quitApplication();
     bool closeToTrayEnabled() const;
+    void releaseIdleMemory();
 
     void applyWindowCorners();
     void ensureResizableFrame();

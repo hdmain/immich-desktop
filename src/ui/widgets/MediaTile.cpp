@@ -62,15 +62,9 @@ void MediaTile::endHoverPreview()
     update();
 }
 
-void MediaTile::invalidateScaledThumbnail()
-{
-    m_scaledThumbnail = QPixmap();
-}
-
 void MediaTile::setThumbnail(const QPixmap &thumbnail)
 {
     m_thumbnail = thumbnail;
-    invalidateScaledThumbnail();
     if (thumbnail.height() > 0)
         m_resolvedAspectRatio = qreal(thumbnail.width()) / qreal(thumbnail.height());
     m_hasError = false;
@@ -81,7 +75,6 @@ void MediaTile::setThumbnail(const QPixmap &thumbnail)
 void MediaTile::setThumbnailError(const QString &message)
 {
     m_thumbnail = QPixmap();
-    invalidateScaledThumbnail();
     m_hasError = true;
     m_error = message;
     update();
@@ -92,14 +85,11 @@ void MediaTile::clearThumbnail()
     if (m_thumbnail.isNull())
         return;
     m_thumbnail = QPixmap();
-    invalidateScaledThumbnail();
     update();
 }
 
 void MediaTile::setTileSize(const QSize &size)
 {
-    if (size != this->size())
-        invalidateScaledThumbnail();
     setFixedSize(size);
     if (m_hoverPreview)
         m_hoverPreview->updateTileGeometry(this);
@@ -125,15 +115,17 @@ void MediaTile::paintEvent(QPaintEvent *)
     painter.fillRect(rect(), QColor(20, 20, 20));
 
     if (!m_thumbnail.isNull()) {
-        if (m_scaledThumbnail.size() != size()) {
-            // Fast path on the UI thread - SmoothTransformation here was a
-            // major scroll hitch when many tiles painted at once.
-            m_scaledThumbnail = m_thumbnail.scaled(
-                size(), Qt::KeepAspectRatioByExpanding, Qt::FastTransformation);
-        }
-        const int x = (m_scaledThumbnail.width() - width()) / 2;
-        const int y = (m_scaledThumbnail.height() - height()) / 2;
-        painter.drawPixmap(0, 0, m_scaledThumbnail, x, y, width(), height());
+        // Crop+scale in the draw call so we don't keep a second full pixmap
+        // per tile (scaled cache roughly doubled RAM for the timeline).
+        const QSizeF tileSize = size();
+        const QSizeF srcSize = m_thumbnail.size();
+        const qreal scale =
+            qMax(tileSize.width() / srcSize.width(), tileSize.height() / srcSize.height());
+        const qreal srcW = tileSize.width() / scale;
+        const qreal srcH = tileSize.height() / scale;
+        const QRectF source((srcSize.width() - srcW) * 0.5, (srcSize.height() - srcH) * 0.5,
+                            srcW, srcH);
+        painter.drawPixmap(QRectF(rect()), m_thumbnail, source);
     } else {
         painter.setPen(QColor(150, 150, 150));
         painter.drawText(rect().adjusted(8, 8, -8, -8),
@@ -200,8 +192,6 @@ void MediaTile::leaveEvent(QEvent *event)
 
 void MediaTile::resizeEvent(QResizeEvent *event)
 {
-    if (event->size() != event->oldSize())
-        invalidateScaledThumbnail();
     if (m_hoverPreview)
         m_hoverPreview->updateTileGeometry(this);
     QWidget::resizeEvent(event);

@@ -1,4 +1,4 @@
 {
   "version": "0.1.9",
-  "what_changed": "- Rebuilt Snap packages against current Ubuntu security updates (USN-8699-1 libssh, USN-8709-1 ncurses, USN-8724-1 rabbitmq-c).\n- No application feature changes , refresh of staged libraries in amd64/arm64 snaps on stable (and clears stale edge revision)."
+  "what_changed": "- Cut idle/tray RAM: smaller thumbnail/preview caches, drop decoded tiles off-screen and when hidden, trim the Windows working set in tray.\n- Media tiles no longer keep a second scaled pixmap copy (was roughly doubling timeline image memory).\n- Explore person gallery scrolls and matches Library layout; face hero loads from cache.\n- Rebuilt Snap packages against current Ubuntu security updates (USN-8699-1 libssh, USN-8709-1 ncurses, USN-8724-1 rabbitmq-c)."
 }

@@ -14,8 +14,10 @@ public:
     // image variants, e.g. thumbnails vs previews, from colliding by asset id).
     // maxDiskBytes: 0 means unbounded (existing thumbnail cache behavior);
     // a positive value enables LRU-by-mtime trimming after each disk write.
+    // memoryBudgetKb defaults keep only a small viewport working set in RAM;
+    // disk is the durable cache.
     explicit ThumbnailCache(const QString &subdirectory = QStringLiteral("thumbnails"),
-                            int memoryBudgetKb = 32 * 1024, qint64 maxDiskBytes = 0);
+                            int memoryBudgetKb = 8 * 1024, qint64 maxDiskBytes = 0);
 
     QPixmap memoryPixmap(const QString &assetId) const;
     QByteArray readDisk(const QString &assetId) const;
