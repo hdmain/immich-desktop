@@ -36,7 +36,8 @@ private:
     void beginPlayback(const QUrl &streamUrl);
     void scheduleStop();
     void detachOverlay();
-    void teardownWorker(bool waitForFinish);
+    void ensureWorker();
+    void stopWorkerPlayback();
     void flushPendingFrame();
 
     ImmichClient *m_client = nullptr;

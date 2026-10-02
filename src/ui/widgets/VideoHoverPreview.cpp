@@ -16,11 +16,12 @@ namespace Aurora {
 
 namespace {
 constexpr int kHoverPreviewMs = 2500;
-constexpr int kHoverStartDelayMs = 350;
-constexpr int kFrameUiIntervalMs = 66; // ~15 fps to the UI thread
+constexpr int kHoverStartDelayMs = 450;
+constexpr int kFrameUiIntervalMs = 100; // 10 fps max onto the UI thread
+constexpr int kWorkerFrameMaxEdge = 240;
 } // namespace
 
-// Runs QMediaPlayer + frame decode off the UI thread. One instance per hover.
+// Persistent worker: one QThread for all hover previews (no per-hover thread churn).
 class HoverPreviewEngine final : public QObject {
     Q_OBJECT
 
@@ -65,9 +66,18 @@ private:
         connect(m_sink, &QVideoSink::videoFrameChanged, this,
                 [this](const QVideoFrame &frame) {
                     QVideoFrame copy(frame);
-                    const QImage image = copy.toImage();
-                    if (!image.isNull())
-                        emit frameReady(image.copy());
+                    QImage image = copy.toImage();
+                    if (image.isNull())
+                        return;
+                    if (image.width() > kWorkerFrameMaxEdge ||
+                        image.height() > kWorkerFrameMaxEdge) {
+                        image = image.scaled(kWorkerFrameMaxEdge, kWorkerFrameMaxEdge,
+                                             Qt::KeepAspectRatio, Qt::FastTransformation);
+                    }
+                    // RGB32 copies cheaper on the UI painter path.
+                    if (image.format() != QImage::Format_RGB32)
+                        image = image.convertToFormat(QImage::Format_RGB32);
+                    emit frameReady(image);
                 });
         connect(m_player, &QMediaPlayer::errorOccurred, this,
                 [this](QMediaPlayer::Error, const QString &) { emit failed(); });
@@ -132,11 +142,51 @@ VideoHoverPreview::VideoHoverPreview(ImmichClient *client, QWidget *hostWidget,
 
     connect(m_stopTimer, &QTimer::timeout, this, &VideoHoverPreview::stop);
     connect(m_frameTimer, &QTimer::timeout, this, &VideoHoverPreview::flushPendingFrame);
+
+    ensureWorker();
 }
 
 VideoHoverPreview::~VideoHoverPreview()
 {
-    teardownWorker(true);
+    stopWorkerPlayback();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait(1500);
+    }
+}
+
+void VideoHoverPreview::ensureWorker()
+{
+    if (m_thread)
+        return;
+
+    m_thread = new QThread(this);
+    m_engine = new HoverPreviewEngine;
+    m_engine->moveToThread(m_thread);
+
+    connect(m_engine, &HoverPreviewEngine::frameReady, this,
+            [this](const QImage &image) {
+                m_pendingFrame = image;
+                if (!m_frameTimer->isActive())
+                    m_frameTimer->start();
+            },
+            Qt::QueuedConnection);
+    connect(m_engine, &HoverPreviewEngine::failed, this, &VideoHoverPreview::scheduleStop,
+            Qt::QueuedConnection);
+    connect(m_engine, &HoverPreviewEngine::timedOut, this, &VideoHoverPreview::scheduleStop,
+            Qt::QueuedConnection);
+    connect(m_thread, &QThread::finished, m_engine, &QObject::deleteLater);
+
+    m_thread->start();
+}
+
+void VideoHoverPreview::stopWorkerPlayback()
+{
+    m_frameTimer->stop();
+    m_pendingFrame = QImage();
+    m_loadedUrl = QUrl();
+    if (m_engine)
+        QMetaObject::invokeMethod(m_engine, "stop", Qt::QueuedConnection);
 }
 
 void VideoHoverPreview::showForTile(MediaTile *tile)
@@ -152,8 +202,7 @@ void VideoHoverPreview::showForTile(MediaTile *tile)
     if (!streamUrl.isValid())
         return;
 
-    if (m_activeTile.data() == tile && m_thread && m_thread->isRunning() &&
-        m_loadedUrl == streamUrl)
+    if (m_activeTile.data() == tile && m_loadedUrl == streamUrl)
         return;
 
     armStart(tile, streamUrl);
@@ -190,11 +239,10 @@ void VideoHoverPreview::armStart(MediaTile *tile, const QUrl &streamUrl)
     m_stopTimer->stop();
     m_startTimer->stop();
 
-    // Tear down any previous worker asynchronously - never block the UI thread.
     if (m_activeTile && m_activeTile.data() != tile) {
         MediaTile *previous = m_activeTile.data();
         m_activeTile = nullptr;
-        teardownWorker(false);
+        stopWorkerPlayback();
         detachOverlay();
         if (previous)
             previous->endHoverPreview();
@@ -207,29 +255,10 @@ void VideoHoverPreview::armStart(MediaTile *tile, const QUrl &streamUrl)
 
 void VideoHoverPreview::beginPlayback(const QUrl &streamUrl)
 {
-    teardownWorker(false);
-
+    ensureWorker();
     m_loadedUrl = streamUrl;
-    m_thread = new QThread;
-    m_engine = new HoverPreviewEngine;
-    m_engine->moveToThread(m_thread);
-
-    connect(m_thread, &QThread::started, m_engine, [engine = m_engine, streamUrl] {
-        engine->play(streamUrl);
-    });
-    connect(m_engine, &HoverPreviewEngine::frameReady, this,
-            [this](const QImage &image) {
-                m_pendingFrame = image;
-                if (!m_frameTimer->isActive())
-                    m_frameTimer->start();
-            },
-            Qt::QueuedConnection);
-    connect(m_engine, &HoverPreviewEngine::failed, this, &VideoHoverPreview::scheduleStop,
-            Qt::QueuedConnection);
-    connect(m_engine, &HoverPreviewEngine::timedOut, this, &VideoHoverPreview::scheduleStop,
-            Qt::QueuedConnection);
-
-    m_thread->start();
+    QMetaObject::invokeMethod(m_engine, "play", Qt::QueuedConnection,
+                              Q_ARG(QUrl, streamUrl));
 }
 
 void VideoHoverPreview::flushPendingFrame()
@@ -238,51 +267,6 @@ void VideoHoverPreview::flushPendingFrame()
         return;
     m_overlay->setFrame(std::move(m_pendingFrame));
     m_pendingFrame = QImage();
-}
-
-void VideoHoverPreview::teardownWorker(bool waitForFinish)
-{
-    m_frameTimer->stop();
-    m_pendingFrame = QImage();
-
-    QThread *thread = m_thread;
-    HoverPreviewEngine *engine = m_engine;
-    m_thread = nullptr;
-    m_engine = nullptr;
-    m_loadedUrl = QUrl();
-
-    if (!thread && !engine)
-        return;
-
-    if (engine)
-        disconnect(engine, nullptr, this, nullptr);
-
-    if (engine && thread && thread->isRunning())
-        QMetaObject::invokeMethod(engine, "stop", Qt::QueuedConnection);
-
-    if (!thread) {
-        delete engine;
-        return;
-    }
-
-    if (waitForFinish) {
-        thread->quit();
-        if (!thread->wait(2500)) {
-            thread->terminate();
-            thread->wait(500);
-        }
-        if (engine) {
-            engine->moveToThread(QThread::currentThread());
-            delete engine;
-        }
-        delete thread;
-        return;
-    }
-
-    // Non-blocking path used while the UI is interactive.
-    connect(thread, &QThread::finished, engine, &QObject::deleteLater);
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->quit();
 }
 
 void VideoHoverPreview::scheduleStop()
@@ -310,7 +294,7 @@ void VideoHoverPreview::stop()
     MediaTile *tile = m_activeTile.data();
     m_activeTile = nullptr;
 
-    teardownWorker(false);
+    stopWorkerPlayback();
 
     if (tile)
         tile->endHoverPreview();

@@ -126,8 +126,10 @@ void MediaTile::paintEvent(QPaintEvent *)
 
     if (!m_thumbnail.isNull()) {
         if (m_scaledThumbnail.size() != size()) {
+            // Fast path on the UI thread - SmoothTransformation here was a
+            // major scroll hitch when many tiles painted at once.
             m_scaledThumbnail = m_thumbnail.scaled(
-                size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                size(), Qt::KeepAspectRatioByExpanding, Qt::FastTransformation);
         }
         const int x = (m_scaledThumbnail.width() - width()) / 2;
         const int y = (m_scaledThumbnail.height() - height()) / 2;

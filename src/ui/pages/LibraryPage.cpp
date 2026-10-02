@@ -981,11 +981,15 @@ void LibraryPage::showThumbnail(const QString &assetId, const QPixmap &thumbnail
 
     m_requestedThumbnails.remove(assetId);
     const QPointer<MediaTile> tile = m_tilesById.value(assetId);
-    if (tile && m_tilesById.value(assetId) == tile.data() && isTileNearViewport(tile)) {
-        tile->setThumbnail(thumbnail);
+    if (!tile || m_tilesById.value(assetId) != tile.data())
+        return;
+
+    const qreal oldRatio = tile->aspectRatio();
+    tile->setThumbnail(thumbnail);
+    // Compact grid ignores aspect ratio. Masonry only needs a relayout when the
+    // ratio actually changes - relayouting on every thumbnail freezes scrolling.
+    if (!m_compactGrid && qAbs(tile->aspectRatio() - oldRatio) > 0.03)
         scheduleLayout();
-    }
-    scheduleVisibleMediaUpdate();
 }
 
 void LibraryPage::scheduleLayout()
@@ -1199,17 +1203,23 @@ void LibraryPage::updateVisibleMedia()
     if (m_contentStack->currentWidget() != m_scrollArea)
         return;
 
+    // Avoid clear/reload thrash while scrolling - keep decoded tiles in RAM and
+    // only fetch a bounded batch for the current viewport each tick.
+    constexpr int kMaxThumbnailRequestsPerTick = 16;
+    int requested = 0;
     for (auto it = m_tilesById.cbegin(); it != m_tilesById.cend(); ++it) {
         MediaTile *tile = it.value();
         const QString assetId = it.key();
-        if (isTileNearViewport(tile)) {
-            if (!tile->hasThumbnail() && !tile->hasThumbnailError() &&
-                !m_requestedThumbnails.contains(assetId)) {
-                m_requestedThumbnails.insert(assetId);
-                m_client->loadThumbnail(assetId);
-            }
-        } else {
-            tile->clearThumbnail();
+        if (!isTileNearViewport(tile))
+            continue;
+        if (tile->hasThumbnail() || tile->hasThumbnailError() ||
+            m_requestedThumbnails.contains(assetId))
+            continue;
+        m_requestedThumbnails.insert(assetId);
+        m_client->loadThumbnail(assetId);
+        if (++requested >= kMaxThumbnailRequestsPerTick) {
+            scheduleVisibleMediaUpdate();
+            break;
         }
     }
 }

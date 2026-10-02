@@ -1585,12 +1585,12 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         if (resultSize == QStringLiteral("thumbnail")) {
             const QByteArray cachedBytes = self->m_thumbnailCache.readDisk(assetId);
             if (!cachedBytes.isEmpty()) {
-                const QImage image = self->decodeImage(cachedBytes, 512);
+                const QImage image = self->decodeImage(cachedBytes, 256);
                 if (!image.isNull()) {
                     // Rewrite old cache entries that may contain a full-size
                     // response into a bounded, compressed thumbnail.
                     const bool normalizedJpeg =
-                        cachedBytes.size() <= 1024 * 1024 &&
+                        cachedBytes.size() <= 256 * 1024 &&
                         cachedBytes.startsWith(QByteArray::fromHex("ffd8"));
                     finishImage(image, normalizedJpeg
                                            ? QByteArray()
@@ -1682,8 +1682,9 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         if (bytes.isEmpty())
             return;
 
+        // Keep timeline thumbnails small so main-thread QPixmap conversion stays cheap.
         const int maximumDimension =
-            resultSize == QStringLiteral("thumbnail") ? 512 : 1920;
+            resultSize == QStringLiteral("thumbnail") ? 256 : 1920;
         QImage image = decodeImage(bytes, maximumDimension);
         if (image.isNull()) {
             bytes = fetchSize(QStringLiteral("fullsize"), true);
