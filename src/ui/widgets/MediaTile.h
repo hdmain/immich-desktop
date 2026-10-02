@@ -45,6 +45,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
@@ -53,14 +54,19 @@ protected:
 
 private:
     static QString formatDuration(const QString &raw);
+    void invalidateScaledThumbnail();
 
     VideoHoverPreview *m_hoverPreview = nullptr;
     ImmichAsset m_asset;
     QPixmap m_thumbnail;
+    QPixmap m_scaledThumbnail;
+    QPoint m_pressPos;
     qreal m_resolvedAspectRatio;
     QString m_error;
     bool m_hasError = false;
     bool m_hoverPreviewActive = false;
+    bool m_leftPressed = false;
+    bool m_pressBecameDrag = false;
 };
 
 } // namespace Aurora

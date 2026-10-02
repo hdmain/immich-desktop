@@ -2,6 +2,7 @@
 
 #include "core/ImmichClient.h"
 
+#include <QImage>
 #include <QObject>
 #include <QPointer>
 #include <QUrl>
@@ -35,7 +36,8 @@ private:
     void beginPlayback(const QUrl &streamUrl);
     void scheduleStop();
     void detachOverlay();
-    void teardownWorker();
+    void teardownWorker(bool waitForFinish);
+    void flushPendingFrame();
 
     ImmichClient *m_client = nullptr;
     QWidget *m_hostWidget = nullptr;
@@ -44,8 +46,10 @@ private:
     SoftwareVideoWidget *m_overlay = nullptr;
     QTimer *m_startTimer = nullptr;
     QTimer *m_stopTimer = nullptr;
+    QTimer *m_frameTimer = nullptr;
     QThread *m_thread = nullptr;
     HoverPreviewEngine *m_engine = nullptr;
+    QImage m_pendingFrame;
     QUrl m_pendingUrl;
     QUrl m_loadedUrl;
     bool m_enabled = true;
