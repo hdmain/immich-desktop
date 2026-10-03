@@ -114,12 +114,14 @@ void Sidebar::showSettingsNavigation()
     clearNavigation();
     addNavigation(QStringLiteral("Immich Server"),
                   QStringLiteral(":/icons/server.svg"), 2);
+    addNavigation(QStringLiteral("Folder Sync"),
+                  QStringLiteral(":/icons/folder-sync.svg"), 3);
     addNavigation(QStringLiteral("Appearance"),
-                  QStringLiteral(":/icons/palette.svg"), 3);
+                  QStringLiteral(":/icons/palette.svg"), 4);
     addNavigation(QStringLiteral("Update"),
-                  QStringLiteral(":/icons/refresh-cw.svg"), 4);
+                  QStringLiteral(":/icons/refresh-cw.svg"), 5);
     addNavigation(QStringLiteral("About"),
-                  QStringLiteral(":/icons/star.svg"), 5);
+                  QStringLiteral(":/icons/star.svg"), 6);
     addNavigation(QStringLiteral("Back"),
                   QStringLiteral(":/icons/arrow-left.svg"), 0, false);
 }

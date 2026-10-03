@@ -90,6 +90,7 @@ signals:
                          const QString &message);
     void uploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void assetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
+    void assetUploadFailed(const QString &filePath, const QString &message);
     void uploadQueueChanged(int pendingCount);
     void downloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
     void assetDownloaded(const QString &assetId, const QString &destinationPath);

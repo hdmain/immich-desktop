@@ -78,11 +78,13 @@ private:
 };
 
 MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
-                       ImmichClient *immichClient, QWidget *parent)
+                       ImmichClient *immichClient, FolderSyncService *folderSync,
+                       QWidget *parent)
     : QMainWindow(parent)
     , m_topBar(new TopBar(themeManager, this))
     , m_pages(new AnimatedStackedWidget(this))
-    , m_settingsPage(new SettingsPage(themeManager, updateManager, immichClient, this))
+    , m_settingsPage(
+          new SettingsPage(themeManager, updateManager, immichClient, folderSync, this))
     , m_sidebar(new Sidebar(themeManager, this))
     , m_themeManager(themeManager)
     , m_updateManager(updateManager)
@@ -126,7 +128,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
 
     connect(m_sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
     connect(m_topBar, &TopBar::updatesRequested, this, [this] {
-        selectPage(4);
+        selectPage(5);
     });
     connect(m_updateManager, &UpdateManager::updateAvailable, this, [this](const UpdateInfo &info) {
         m_topBar->setUpdateAvailable(true, info.version);
@@ -265,7 +267,7 @@ void MainWindow::releaseIdleMemory()
 
 void MainWindow::selectPage(int index)
 {
-    if (index < 0 || index > 5)
+    if (index < 0 || index > 6)
         return;
 
     if (index == 0) {
@@ -279,9 +281,12 @@ void MainWindow::selectPage(int index)
             m_settingsPage->showConnection();
             m_topBar->setPageTitle(QStringLiteral("Settings / Immich Server"));
         } else if (index == 3) {
+            m_settingsPage->showFolderSync();
+            m_topBar->setPageTitle(QStringLiteral("Settings / Folder Sync"));
+        } else if (index == 4) {
             m_settingsPage->showAppearance();
             m_topBar->setPageTitle(QStringLiteral("Settings / Appearance"));
-        } else if (index == 4) {
+        } else if (index == 5) {
             m_settingsPage->showUpdates();
             m_topBar->setPageTitle(QStringLiteral("Settings / Update"));
         } else {
@@ -406,7 +411,7 @@ void MainWindow::notifyUpdateAvailable()
     box.exec();
     if (box.clickedButton() &&
         box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole) {
-        selectPage(4);
+        selectPage(5);
     }
 }
 

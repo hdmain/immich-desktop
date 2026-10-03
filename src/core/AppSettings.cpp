@@ -207,6 +207,23 @@ void AppSettings::saveTimeline(const TimelineSettings &timeline)
     m_settings.sync();
 }
 
+FolderSyncSettings AppSettings::loadFolderSync() const
+{
+    FolderSyncSettings result;
+    result.enabled = m_settings.value(QStringLiteral("folderSync/enabled"), false).toBool();
+    result.folderPath =
+        m_settings.value(QStringLiteral("folderSync/folderPath")).toString();
+    return result;
+}
+
+void AppSettings::saveFolderSync(const FolderSyncSettings &folderSync)
+{
+    m_settings.setValue(QStringLiteral("folderSync/enabled"), folderSync.enabled);
+    m_settings.setValue(QStringLiteral("folderSync/folderPath"),
+                        folderSync.folderPath.trimmed());
+    m_settings.sync();
+}
+
 SupportSettings AppSettings::loadSupport() const
 {
     SupportSettings result;

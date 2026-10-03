@@ -4,6 +4,7 @@
 #include "ui/pages/AboutPage.h"
 #include "ui/pages/AppearancePage.h"
 #include "ui/pages/ConnectionPage.h"
+#include "ui/pages/SyncFolderPage.h"
 #include "ui/pages/UpdatesPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
 
@@ -13,7 +14,7 @@
 namespace Aurora {
 
 SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateManager,
-                           ImmichClient *immichClient,
+                           ImmichClient *immichClient, FolderSyncService *folderSync,
                            QWidget *parent)
     : QWidget(parent)
     , m_sections(new AnimatedStackedWidget(this))
@@ -31,6 +32,7 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     root->addWidget(subheading);
 
     m_sections->addWidget(new ConnectionPage(immichClient, m_sections));
+    m_sections->addWidget(new SyncFolderPage(folderSync, themeManager, m_sections));
     m_sections->addWidget(new AppearancePage(themeManager, m_sections));
     m_sections->addWidget(new UpdatesPage(updateManager, m_sections));
     m_sections->addWidget(new AboutPage(m_sections));
@@ -39,7 +41,7 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
 
 bool SettingsPage::isShowingUpdates() const
 {
-    return m_sections->currentIndex() == 2;
+    return m_sections->currentIndex() == 3;
 }
 
 void SettingsPage::showConnection()
@@ -47,19 +49,24 @@ void SettingsPage::showConnection()
     m_sections->setCurrentIndexAnimated(0);
 }
 
-void SettingsPage::showAppearance()
+void SettingsPage::showFolderSync()
 {
     m_sections->setCurrentIndexAnimated(1);
 }
 
-void SettingsPage::showUpdates()
+void SettingsPage::showAppearance()
 {
     m_sections->setCurrentIndexAnimated(2);
 }
 
-void SettingsPage::showAbout()
+void SettingsPage::showUpdates()
 {
     m_sections->setCurrentIndexAnimated(3);
+}
+
+void SettingsPage::showAbout()
+{
+    m_sections->setCurrentIndexAnimated(4);
 }
 
 } // namespace Aurora

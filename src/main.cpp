@@ -1,6 +1,7 @@
 #include "AppVersion.h"
 #include "core/AppSettings.h"
 #include "core/AutoStart.h"
+#include "core/FolderSyncService.h"
 #include "core/ImmichClient.h"
 #include "core/SingleInstance.h"
 #include "core/ThemeManager.h"
@@ -74,8 +75,9 @@ int main(int argc, char *argv[])
 
     Aurora::UpdateManager updateManager;
     Aurora::ImmichClient immichClient;
+    Aurora::FolderSyncService folderSync(&immichClient);
 
-    Aurora::MainWindow window(&themeManager, &updateManager, &immichClient);
+    Aurora::MainWindow window(&themeManager, &updateManager, &immichClient, &folderSync);
     QObject::connect(&singleInstance, &Aurora::SingleInstance::activationRequested, &window,
                      &Aurora::MainWindow::raiseToFront);
 

@@ -5,6 +5,7 @@
 namespace Aurora {
 
 class AnimatedStackedWidget;
+class FolderSyncService;
 class ImmichClient;
 class ThemeManager;
 class UpdateManager;
@@ -14,13 +15,14 @@ class SettingsPage final : public QWidget {
 
 public:
     explicit SettingsPage(ThemeManager *themeManager, UpdateManager *updateManager,
-                          ImmichClient *immichClient,
+                          ImmichClient *immichClient, FolderSyncService *folderSync,
                           QWidget *parent = nullptr);
 
     bool isShowingUpdates() const;
 
 public slots:
     void showConnection();
+    void showFolderSync();
     void showAppearance();
     void showUpdates();
     void showAbout();

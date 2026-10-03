@@ -14,6 +14,7 @@ class QSystemTrayIcon;
 namespace Aurora {
 
 class AnimatedStackedWidget;
+class FolderSyncService;
 class ImmichClient;
 class ResizeHandle;
 class SettingsPage;
@@ -27,7 +28,7 @@ class MainWindow final : public QMainWindow {
 
 public:
     explicit MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
-                        ImmichClient *immichClient,
+                        ImmichClient *immichClient, FolderSyncService *folderSync,
                         QWidget *parent = nullptr);
 
     void raiseToFront();

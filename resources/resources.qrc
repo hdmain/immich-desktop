@@ -24,9 +24,14 @@
         <file alias="icons/arrow-left.svg">icons/arrow-left.svg</file>
         <file alias="icons/circle-alert.svg">icons/circle-alert.svg</file>
         <file alias="icons/circle-check.svg">icons/circle-check.svg</file>
+        <file alias="icons/cloud-alert.svg">icons/cloud-alert.svg</file>
+        <file alias="icons/cloud-check.svg">icons/cloud-check.svg</file>
         <file alias="icons/cloud-download.svg">icons/cloud-download.svg</file>
+        <file alias="icons/cloud-off.svg">icons/cloud-off.svg</file>
+        <file alias="icons/cloud-upload.svg">icons/cloud-upload.svg</file>
         <file alias="icons/copy.svg">icons/copy.svg</file>
         <file alias="icons/download.svg">icons/download.svg</file>
+        <file alias="icons/folder-sync.svg">icons/folder-sync.svg</file>
         <file alias="icons/images.svg">icons/images.svg</file>
         <file alias="icons/layout-dashboard.svg">icons/layout-dashboard.svg</file>
         <file alias="icons/minus.svg">icons/minus.svg</file>

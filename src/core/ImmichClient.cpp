@@ -1167,15 +1167,18 @@ bool ImmichClient::startUpload(const QString &filePath)
     if (!info.exists() || !info.isFile()) {
         m_uploadRetryCounts.remove(filePath);
         m_uploadQueueStore.remove(filePath);
-        emit requestFailed(tr("Upload"), tr("File not found: %1").arg(filePath));
+        const QString message = tr("File not found: %1").arg(filePath);
+        emit assetUploadFailed(filePath, message);
+        emit requestFailed(tr("Upload"), message);
         return false;
     }
 
     if (info.size() <= 0) {
         m_uploadRetryCounts.remove(filePath);
         m_uploadQueueStore.remove(filePath);
-        emit requestFailed(tr("Upload"),
-                           tr("File is empty: %1").arg(info.fileName()));
+        const QString message = tr("File is empty: %1").arg(info.fileName());
+        emit assetUploadFailed(filePath, message);
+        emit requestFailed(tr("Upload"), message);
         return false;
     }
 
@@ -1187,10 +1190,11 @@ bool ImmichClient::startUpload(const QString &filePath)
         if (attempts >= 5) {
             m_uploadRetryCounts.remove(filePath);
             m_uploadQueueStore.remove(filePath);
-            emit requestFailed(
-                tr("Upload"),
+            const QString detail =
                 tr("Could not open %1 after several tries: %2")
-                    .arg(info.fileName(), message));
+                    .arg(info.fileName(), message);
+            emit assetUploadFailed(filePath, detail);
+            emit requestFailed(tr("Upload"), detail);
         } else {
             // Defer retry - never recurse into processUploadQueue here.
             requeueUpload(filePath, false);
@@ -1279,9 +1283,11 @@ bool ImmichClient::startUpload(const QString &filePath)
                 m_uploadRetryCounts.remove(filePath);
                 m_uploadQueueStore.remove(filePath);
                 persistUploadQueue();
-                emit requestFailed(tr("Upload"),
-                                   tr("%1: %2").arg(QFileInfo(filePath).fileName(),
-                                                    errorMessage(reply, body)));
+                const QString detail =
+                    tr("%1: %2").arg(QFileInfo(filePath).fileName(),
+                                     errorMessage(reply, body));
+                emit assetUploadFailed(filePath, detail);
+                emit requestFailed(tr("Upload"), detail);
             }
             emit uploadQueueChanged(pendingUploadCount());
             reply->deleteLater();

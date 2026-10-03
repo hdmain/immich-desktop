@@ -45,6 +45,11 @@ struct TimelineSettings {
     bool compactGrid = false;
 };
 
+struct FolderSyncSettings {
+    bool enabled = false;
+    QString folderPath;
+};
+
 struct SupportSettings {
     bool githubStarDismissed = false;
     int launchCount = 0;
@@ -71,6 +76,9 @@ public:
 
     TimelineSettings loadTimeline() const;
     void saveTimeline(const TimelineSettings &timeline);
+
+    FolderSyncSettings loadFolderSync() const;
+    void saveFolderSync(const FolderSyncSettings &folderSync);
 
     SupportSettings loadSupport() const;
     void saveSupport(const SupportSettings &support);

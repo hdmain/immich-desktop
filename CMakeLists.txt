@@ -33,6 +33,8 @@ set(IMMICH_SOURCES
     src/core/AppSettings.h
     src/core/AutoStart.cpp
     src/core/AutoStart.h
+    src/core/FolderSyncService.cpp
+    src/core/FolderSyncService.h
     src/core/ImmichClient.cpp
     src/core/ImmichClient.h
     src/core/ImmichTypes.h
@@ -74,6 +76,8 @@ set(IMMICH_SOURCES
     src/ui/pages/LibraryPage.h
     src/ui/pages/SettingsPage.cpp
     src/ui/pages/SettingsPage.h
+    src/ui/pages/SyncFolderPage.cpp
+    src/ui/pages/SyncFolderPage.h
     src/ui/pages/UpdatesPage.cpp
     src/ui/pages/UpdatesPage.h
     src/ui/widgets/AnimatedButton.cpp
