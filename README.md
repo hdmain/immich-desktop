@@ -28,11 +28,14 @@
 ## Features
 
 - **Library** - Immich-style timeline with compact rows and grouped days
-- **Explore** - people, places, and discovery views
+- **Explore** - people, places, and recent media; open a person or place as an in-app Library-style gallery
 - **Search** - find photos and videos across your library
-- **Upload & download** - send media to the server or save it locally
-- **Video streaming** - built-in player with seek, volume, and buffering
-- **Offline mode** - keep browsing with a local thumbnail/disk cache
+- **Folder Sync** - watch a local folder and auto-upload new photos/videos to Immich (Windows, macOS, Linux)
+  - Optional **local-network only** mode: upload only when your Immich Local URL is reachable
+  - Unsynced files show in Library immediately with an **unsaved** badge (saving / error icons while uploading)
+- **Upload & download** - drag-and-drop, paste, send media to the server, or save it locally
+- **Video streaming** - built-in player with seek, volume, buffering, and muted hover preview
+- **Offline mode** - keep browsing with a local thumbnail/disk cache; uploads queue until online
 - **Themes** - light, dark, and custom palettes
 - **Desktop extras** - system tray, close-to-tray, autostart, single-instance
 
@@ -60,8 +63,9 @@ Snap Store ships `amd64` and `arm64`.
 
 1. Install Immich Desktop from Snap or a [GitHub release](https://github.com/hdmain/immich-desktop/releases/latest).
 2. Open the app and go to **Settings → Immich Server**.
-3. Enter your Immich server URL and an API key with at least `user.read`, `asset.read`, and `asset.view`.
+3. Enter your Immich server URL and an API key with permissions such as `user.read`, `asset.read`, `asset.view`, `asset.upload`, `asset.download`, `asset.delete`, and `person.read`. Optionally set a **Local URL** for LAN use.
 4. Test the connection, save, then browse **Library** or **Explore**.
+5. (Optional) Open **Settings → Folder Sync**, choose a folder, enable watching, and turn on **Upload only when Immich is available on the local network** if you only want uploads over LAN. Drop photos or videos into that folder; they appear in Library with sync status badges and upload when allowed.
 
 ```bash
 # Snap
@@ -80,8 +84,9 @@ Plans can shift , track progress and ideas in
 ### Shipped
 
 - Library timeline with search, preview, trash, upload & download
-- Explore: people and places
-- Video streaming player
+- Explore: people and places as in-page galleries (Library-style person/place views)
+- Folder Sync: watched local folder, LAN-only upload option, unsaved/saving/error badges in Library
+- Video streaming player and hover preview
 - Offline browsing via local disk cache + queued uploads when offline
 - Themes (light / dark / custom), system tray, autostart, single-instance
 - Packaging: Windows installers, `.deb`, AppImage, Snap Store (`amd64` + `arm64`)
@@ -100,7 +105,7 @@ Plans can shift , track progress and ideas in
 - **Memories & faces** - Immich memories feed and richer face/person management
 - **Smart library tools** - duplicates, archive views, advanced filters (type, camera, date)
 - **Notifications** - tray alerts for finished uploads and available updates
-- **Sync health** - connection status, last sync time, cache size controls
+- **Sync health** - richer Folder Sync history, last sync time, cache size controls
 
 ### Later
 
