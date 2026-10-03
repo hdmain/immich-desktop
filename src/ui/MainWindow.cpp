@@ -3,6 +3,7 @@
 #include "AppVersion.h"
 #include "core/AppSettings.h"
 #include "core/ImmichClient.h"
+#include "core/ProcessMemory.h"
 #include "core/ThemeManager.h"
 #include "core/UpdateManager.h"
 #include "ui/AppIcon.h"
@@ -35,7 +36,6 @@
 
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
-#include <psapi.h>
 #include <windows.h>
 #include <windowsx.h>
 #endif
@@ -256,13 +256,8 @@ void MainWindow::releaseIdleMemory()
 {
     if (m_immichClient)
         m_immichClient->releaseMemoryCaches();
-
-#ifdef Q_OS_WIN
-    // Ask Windows to trim the working set so Task Manager reflects freed
-    // image memory while the app sits in the tray.
-    if (HANDLE process = GetCurrentProcess())
-        EmptyWorkingSet(process);
-#endif
+    // Return unused heap pages on Windows / Linux / macOS after cache drops.
+    trimProcessMemory();
 }
 
 void MainWindow::selectPage(int index)

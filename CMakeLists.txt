@@ -40,6 +40,8 @@ set(IMMICH_SOURCES
     src/core/ImmichTypes.h
     src/core/OfflineStore.cpp
     src/core/OfflineStore.h
+    src/core/ProcessMemory.cpp
+    src/core/ProcessMemory.h
     src/core/SingleInstance.cpp
     src/core/SingleInstance.h
     src/core/Theme.cpp
