@@ -88,6 +88,15 @@ void MediaTile::clearThumbnail()
     update();
 }
 
+void MediaTile::updateAsset(const ImmichAsset &asset)
+{
+    const bool badgeChanged = m_asset.localSyncState != asset.localSyncState;
+    m_asset = asset;
+    setToolTip(asset.fileName);
+    if (badgeChanged)
+        update();
+}
+
 void MediaTile::setTileSize(const QSize &size)
 {
     setFixedSize(size);
@@ -162,6 +171,27 @@ void MediaTile::paintEvent(QPaintEvent *)
         }
     }
 
+    if (m_asset.localSyncState != LocalSyncState::None) {
+        QString iconPath = QStringLiteral(":/icons/cloud-off.svg");
+        if (m_asset.localSyncState == LocalSyncState::Saving)
+            iconPath = QStringLiteral(":/icons/cloud-upload.svg");
+        else if (m_asset.localSyncState == LocalSyncState::Error)
+            iconPath = QStringLiteral(":/icons/cloud-alert.svg");
+        else if (m_asset.localSyncState == LocalSyncState::Unsaved)
+            iconPath = QStringLiteral(":/icons/cloud-off.svg");
+
+        const QPixmap badge =
+            renderSvgIcon(iconPath, Qt::white, QSize(16, 16));
+        if (!badge.isNull()) {
+            constexpr int pad = 6;
+            const QRect bg(pad, height() - pad - 22, 22, 22);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 150));
+            painter.drawRoundedRect(bg, 5, 5);
+            painter.drawPixmap(bg.x() + 3, bg.y() + 3, badge);
+        }
+    }
+
     if (hasFocus()) {
         painter.setPen(QPen(QColor(166, 133, 226), 2));
         painter.setBrush(Qt::NoBrush);
@@ -172,7 +202,7 @@ void MediaTile::paintEvent(QPaintEvent *)
 void MediaTile::enterEvent(QEnterEvent *event)
 {
     emit highlighted(m_asset);
-    if (m_hoverPreview && m_asset.isVideo()) {
+    if (m_hoverPreview && m_asset.isVideo() && !m_asset.isLocalPending()) {
         m_hoverPreviewActive = true;
         m_hoverPreview->showForTile(this);
         update();
@@ -252,12 +282,15 @@ void MediaTile::contextMenuEvent(QContextMenuEvent *event)
 {
     QMenu menu(this);
     menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
-    if (!m_asset.isVideo())
-        menu.addAction(tr("Copy"), this, [this] { emit copyRequested(m_asset); });
-    menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
-    menu.addSeparator();
-    menu.addAction(tr("Move to trash"), this, [this] { emit trashRequested(m_asset); });
-    menu.addAction(tr("Delete permanently"), this, [this] { emit deleteRequested(m_asset); });
+    if (!m_asset.isLocalPending()) {
+        if (!m_asset.isVideo())
+            menu.addAction(tr("Copy"), this, [this] { emit copyRequested(m_asset); });
+        menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
+        menu.addSeparator();
+        menu.addAction(tr("Move to trash"), this, [this] { emit trashRequested(m_asset); });
+        menu.addAction(tr("Delete permanently"), this,
+                       [this] { emit deleteRequested(m_asset); });
+    }
     menu.exec(event->globalPos());
 }
 

@@ -119,7 +119,7 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     auto *workspaceLayout = new QVBoxLayout(workspace);
     workspaceLayout->setContentsMargins(0, 0, 0, 0);
 
-    m_pages->addWidget(new LibraryPage(immichClient, m_pages));
+    m_pages->addWidget(new LibraryPage(immichClient, folderSync, m_pages));
     m_pages->addWidget(new ExplorePage(immichClient, m_pages));
     m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);

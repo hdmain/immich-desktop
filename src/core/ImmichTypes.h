@@ -6,6 +6,13 @@
 
 namespace Aurora {
 
+enum class LocalSyncState {
+    None,
+    Unsaved,
+    Saving,
+    Error,
+};
+
 struct ImmichAsset {
     QString id;
     QString type;
@@ -14,8 +21,12 @@ struct ImmichAsset {
     QDateTime takenAt;
     qreal aspectRatio = 1.0;
     bool favorite = false;
+    // Set for Folder Sync items shown in Library before Immich has them.
+    QString localPath;
+    LocalSyncState localSyncState = LocalSyncState::None;
 
     bool isVideo() const { return type.compare(QStringLiteral("VIDEO"), Qt::CaseInsensitive) == 0; }
+    bool isLocalPending() const { return !localPath.isEmpty(); }
 };
 
 struct ImmichPerson {

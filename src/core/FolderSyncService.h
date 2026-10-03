@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/ImmichTypes.h"
 
 #include <QHash>
+#include <QList>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -35,11 +37,15 @@ public:
     QString statusMessage() const;
     QString statusIconPath() const;
 
+    // Unsynced folder files for Library preview (with Unsaved/Saving/Error badge).
+    QList<ImmichAsset> pendingLibraryAssets() const;
+
     void scanNow();
 
 signals:
     void settingsChanged(const Aurora::FolderSyncSettings &settings);
     void statusChanged();
+    void pendingLibraryAssetsChanged();
 
 private slots:
     void handleDirectoryChanged(const QString &path);
@@ -48,6 +54,7 @@ private slots:
     void handleUploadFailed(const QString &filePath, const QString &message);
     void handleOnlineChanged(bool online);
     void handleConfigurationChanged(bool configured);
+    void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
     void processStableFiles();
     void periodicScan();
 
@@ -58,9 +65,13 @@ private:
     };
 
     static bool isMediaFile(const QString &path);
+    static bool isVideoFile(const QString &path);
     static QString fingerprint(const QString &path);
+    static QString localAssetId(const QString &path);
+    static ImmichAsset assetFromLocalFile(const QString &path);
     bool isUnderSyncFolder(const QString &path) const;
     bool alreadySynced(const QString &path) const;
+    bool canUploadNow() const;
     void markSynced(const QString &path);
     void markError(const QString &path, const QString &message);
     void loadSyncedState();
@@ -69,6 +80,7 @@ private:
     void enqueueReadyFiles(const QStringList &paths);
     void refreshStatus();
     void setStatus(FolderSyncUiStatus status, const QString &message);
+    void publishLibraryPending();
     QStringList collectMediaFiles() const;
 
     ImmichClient *m_client = nullptr;
@@ -81,6 +93,7 @@ private:
     QSet<QString> m_queued;
     QHash<QString, QString> m_syncedFingerprints;
     QHash<QString, QString> m_errors;
+    QList<ImmichAsset> m_libraryPending;
     FolderSyncUiStatus m_uiStatus = FolderSyncUiStatus::Disabled;
     QString m_statusMessage;
     QString m_lastUploadName;

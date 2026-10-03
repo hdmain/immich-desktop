@@ -47,6 +47,7 @@ struct TimelineSettings {
 
 struct FolderSyncSettings {
     bool enabled = false;
+    bool localNetworkOnly = false;
     QString folderPath;
 };
 

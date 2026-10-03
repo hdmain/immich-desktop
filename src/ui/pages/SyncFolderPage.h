@@ -29,6 +29,7 @@ private:
     FolderSyncService *m_syncService = nullptr;
     ThemeManager *m_themeManager = nullptr;
     QCheckBox *m_enabled = nullptr;
+    QCheckBox *m_localNetworkOnly = nullptr;
     QLineEdit *m_folderPath = nullptr;
     QPushButton *m_browseButton = nullptr;
     QPushButton *m_openButton = nullptr;

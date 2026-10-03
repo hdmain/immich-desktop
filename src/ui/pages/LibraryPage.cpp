@@ -1,10 +1,15 @@
 #include "ui/pages/LibraryPage.h"
 
+#include "core/AppSettings.h"
+#include "core/FolderSyncService.h"
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/SummaryTile.h"
 #include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/VideoPlayerDialog.h"
 #include "ui/widgets/ZoomPanWidget.h"
+
+#include <QDesktopServices>
+#include <QImageReader>
 
 #include <QApplication>
 #include <QBuffer>
@@ -68,9 +73,11 @@ QString mediaFileFilter()
 
 } // namespace
 
-LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
+LibraryPage::LibraryPage(ImmichClient *client, FolderSyncService *folderSync,
+                         QWidget *parent)
     : QWidget(parent)
     , m_client(client)
+    , m_folderSync(folderSync)
     , m_contentStack(new QStackedWidget(this))
     , m_scrollArea(new QScrollArea(this))
     , m_timelineHost(new QWidget)
@@ -275,6 +282,10 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
     connect(m_client, &ImmichClient::onlineChanged, this, &LibraryPage::handleOnlineChanged);
     connect(m_client, &ImmichClient::uploadQueueChanged, this,
             &LibraryPage::handleUploadQueueChanged);
+    if (m_folderSync) {
+        connect(m_folderSync, &FolderSyncService::pendingLibraryAssetsChanged, this,
+                &LibraryPage::syncPendingLocalAssets);
+    }
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
         m_uploadButton->setEnabled(configured);
         m_searchField->setEnabled(configured);
@@ -282,6 +293,7 @@ LibraryPage::LibraryPage(ImmichClient *client, QWidget *parent)
             refresh();
         else {
             clearTimeline();
+            syncPendingLocalAssets();
             updateEmptyState();
         }
         updateAutoCheckTimer();
@@ -342,6 +354,7 @@ void LibraryPage::refresh()
     }
 
     clearTimeline();
+    syncPendingLocalAssets();
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_status->setText(tr("Loading your library…"));
@@ -468,8 +481,19 @@ LibraryPage::DaySection *LibraryPage::sectionForDate(const QDate &date)
     section.header = new QLabel(formatDayHeader(date), m_timelineHost);
     section.header->setObjectName(QStringLiteral("timelineDayHeader"));
     section.header->setProperty("section", true);
-    m_sections.append(section);
-    return &m_sections.last();
+
+    // Newest days first so local pending tiles stay above older Immich months.
+    int insertAt = m_sections.size();
+    for (int i = 0; i < m_sections.size(); ++i) {
+        if (!date.isValid())
+            break;
+        if (!m_sections.at(i).date.isValid() || date > m_sections.at(i).date) {
+            insertAt = i;
+            break;
+        }
+    }
+    m_sections.insert(insertAt, section);
+    return &m_sections[insertAt];
 }
 
 QString LibraryPage::formatDayHeader(const QDate &date) const
@@ -500,6 +524,7 @@ void LibraryPage::showAssets(const QList<ImmichAsset> &assets, const QString &ne
         clearTimeline();
 
     appendAssetsToTimeline(assets);
+    syncPendingLocalAssets();
 
     m_nextPage = fromCache ? QString() : nextPage;
     m_loading = false;
@@ -529,7 +554,8 @@ void LibraryPage::appendAssetsToTimeline(const QList<ImmichAsset> &assets)
         const QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
         DaySection *section = sectionForDate(date);
         auto *tile = new MediaTile(asset, m_timelineHost);
-        tile->setHoverPreview(m_videoHoverPreview);
+        if (!asset.isLocalPending())
+            tile->setHoverPreview(m_videoHoverPreview);
         section->tiles.append(tile);
         m_tilesById.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
@@ -544,6 +570,104 @@ void LibraryPage::appendAssetsToTimeline(const QList<ImmichAsset> &assets)
 
     if (!m_assets.isEmpty())
         m_newestAssetId = m_assets.first().id;
+}
+
+void LibraryPage::prependLocalAsset(const ImmichAsset &asset)
+{
+    if (m_tilesById.contains(asset.id)) {
+        if (MediaTile *tile = m_tilesById.value(asset.id))
+            tile->updateAsset(asset);
+        return;
+    }
+
+    m_assets.prepend(asset);
+    const QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
+    DaySection *section = sectionForDate(date);
+    auto *tile = new MediaTile(asset, m_timelineHost);
+    section->tiles.prepend(tile);
+    m_tilesById.insert(asset.id, tile);
+    m_localAssetIds.insert(asset.id);
+    connect(tile, &MediaTile::activated, this, &LibraryPage::openAsset);
+    connect(tile, &MediaTile::highlighted, this, [this](const ImmichAsset &highlighted) {
+        m_currentAsset = highlighted;
+    });
+    loadLocalThumbnail(tile, asset);
+}
+
+void LibraryPage::removeLocalAsset(const QString &assetId)
+{
+    MediaTile *tile = m_tilesById.take(assetId);
+    m_localAssetIds.remove(assetId);
+    m_requestedThumbnails.remove(assetId);
+    for (int i = 0; i < m_assets.size(); ++i) {
+        if (m_assets.at(i).id == assetId) {
+            m_assets.removeAt(i);
+            break;
+        }
+    }
+    if (!tile)
+        return;
+    for (DaySection &section : m_sections)
+        section.tiles.removeAll(tile);
+    tile->deleteLater();
+}
+
+void LibraryPage::loadLocalThumbnail(MediaTile *tile, const ImmichAsset &asset)
+{
+    if (!tile || asset.localPath.isEmpty())
+        return;
+    QImageReader reader(asset.localPath);
+    reader.setAutoTransform(true);
+    QSize size = reader.size();
+    if (size.isValid()) {
+        size.scale(256, 256, Qt::KeepAspectRatioByExpanding);
+        reader.setScaledSize(size);
+    }
+    const QImage image = reader.read();
+    if (!image.isNull())
+        tile->setThumbnail(QPixmap::fromImage(image));
+}
+
+void LibraryPage::syncPendingLocalAssets()
+{
+    if (!m_folderSync)
+        return;
+
+    // Keep search results clean - local pending only in the main timeline.
+    if (!m_searchQuery.isEmpty()) {
+        const QStringList localIds = m_localAssetIds.values();
+        for (const QString &id : localIds)
+            removeLocalAsset(id);
+        scheduleLayout();
+        updateEmptyState();
+        return;
+    }
+
+    const QList<ImmichAsset> pending = m_folderSync->pendingLibraryAssets();
+    QSet<QString> keep;
+    keep.reserve(pending.size());
+    for (const ImmichAsset &asset : pending) {
+        keep.insert(asset.id);
+        if (m_tilesById.contains(asset.id)) {
+            if (MediaTile *tile = m_tilesById.value(asset.id)) {
+                tile->updateAsset(asset);
+                if (!tile->hasThumbnail())
+                    loadLocalThumbnail(tile, asset);
+            }
+        } else {
+            prependLocalAsset(asset);
+        }
+    }
+
+    const QStringList existing = m_localAssetIds.values();
+    for (const QString &id : existing) {
+        if (!keep.contains(id))
+            removeLocalAsset(id);
+    }
+
+    scheduleLayout();
+    scheduleVisibleMediaUpdate();
+    updateEmptyState();
 }
 
 void LibraryPage::handleTimelineBucketsLoaded(const QList<TimeBucketInfo> &buckets)
@@ -599,6 +723,7 @@ void LibraryPage::handleTimelineBucketLoaded(const QDate &month,
         return;
 
     appendAssetsToTimeline(assets);
+    syncPendingLocalAssets();
     ++m_nextBucketIndex;
     m_loading = false;
     m_refreshButton->setEnabled(true);
@@ -1069,6 +1194,7 @@ void LibraryPage::clearTimeline()
     }
     m_sections.clear();
     m_tilesById.clear();
+    m_localAssetIds.clear();
     m_requestedThumbnails.clear();
     m_assets.clear();
     m_nextPage.clear();
@@ -1230,7 +1356,11 @@ void LibraryPage::updateVisibleMedia()
             m_requestedThumbnails.contains(assetId))
             continue;
         m_requestedThumbnails.insert(assetId);
-        m_client->loadThumbnail(assetId);
+        if (m_localAssetIds.contains(assetId)) {
+            loadLocalThumbnail(tile, tile->asset());
+        } else {
+            m_client->loadThumbnail(assetId);
+        }
         if (++requested >= kMaxThumbnailRequestsPerTick) {
             scheduleVisibleMediaUpdate();
             break;
@@ -1326,6 +1456,11 @@ void LibraryPage::handleUploadQueueChanged(int pendingCount)
 void LibraryPage::openAsset(const ImmichAsset &asset)
 {
     m_currentAsset = asset;
+    if (asset.isLocalPending()) {
+        if (!asset.localPath.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(asset.localPath));
+        return;
+    }
     if (asset.isVideo()) {
         if (m_videoHoverPreview)
             m_videoHoverPreview->stop();
@@ -1886,6 +2021,7 @@ void LibraryPage::hideEvent(QHideEvent *event)
 void LibraryPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    syncPendingLocalAssets();
     scheduleVisibleMediaUpdate();
     updateAutoCheckTimer();
     QTimer::singleShot(0, this, &LibraryPage::checkForNewPhotos);

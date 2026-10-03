@@ -2,16 +2,20 @@
 
 #include "core/ImmichClient.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QImageReader>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QTimer>
+
+#include <algorithm>
 
 namespace Aurora {
 namespace {
@@ -56,13 +60,17 @@ FolderSyncService::FolderSyncService(ImmichClient *client, QObject *parent)
             &FolderSyncService::handleOnlineChanged);
     connect(m_client, &ImmichClient::configurationChanged, this,
             &FolderSyncService::handleConfigurationChanged);
+    connect(m_client, &ImmichClient::activeEndpointChanged, this,
+            &FolderSyncService::handleActiveEndpointChanged);
     connect(m_client, &ImmichClient::uploadQueueChanged, this, [this](int) {
         refreshStatus();
+        publishLibraryPending();
     });
 
     loadSyncedState();
     rebuildWatcher();
     refreshStatus();
+    publishLibraryPending();
     if (m_settings.enabled)
         QTimer::singleShot(1500, this, &FolderSyncService::scanNow);
 }
@@ -80,6 +88,7 @@ void FolderSyncService::setSettings(const FolderSyncSettings &settings)
         normalized.folderPath = QFileInfo(normalized.folderPath).absoluteFilePath();
 
     const bool changed = normalized.enabled != m_settings.enabled ||
+                         normalized.localNetworkOnly != m_settings.localNetworkOnly ||
                          normalized.folderPath != m_settings.folderPath;
     m_settings = normalized;
     m_store.saveFolderSync(m_settings);
@@ -91,10 +100,12 @@ void FolderSyncService::setSettings(const FolderSyncSettings &settings)
         rebuildWatcher();
         emit settingsChanged(m_settings);
         refreshStatus();
+        publishLibraryPending();
         if (m_settings.enabled)
             scanNow();
     } else {
         refreshStatus();
+        publishLibraryPending();
     }
 }
 
@@ -125,10 +136,16 @@ QString FolderSyncService::statusIconPath() const
     }
 }
 
+QList<ImmichAsset> FolderSyncService::pendingLibraryAssets() const
+{
+    return m_libraryPending;
+}
+
 void FolderSyncService::scanNow()
 {
     if (!m_settings.enabled || m_settings.folderPath.isEmpty()) {
         refreshStatus();
+        publishLibraryPending();
         return;
     }
 
@@ -149,7 +166,6 @@ void FolderSyncService::scanNow()
         }
     }
 
-    // Drop pending entries that disappeared.
     for (auto it = m_pending.begin(); it != m_pending.end();) {
         if (!QFileInfo::exists(it.key()))
             it = m_pending.erase(it);
@@ -161,6 +177,7 @@ void FolderSyncService::scanNow()
         m_stabilityTimer->start();
     processStableFiles();
     refreshStatus();
+    publishLibraryPending();
 }
 
 void FolderSyncService::handleDirectoryChanged(const QString &)
@@ -174,6 +191,7 @@ void FolderSyncService::handleUploadProgress(const QString &filePath, qint64, qi
         return;
     m_lastUploadName = QFileInfo(filePath).fileName();
     refreshStatus();
+    publishLibraryPending();
 }
 
 void FolderSyncService::handleAssetUploaded(const QString &filePath, const QString &,
@@ -187,6 +205,7 @@ void FolderSyncService::handleAssetUploaded(const QString &filePath, const QStri
     markSynced(filePath);
     m_lastUploadName = QFileInfo(filePath).fileName();
     refreshStatus();
+    publishLibraryPending();
 }
 
 void FolderSyncService::handleUploadFailed(const QString &filePath, const QString &message)
@@ -196,20 +215,34 @@ void FolderSyncService::handleUploadFailed(const QString &filePath, const QStrin
     m_queued.remove(filePath);
     markError(filePath, message);
     refreshStatus();
+    publishLibraryPending();
 }
 
 void FolderSyncService::handleOnlineChanged(bool)
 {
     refreshStatus();
-    if (m_client->isOnline() && m_settings.enabled)
+    if (canUploadNow())
         scanNow();
+    else
+        publishLibraryPending();
 }
 
 void FolderSyncService::handleConfigurationChanged(bool)
 {
     refreshStatus();
-    if (m_client->isConfigured() && m_settings.enabled)
+    if (canUploadNow())
         scanNow();
+    else
+        publishLibraryPending();
+}
+
+void FolderSyncService::handleActiveEndpointChanged(bool, const QString &)
+{
+    refreshStatus();
+    if (canUploadNow())
+        scanNow();
+    else
+        publishLibraryPending();
 }
 
 void FolderSyncService::processStableFiles()
@@ -217,6 +250,7 @@ void FolderSyncService::processStableFiles()
     if (m_pending.isEmpty()) {
         m_stabilityTimer->stop();
         refreshStatus();
+        publishLibraryPending();
         return;
     }
 
@@ -252,6 +286,7 @@ void FolderSyncService::processStableFiles()
     if (m_pending.isEmpty())
         m_stabilityTimer->stop();
     refreshStatus();
+    publishLibraryPending();
 }
 
 void FolderSyncService::periodicScan()
@@ -279,12 +314,49 @@ bool FolderSyncService::isMediaFile(const QString &path)
     return extensions.contains(info.suffix().toLower());
 }
 
+bool FolderSyncService::isVideoFile(const QString &path)
+{
+    static const QSet<QString> extensions = {
+        QStringLiteral("mp4"), QStringLiteral("mov"), QStringLiteral("m4v"),
+        QStringLiteral("avi"), QStringLiteral("mkv"), QStringLiteral("webm"),
+        QStringLiteral("3gp"),
+    };
+    return extensions.contains(QFileInfo(path).suffix().toLower());
+}
+
 QString FolderSyncService::fingerprint(const QString &path)
 {
     const QFileInfo info(path);
     return QStringLiteral("%1:%2")
         .arg(info.size())
         .arg(info.lastModified().toMSecsSinceEpoch());
+}
+
+QString FolderSyncService::localAssetId(const QString &path)
+{
+    const QByteArray hash =
+        QCryptographicHash::hash(QFileInfo(path).absoluteFilePath().toUtf8(),
+                                 QCryptographicHash::Sha1)
+            .toHex();
+    return QStringLiteral("local:") + QString::fromLatin1(hash);
+}
+
+ImmichAsset FolderSyncService::assetFromLocalFile(const QString &path)
+{
+    ImmichAsset asset;
+    const QFileInfo info(path);
+    asset.id = localAssetId(path);
+    asset.localPath = info.absoluteFilePath();
+    asset.fileName = info.fileName();
+    asset.type = isVideoFile(path) ? QStringLiteral("VIDEO") : QStringLiteral("IMAGE");
+    asset.takenAt = info.birthTime().isValid() ? info.birthTime() : info.lastModified();
+    asset.localSyncState = LocalSyncState::Unsaved;
+
+    QImageReader reader(path);
+    const QSize size = reader.size();
+    if (size.isValid() && size.height() > 0)
+        asset.aspectRatio = qBound(0.2, qreal(size.width()) / qreal(size.height()), 8.0);
+    return asset;
 }
 
 bool FolderSyncService::isUnderSyncFolder(const QString &path) const
@@ -308,6 +380,15 @@ bool FolderSyncService::alreadySynced(const QString &path) const
     const QString key = QFileInfo(path).absoluteFilePath();
     const auto it = m_syncedFingerprints.constFind(key);
     return it != m_syncedFingerprints.cend() && it.value() == fingerprint(path);
+}
+
+bool FolderSyncService::canUploadNow() const
+{
+    if (!m_settings.enabled || !m_client->isConfigured() || !m_client->isOnline())
+        return false;
+    if (m_settings.localNetworkOnly && !m_client->usingLocalEndpoint())
+        return false;
+    return true;
 }
 
 void FolderSyncService::markSynced(const QString &path)
@@ -373,8 +454,6 @@ void FolderSyncService::rebuildWatcher()
         return;
 
     m_watcher->addPath(dir.absolutePath());
-    // Watch immediate subdirectories so drops into nested folders are noticed
-    // quickly; periodic scan covers deeper trees on every platform.
     const QFileInfoList subdirs =
         dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &sub : subdirs)
@@ -385,7 +464,7 @@ void FolderSyncService::rebuildWatcher()
 
 void FolderSyncService::enqueueReadyFiles(const QStringList &paths)
 {
-    if (!m_client->isConfigured() || paths.isEmpty())
+    if (!canUploadNow() || paths.isEmpty())
         return;
 
     QStringList toUpload;
@@ -422,6 +501,12 @@ void FolderSyncService::refreshStatus()
     if (!m_client->isConfigured()) {
         setStatus(FolderSyncUiStatus::Unsaved,
                   tr("Connect to Immich in Settings → Immich Server first."));
+        return;
+    }
+    if (m_settings.localNetworkOnly && !m_client->usingLocalEndpoint()) {
+        setStatus(FolderSyncUiStatus::Unsaved,
+                  tr("Waiting for Immich on the local network. "
+                     "Files already show in Library with an unsaved badge."));
         return;
     }
     if (!m_queued.isEmpty()) {
@@ -462,6 +547,49 @@ void FolderSyncService::setStatus(FolderSyncUiStatus status, const QString &mess
     m_uiStatus = status;
     m_statusMessage = message;
     emit statusChanged();
+}
+
+void FolderSyncService::publishLibraryPending()
+{
+    QList<ImmichAsset> pending;
+    if (m_settings.enabled && !m_settings.folderPath.isEmpty()) {
+        const QStringList files = collectMediaFiles();
+        pending.reserve(files.size());
+        for (const QString &path : files) {
+            if (alreadySynced(path))
+                continue;
+            ImmichAsset asset = assetFromLocalFile(path);
+            if (m_queued.contains(path))
+                asset.localSyncState = LocalSyncState::Saving;
+            else if (m_errors.contains(path))
+                asset.localSyncState = LocalSyncState::Error;
+            else
+                asset.localSyncState = LocalSyncState::Unsaved;
+            pending.append(asset);
+        }
+        std::sort(pending.begin(), pending.end(),
+                  [](const ImmichAsset &a, const ImmichAsset &b) {
+                      return a.takenAt > b.takenAt;
+                  });
+    }
+
+    if (pending.size() == m_libraryPending.size()) {
+        bool same = true;
+        for (int i = 0; i < pending.size(); ++i) {
+            const ImmichAsset &a = pending.at(i);
+            const ImmichAsset &b = m_libraryPending.at(i);
+            if (a.id != b.id || a.localSyncState != b.localSyncState ||
+                a.localPath != b.localPath) {
+                same = false;
+                break;
+            }
+        }
+        if (same)
+            return;
+    }
+
+    m_libraryPending = pending;
+    emit pendingLibraryAssetsChanged();
 }
 
 QStringList FolderSyncService::collectMediaFiles() const

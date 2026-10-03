@@ -211,6 +211,8 @@ FolderSyncSettings AppSettings::loadFolderSync() const
 {
     FolderSyncSettings result;
     result.enabled = m_settings.value(QStringLiteral("folderSync/enabled"), false).toBool();
+    result.localNetworkOnly =
+        m_settings.value(QStringLiteral("folderSync/localNetworkOnly"), false).toBool();
     result.folderPath =
         m_settings.value(QStringLiteral("folderSync/folderPath")).toString();
     return result;
@@ -219,6 +221,8 @@ FolderSyncSettings AppSettings::loadFolderSync() const
 void AppSettings::saveFolderSync(const FolderSyncSettings &folderSync)
 {
     m_settings.setValue(QStringLiteral("folderSync/enabled"), folderSync.enabled);
+    m_settings.setValue(QStringLiteral("folderSync/localNetworkOnly"),
+                        folderSync.localNetworkOnly);
     m_settings.setValue(QStringLiteral("folderSync/folderPath"),
                         folderSync.folderPath.trimmed());
     m_settings.sync();

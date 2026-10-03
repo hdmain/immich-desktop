@@ -24,6 +24,8 @@ SyncFolderPage::SyncFolderPage(FolderSyncService *syncService, ThemeManager *the
     , m_syncService(syncService)
     , m_themeManager(themeManager)
     , m_enabled(new QCheckBox(tr("Watch a local folder and upload new media"), this))
+    , m_localNetworkOnly(new QCheckBox(
+          tr("Upload only when Immich is available on the local network"), this))
     , m_folderPath(new QLineEdit(this))
     , m_browseButton(new QPushButton(tr("Browse…"), this))
     , m_openButton(new QPushButton(tr("Open folder"), this))
@@ -54,6 +56,11 @@ SyncFolderPage::SyncFolderPage(FolderSyncService *syncService, ThemeManager *the
     const FolderSyncSettings current = m_syncService->settings();
     m_enabled->setChecked(current.enabled);
     m_enabled->setCursor(Qt::PointingHandCursor);
+    m_localNetworkOnly->setChecked(current.localNetworkOnly);
+    m_localNetworkOnly->setCursor(Qt::PointingHandCursor);
+    m_localNetworkOnly->setToolTip(
+        tr("Uses your Local URL from Immich Server settings. Files still appear in "
+           "Library with an unsaved badge until the local server is reachable."));
     m_folderPath->setText(current.folderPath);
     m_folderPath->setPlaceholderText(tr("Choose a folder to sync…"));
     m_folderPath->setClearButtonEnabled(true);
@@ -107,6 +114,7 @@ SyncFolderPage::SyncFolderPage(FolderSyncService *syncService, ThemeManager *the
     cardLayout->addWidget(title);
     cardLayout->addWidget(description);
     cardLayout->addWidget(m_enabled);
+    cardLayout->addWidget(m_localNetworkOnly);
     cardLayout->addLayout(pathRow);
     cardLayout->addLayout(actions);
     cardLayout->addLayout(statusRow);
@@ -116,6 +124,7 @@ SyncFolderPage::SyncFolderPage(FolderSyncService *syncService, ThemeManager *the
     root->addStretch();
 
     connect(m_enabled, &QCheckBox::toggled, this, &SyncFolderPage::saveSettings);
+    connect(m_localNetworkOnly, &QCheckBox::toggled, this, &SyncFolderPage::saveSettings);
     connect(m_folderPath, &QLineEdit::editingFinished, this, &SyncFolderPage::saveSettings);
     connect(m_browseButton, &QPushButton::clicked, this, &SyncFolderPage::chooseFolder);
     connect(m_openButton, &QPushButton::clicked, this, &SyncFolderPage::openFolder);
@@ -127,8 +136,10 @@ SyncFolderPage::SyncFolderPage(FolderSyncService *syncService, ThemeManager *the
             &SyncFolderPage::refreshStatus);
     connect(m_syncService, &FolderSyncService::settingsChanged, this, [this](const FolderSyncSettings &settings) {
         const QSignalBlocker enabledBlocker(m_enabled);
+        const QSignalBlocker localOnlyBlocker(m_localNetworkOnly);
         const QSignalBlocker pathBlocker(m_folderPath);
         m_enabled->setChecked(settings.enabled);
+        m_localNetworkOnly->setChecked(settings.localNetworkOnly);
         m_folderPath->setText(settings.folderPath);
         refreshStatus();
     });
@@ -156,6 +167,7 @@ void SyncFolderPage::saveSettings()
 {
     FolderSyncSettings settings;
     settings.enabled = m_enabled->isChecked();
+    settings.localNetworkOnly = m_localNetworkOnly->isChecked();
     settings.folderPath = m_folderPath->text().trimmed();
     m_syncService->setSettings(settings);
 }

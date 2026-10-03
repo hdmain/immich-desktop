@@ -32,6 +32,7 @@ public:
     void setTileSize(const QSize &size);
     void setHoverPreview(VideoHoverPreview *preview);
     void endHoverPreview();
+    void updateAsset(const ImmichAsset &asset);
 
 signals:
     void activated(const Aurora::ImmichAsset &asset);

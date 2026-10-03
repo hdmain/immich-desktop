@@ -25,6 +25,7 @@ class QTimer;
 
 namespace Aurora {
 
+class FolderSyncService;
 class MediaTile;
 class SummaryTile;
 class VideoHoverPreview;
@@ -33,7 +34,8 @@ class LibraryPage final : public QWidget {
     Q_OBJECT
 
 public:
-    explicit LibraryPage(ImmichClient *client, QWidget *parent = nullptr);
+    explicit LibraryPage(ImmichClient *client, FolderSyncService *folderSync,
+                         QWidget *parent = nullptr);
     void setCompactGrid(bool enabled);
 
 protected:
@@ -75,6 +77,7 @@ private slots:
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
     void handleOnlineChanged(bool online);
     void handleUploadQueueChanged(int pendingCount);
+    void syncPendingLocalAssets();
     void handleTimelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets);
     void handleTimelineBucketLoaded(const QDate &month,
                                     const QList<Aurora::ImmichAsset> &assets);
@@ -121,6 +124,9 @@ private:
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
     void appendAssetsToTimeline(const QList<ImmichAsset> &assets);
+    void prependLocalAsset(const ImmichAsset &asset);
+    void removeLocalAsset(const QString &assetId);
+    void loadLocalThumbnail(MediaTile *tile, const ImmichAsset &asset);
     void loadNextTimelineBucket();
     bool hasMoreToLoad() const;
     void jumpToDate(const QDate &day);
@@ -140,6 +146,7 @@ private:
                                       const QList<ImmichAsset> &assets);
 
     ImmichClient *m_client;
+    FolderSyncService *m_folderSync = nullptr;
     QStackedWidget *m_contentStack;
     QScrollArea *m_scrollArea;
     QWidget *m_timelineHost;
@@ -163,6 +170,7 @@ private:
     QTimer *m_searchDebounce;
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
+    QSet<QString> m_localAssetIds;
     QSet<QString> m_requestedThumbnails;
     QList<ImmichAsset> m_assets;
     QList<TimeBucketInfo> m_monthBuckets;
