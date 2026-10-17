@@ -17,6 +17,7 @@ public:
 
     qreal hoverProgress() const;
     void setHoverProgress(qreal progress);
+    QSize sizeHint() const override;
 
 protected:
     void enterEvent(QEnterEvent *event) override;

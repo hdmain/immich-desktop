@@ -47,6 +47,9 @@
         <file alias="icons/tabler/arrow-left.svg">icons/tabler/arrow-left.svg</file>
         <file alias="icons/tabler/calendar.svg">icons/tabler/calendar.svg</file>
         <file alias="icons/tabler/chevron-down.svg">icons/tabler/chevron-down.svg</file>
+        <file alias="icons/tabler/chevron-left.svg">icons/tabler/chevron-left.svg</file>
+        <file alias="icons/tabler/chevron-right.svg">icons/tabler/chevron-right.svg</file>
+        <file alias="icons/tabler/circle-x.svg">icons/tabler/circle-x.svg</file>
         <file alias="icons/tabler/circle-alert.svg">icons/tabler/circle-alert.svg</file>
         <file alias="icons/tabler/circle-check.svg">icons/tabler/circle-check.svg</file>
         <file alias="icons/tabler/cloud-alert.svg">icons/tabler/cloud-alert.svg</file>
@@ -77,6 +80,9 @@
         <file alias="icons/bootstrap/arrow-left.svg">icons/bootstrap/arrow-left.svg</file>
         <file alias="icons/bootstrap/calendar.svg">icons/bootstrap/calendar.svg</file>
         <file alias="icons/bootstrap/chevron-down.svg">icons/bootstrap/chevron-down.svg</file>
+        <file alias="icons/bootstrap/chevron-left.svg">icons/bootstrap/chevron-left.svg</file>
+        <file alias="icons/bootstrap/chevron-right.svg">icons/bootstrap/chevron-right.svg</file>
+        <file alias="icons/bootstrap/circle-x.svg">icons/bootstrap/circle-x.svg</file>
         <file alias="icons/bootstrap/circle-alert.svg">icons/bootstrap/circle-alert.svg</file>
         <file alias="icons/bootstrap/circle-check.svg">icons/bootstrap/circle-check.svg</file>
         <file alias="icons/bootstrap/cloud-alert.svg">icons/bootstrap/cloud-alert.svg</file>
@@ -110,6 +116,9 @@
         <file alias="icons/save.svg">icons/save.svg</file>
         <file alias="icons/external-link.svg">icons/external-link.svg</file>
         <file alias="icons/chevron-down.svg">icons/chevron-down.svg</file>
+        <file alias="icons/chevron-left.svg">icons/chevron-left.svg</file>
+        <file alias="icons/chevron-right.svg">icons/chevron-right.svg</file>
+        <file alias="icons/circle-x.svg">icons/circle-x.svg</file>
         <file alias="icons/LICENSE.txt">icons/LICENSE.txt</file>
     </qresource>
     <qresource prefix="/">

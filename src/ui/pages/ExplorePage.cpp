@@ -3,10 +3,9 @@
 #include "core/AppSettings.h"
 #include "ui/IconUtils.h"
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ShareLinkDialog.h"
 #include "ui/widgets/VideoHoverPreview.h"
-#include "ui/widgets/VideoPlayerDialog.h"
-#include "ui/widgets/ZoomPanWidget.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -133,8 +132,9 @@ void ExploreCard::keyPressEvent(QKeyEvent *event)
     QFrame::keyPressEvent(event);
 }
 
-ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
+ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidget *parent)
     : QWidget(parent)
+    , m_themeManager(themeManager)
     , m_client(client)
     , m_stack(new QStackedWidget(this))
     , m_collectionCompactGrid(AppSettings().loadTimeline().compactGrid)
@@ -291,42 +291,11 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     collectionRoot->addWidget(m_collectionScroll, 1);
     collectionRoot->addWidget(m_collectionLoadMore);
 
-    // ---- Preview ----
-    m_previewPage = new QWidget;
-    auto *previewRoot = new QVBoxLayout(m_previewPage);
-    previewRoot->setContentsMargins(0, 0, 0, 0);
-    previewRoot->setSpacing(0);
-
-    auto *previewToolbar = new QWidget(m_previewPage);
-    auto *previewToolbarLayout = new QHBoxLayout(previewToolbar);
-    previewToolbarLayout->setContentsMargins(16, 12, 16, 10);
-    previewToolbarLayout->setSpacing(12);
-    m_previewBack = new QPushButton(tr("← Back"), previewToolbar);
-    configureActionButton(m_previewBack, QStringLiteral(":/icons/arrow-left.svg"));
-    m_previewBack->setCursor(Qt::PointingHandCursor);
-    m_previewTitle = new QLabel(previewToolbar);
-    m_previewTitle->setProperty("heading", true);
-    previewToolbarLayout->addWidget(m_previewBack);
-    previewToolbarLayout->addWidget(m_previewTitle, 1);
-    auto *sharePreview = new QPushButton(tr("Share link"), previewToolbar);
-    configureActionButton(sharePreview, QStringLiteral(":/icons/external-link.svg"));
-    previewToolbarLayout->addWidget(sharePreview);
-    connect(sharePreview, &QPushButton::clicked, this, [this] {
-        (new ShareLinkDialog(m_client, m_previewAsset, this))->show();
-    });
-
-    m_previewView = new ZoomPanWidget(m_previewPage);
-    m_previewView->setPlaceholderText(tr("Loading preview…"));
-    previewRoot->addWidget(previewToolbar);
-    previewRoot->addWidget(m_previewView, 1);
-
     m_stack->addWidget(m_browsePage);
     m_stack->addWidget(m_collectionPage);
-    m_stack->addWidget(m_previewPage);
 
     connect(m_refreshButton, &QPushButton::clicked, this, &ExplorePage::refresh);
     connect(m_collectionBack, &QPushButton::clicked, this, &ExplorePage::backToBrowse);
-    connect(m_previewBack, &QPushButton::clicked, this, &ExplorePage::backToCollection);
     connect(m_collectionLoadMore, &QPushButton::clicked, this,
             &ExplorePage::requestCollectionNextPage);
 
@@ -335,8 +304,9 @@ ExplorePage::ExplorePage(ImmichClient *client, QWidget *parent)
     connect(m_client, &ImmichClient::personThumbnailLoaded, this,
             &ExplorePage::showPersonThumbnail);
     connect(m_client, &ImmichClient::thumbnailLoaded, this, &ExplorePage::showAssetThumbnail);
-    connect(m_client, &ImmichClient::previewLoaded, this, &ExplorePage::showPreviewImage);
     connect(m_client, &ImmichClient::requestFailed, this, &ExplorePage::showRequestError);
+    connect(m_client, &ImmichClient::assetsDeleted, this,
+            [this](const QStringList &assetIds, bool) { handleAssetsDeleted(assetIds); });
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
         m_refreshButton->setEnabled(configured);
         if (configured) {
@@ -391,8 +361,6 @@ void ExplorePage::releaseUiPixmaps()
     m_collectionRequestedThumbs.clear();
     m_personThumbCache.clear();
 
-    if (m_previewView)
-        m_previewView->setPixmap({});
     if (m_collectionHero)
         setCollectionHero({}, m_collectionPersonStyle);
 }
@@ -494,6 +462,7 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
     }
     populateSection(&m_placesSection, !data.places.isEmpty());
 
+    m_recentAssets = data.recentAssets;
     auto *recentLayout = qobject_cast<QHBoxLayout *>(m_recentSection.host->layout());
     for (const ImmichAsset &asset : data.recentAssets) {
         auto *card = new ExploreCard(ExploreCard::Style::Media, m_recentSection.host);
@@ -501,10 +470,8 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         recentLayout->insertWidget(recentLayout->count() - 1, card);
         m_recentSection.cards.append(card);
         m_browseAssetCards.insert(asset.id, card);
-        connect(card, &ExploreCard::activated, this, [this, asset] {
-            m_previewFromCollection = false;
-            openAsset(asset);
-        });
+        connect(card, &ExploreCard::activated, this,
+                [this, asset] { openAsset(asset, false); });
         m_client->loadThumbnail(asset.id);
     }
     populateSection(&m_recentSection, !data.recentAssets.isEmpty());
@@ -576,13 +543,6 @@ void ExplorePage::showAssetThumbnail(const QString &assetId, const QPixmap &thum
         m_stack->currentIndex() == static_cast<int>(Page::Collection) &&
         assetId == m_collectionHeroAssetId && !thumbnail.isNull())
         setCollectionHero(thumbnail, false);
-}
-
-void ExplorePage::showPreviewImage(const QString &assetId, const QPixmap &preview)
-{
-    if (assetId != m_previewAssetId || m_stack->currentIndex() != static_cast<int>(Page::Preview))
-        return;
-    m_previewView->setPixmap(preview);
 }
 
 void ExplorePage::showRequestError(const QString &operation, const QString &message)
@@ -666,6 +626,44 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
 
     m_collectionLoadMore->setVisible(false);
     setPage(Page::Collection);
+}
+
+void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
+{
+    if (m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
+
+    for (const QString &assetId : assetIds) {
+        const QList<ExploreCard *> cards = m_browseAssetCards.values(assetId);
+        for (ExploreCard *card : cards) {
+            // Place cards are keyed by their sample photo too; keep them until refresh.
+            if (m_recentSection.cards.removeOne(card)) {
+                m_browseAssetCards.remove(assetId, card);
+                card->deleteLater();
+            }
+        }
+
+        m_recentAssets.removeIf(
+            [&assetId](const ImmichAsset &asset) { return asset.id == assetId; });
+
+        const QPointer<MediaTile> tile = m_collectionTiles.take(assetId);
+        if (!tile)
+            continue;
+        for (DaySection &section : m_collectionSections)
+            section.tiles.removeAll(tile.data());
+        m_collectionRequestedThumbs.remove(assetId);
+        tile->deleteLater();
+    }
+
+    m_collectionSections.removeIf([](const DaySection &section) {
+        if (!section.tiles.isEmpty())
+            return false;
+        if (section.header)
+            section.header->deleteLater();
+        return true;
+    });
+    populateSection(&m_recentSection, !m_recentSection.cards.isEmpty());
+    scheduleCollectionLayout();
 }
 
 void ExplorePage::clearCollectionTimeline()
@@ -770,10 +768,8 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         tile->setHoverPreview(m_collectionHoverPreview);
         section->tiles.append(tile);
         m_collectionTiles.insert(asset.id, tile);
-        connect(tile, &MediaTile::activated, this, [this, asset] {
-            m_previewFromCollection = true;
-            openAsset(asset);
-        });
+        connect(tile, &MediaTile::activated, this,
+                [this, asset] { openAsset(asset, true); });
         connect(tile, &MediaTile::shareRequested, this, [this](const ImmichAsset &asset) {
             (new ShareLinkDialog(m_client, asset, this))->show();
         });
@@ -967,38 +963,54 @@ void ExplorePage::backToBrowse()
     updateEmptyState();
 }
 
-void ExplorePage::backToCollection()
+void ExplorePage::openAsset(const ImmichAsset &asset, bool fromCollection)
 {
-    if (m_previewFromCollection && !m_collectionFilterKind.isEmpty())
-        setPage(Page::Collection);
-    else
-        backToBrowse();
+    if (asset.isVideo() && m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
+
+    auto *viewer = new MediaViewerDialog(
+        m_themeManager, m_client, asset,
+        [this, fromCollection](const QString &assetId, int step) {
+            return adjacentAsset(fromCollection, assetId, step);
+        },
+        this);
+    connect(viewer, &MediaViewerDialog::copyRequested, this, &ExplorePage::copyRequested);
+    connect(viewer, &MediaViewerDialog::downloadRequested, this,
+            &ExplorePage::downloadRequested);
+    connect(viewer, &MediaViewerDialog::trashRequested, this, &ExplorePage::trashRequested);
+    connect(viewer, &MediaViewerDialog::deleteRequested, this, &ExplorePage::deleteRequested);
+    viewer->show();
 }
 
-void ExplorePage::showPreviewPage(const ImmichAsset &asset)
+ImmichAsset ExplorePage::adjacentAsset(bool fromCollection, const QString &assetId, int step)
 {
-    m_previewAssetId = asset.id;
-    m_previewAsset = asset;
-    m_previewTitle->setText(asset.fileName.isEmpty() ? tr("Photo") : asset.fileName);
-    m_previewView->setPixmap({});
-    m_previewView->setPlaceholderText(tr("Loading preview…"));
-    setPage(Page::Preview);
-    m_client->loadPreview(asset.id);
-}
-
-void ExplorePage::openAsset(const ImmichAsset &asset)
-{
-    if (asset.isVideo()) {
-        if (m_collectionHoverPreview)
-            m_collectionHoverPreview->stop();
-        auto *player = new VideoPlayerDialog(m_client, asset, this);
-        player->show();
-        return;
+    QList<ImmichAsset> assets;
+    if (fromCollection) {
+        for (const DaySection &section : m_collectionSections) {
+            for (const MediaTile *tile : section.tiles)
+                assets.append(tile->asset());
+        }
+    } else {
+        assets = m_recentAssets;
     }
 
-    if (m_stack->currentIndex() != static_cast<int>(Page::Collection))
-        m_previewFromCollection = false;
-    showPreviewPage(asset);
+    int index = -1;
+    for (int i = 0; i < assets.size(); ++i) {
+        if (assets.at(i).id == assetId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+        return {};
+
+    const int target = index + step;
+    if (fromCollection && target >= assets.size() - 1 && !m_collectionLoadingMore &&
+        !m_collectionNextPage.isEmpty())
+        requestCollectionNextPage();
+    if (target < 0 || target >= assets.size())
+        return {};
+    return assets.at(target);
 }
 
 } // namespace Aurora

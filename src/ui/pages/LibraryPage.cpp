@@ -4,10 +4,10 @@
 #include "core/FolderSyncService.h"
 #include "ui/IconUtils.h"
 #include "ui/widgets/MediaTile.h"
+#include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ShareLinkDialog.h"
 #include "ui/widgets/SummaryTile.h"
 #include "ui/widgets/VideoHoverPreview.h"
-#include "ui/widgets/VideoPlayerDialog.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
 #include <QDesktopServices>
@@ -89,9 +89,10 @@ QString mediaFileFilter()
 
 } // namespace
 
-LibraryPage::LibraryPage(ImmichClient *client, FolderSyncService *folderSync,
-                         QWidget *parent)
+LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
+                         FolderSyncService *folderSync, QWidget *parent)
     : QWidget(parent)
+    , m_themeManager(themeManager)
     , m_client(client)
     , m_folderSync(folderSync)
     , m_contentStack(new QStackedWidget(this))
@@ -1823,82 +1824,47 @@ void LibraryPage::openAsset(const ImmichAsset &asset)
             QDesktopServices::openUrl(QUrl::fromLocalFile(asset.localPath));
         return;
     }
-    if (asset.isVideo()) {
-        if (m_videoHoverPreview)
-            m_videoHoverPreview->stop();
-        auto *player = new VideoPlayerDialog(m_client, asset, this);
-        connect(player, &VideoPlayerDialog::downloadRequested, this,
-                &LibraryPage::downloadAsset);
-        connect(player, &VideoPlayerDialog::trashRequested, this, &LibraryPage::trashAsset);
-        connect(player, &VideoPlayerDialog::deleteRequested, this,
-                &LibraryPage::deleteAssetPermanently);
-        connect(m_client, &ImmichClient::assetsDeleted, player,
-                [player, id = asset.id](const QStringList &ids, bool) {
-                    if (ids.contains(id))
-                        player->close();
-                });
-        player->show();
-        return;
+    if (asset.isVideo() && m_videoHoverPreview)
+        m_videoHoverPreview->stop();
+
+    auto *viewer = new MediaViewerDialog(
+        m_themeManager, m_client, asset,
+        [this](const QString &assetId, int step) { return adjacentAsset(assetId, step); },
+        this);
+    connect(viewer, &MediaViewerDialog::copyRequested, this, &LibraryPage::copyAsset);
+    connect(viewer, &MediaViewerDialog::downloadRequested, this, &LibraryPage::downloadAsset);
+    connect(viewer, &MediaViewerDialog::trashRequested, this, &LibraryPage::trashAsset);
+    connect(viewer, &MediaViewerDialog::deleteRequested, this,
+            &LibraryPage::deleteAssetPermanently);
+    viewer->show();
+}
+
+ImmichAsset LibraryPage::adjacentAsset(const QString &assetId, int step)
+{
+    QList<const MediaTile *> tiles;
+    for (const DaySection &section : m_sections) {
+        for (const MediaTile *tile : section.tiles) {
+            if (!tile->asset().isLocalPending())
+                tiles.append(tile);
+        }
     }
 
-    auto *dialog = new QDialog(this);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setAttribute(Qt::WA_StyledBackground, true);
-    dialog->setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
-    dialog->resize(960, 700);
+    int index = -1;
+    for (int i = 0; i < tiles.size(); ++i) {
+        if (tiles.at(i)->asset().id == assetId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+        return {};
 
-    auto *layout = new QVBoxLayout(dialog);
-    auto *preview = new ZoomPanWidget(dialog);
-    preview->setPlaceholderText(tr("Loading preview…"));
-    preview->setMinimumSize(480, 320);
-    layout->addWidget(preview, 1);
-
-    auto *buttons = new QDialogButtonBox(dialog);
-    auto *copyButton = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
-    auto *downloadButton = buttons->addButton(tr("Download"), QDialogButtonBox::ActionRole);
-    auto *shareButton = buttons->addButton(tr("Share link"), QDialogButtonBox::ActionRole);
-    configureActionButton(shareButton, QStringLiteral(":/icons/external-link.svg"));
-    connect(shareButton, &QPushButton::clicked, dialog, [this, asset, dialog] {
-        (new ShareLinkDialog(m_client, asset, dialog))->show();
-    });
-    auto *trashButton = buttons->addButton(tr("Move to trash"), QDialogButtonBox::ActionRole);
-    auto *deleteButton =
-        buttons->addButton(tr("Delete permanently"), QDialogButtonBox::DestructiveRole);
-    buttons->addButton(QDialogButtonBox::Close);
-    connect(copyButton, &QPushButton::clicked, this, [this, asset] {
-        copyAsset(asset);
-    });
-    connect(downloadButton, &QPushButton::clicked, this, [this, asset] {
-        downloadAsset(asset);
-    });
-    connect(trashButton, &QPushButton::clicked, this, [this, asset] {
-        trashAsset(asset);
-    });
-    connect(deleteButton, &QPushButton::clicked, this, [this, asset] {
-        deleteAssetPermanently(asset);
-    });
-    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-    connect(m_client, &ImmichClient::assetsDeleted, dialog,
-            [dialog, id = asset.id](const QStringList &ids, bool) {
-                if (ids.contains(id))
-                    dialog->close();
-            });
-    layout->addWidget(buttons);
-
-    connect(m_client, &ImmichClient::previewLoaded, dialog,
-            [preview, id = asset.id](const QString &assetId, const QPixmap &pixmap) {
-                if (assetId != id)
-                    return;
-                preview->setPixmap(pixmap);
-            });
-    connect(m_client, &ImmichClient::imageLoadFailed, dialog,
-            [preview, id = asset.id](const QString &assetId, const QString &resultSize,
-                                     const QString &message) {
-                if (assetId == id && resultSize == QStringLiteral("preview"))
-                    preview->setPlaceholderText(tr("Preview unavailable\n%1").arg(message));
-            });
-    m_client->loadPreview(asset.id);
-    dialog->show();
+    const int target = index + step;
+    if (target >= tiles.size() - 1 && hasMoreToLoad())
+        loadMore();
+    if (target < 0 || target >= tiles.size())
+        return {};
+    return tiles.at(target)->asset();
 }
 
 void LibraryPage::downloadAsset(const ImmichAsset &asset)

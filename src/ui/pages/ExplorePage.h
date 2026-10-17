@@ -27,9 +27,9 @@ class QVBoxLayout;
 
 namespace Aurora {
 
+class ThemeManager;
 class MediaTile;
 class VideoHoverPreview;
-class ZoomPanWidget;
 
 class ExploreCard final : public QFrame {
     Q_OBJECT
@@ -58,7 +58,13 @@ class ExplorePage final : public QWidget {
     Q_OBJECT
 
 public:
-    explicit ExplorePage(ImmichClient *client, QWidget *parent = nullptr);
+    ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidget *parent = nullptr);
+
+signals:
+    void copyRequested(const Aurora::ImmichAsset &asset);
+    void downloadRequested(const Aurora::ImmichAsset &asset);
+    void trashRequested(const Aurora::ImmichAsset &asset);
+    void deleteRequested(const Aurora::ImmichAsset &asset);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -73,19 +79,18 @@ private slots:
                             const QList<Aurora::ImmichAsset> &assets, const QString &nextPage);
     void showPersonThumbnail(const QString &personId, const QPixmap &thumbnail);
     void showAssetThumbnail(const QString &assetId, const QPixmap &thumbnail);
-    void showPreviewImage(const QString &assetId, const QPixmap &preview);
     void showRequestError(const QString &operation, const QString &message);
+    void handleAssetsDeleted(const QStringList &assetIds);
     void openPerson(const Aurora::ImmichPerson &person);
     void openPlace(const Aurora::ImmichPlace &place);
-    void openAsset(const Aurora::ImmichAsset &asset);
+    void openAsset(const Aurora::ImmichAsset &asset, bool fromCollection);
     void backToBrowse();
-    void backToCollection();
     void requestCollectionNextPage();
     void layoutCollection();
     void updateVisibleCollectionThumbs();
 
 private:
-    enum class Page : int { Browse = 0, Collection = 1, Preview = 2 };
+    enum class Page : int { Browse = 0, Collection = 1 };
 
     struct SectionRow {
         QLabel *header = nullptr;
@@ -109,7 +114,7 @@ private:
     void clearCollectionTimeline();
     void appendCollectionAssets(const QList<ImmichAsset> &assets);
     void updateCollectionLoadMore(const QString &nextPage);
-    void showPreviewPage(const ImmichAsset &asset);
+    ImmichAsset adjacentAsset(bool fromCollection, const QString &assetId, int step);
     void setPage(Page page);
     void setCollectionHero(const QPixmap &thumb, bool personStyle);
     void scheduleCollectionLayout();
@@ -118,6 +123,7 @@ private:
     DaySection *sectionForDate(const QDate &date);
     QString formatDayHeader(const QDate &date) const;
 
+    ThemeManager *m_themeManager;
     ImmichClient *m_client;
     QStackedWidget *m_stack = nullptr;
 
@@ -134,6 +140,7 @@ private:
     SectionRow m_recentSection;
     QHash<QString, ExploreCard *> m_personCards;
     QMultiHash<QString, ExploreCard *> m_browseAssetCards;
+    QList<ImmichAsset> m_recentAssets;
     QHash<QString, QPixmap> m_personThumbCache;
 
     // Collection detail (Library-style timeline for one person/place)
@@ -160,15 +167,6 @@ private:
     bool m_collectionLoadingMore = false;
     bool m_collectionPersonStyle = false;
     bool m_collectionCompactGrid = false;
-
-    // Preview
-    QWidget *m_previewPage = nullptr;
-    QPushButton *m_previewBack = nullptr;
-    QLabel *m_previewTitle = nullptr;
-    ZoomPanWidget *m_previewView = nullptr;
-    QString m_previewAssetId;
-    ImmichAsset m_previewAsset;
-    bool m_previewFromCollection = false;
 
     bool m_loadedOnce = false;
     bool m_loading = false;

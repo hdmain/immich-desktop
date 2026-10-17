@@ -24,7 +24,10 @@ AnimatedButton::AnimatedButton(const QString &text, const QString &iconResource,
     setAccessibleName(text);
     setStyleSheet(QStringLiteral("background: transparent; border: none; padding: 0;"));
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
-            [this] { update(); });
+            [this] {
+                updateGeometry();
+                update();
+            });
 }
 
 qreal AnimatedButton::hoverProgress() const { return m_hoverProgress; }
@@ -33,6 +36,13 @@ void AnimatedButton::setHoverProgress(qreal progress)
 {
     m_hoverProgress = progress;
     update();
+}
+
+QSize AnimatedButton::sizeHint() const
+{
+    if (m_themeManager->minimalistUi() || text().isEmpty())
+        return QSize(44, 44);
+    return QSize(46 + fontMetrics().horizontalAdvance(text()) + 14, 44);
 }
 
 void AnimatedButton::enterEvent(QEnterEvent *event)
@@ -60,6 +70,8 @@ void AnimatedButton::paintEvent(QPaintEvent *)
         qRound(base.blue() + (target.blue() - base.blue()) * amount));
 
     QPainter painter(this);
+    if (!isEnabled())
+        painter.setOpacity(0.4);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
     painter.setPen(Qt::NoPen);
@@ -76,7 +88,7 @@ void AnimatedButton::paintEvent(QPaintEvent *)
     const QColor iconColor = isChecked() ? QColor(Qt::white) : theme.mutedText;
     const QPixmap icon = renderSvgIcon(m_iconResource, iconColor, QSize(19, 19),
                                        devicePixelRatioF());
-    const bool minimal = m_themeManager->minimalistUi();
+    const bool minimal = m_themeManager->minimalistUi() || text().isEmpty();
     painter.drawPixmap(QRect(minimal ? (width() - 19) / 2 : 15, (height() - 19) / 2, 19, 19), icon);
     if (!minimal)
         painter.drawText(rect().adjusted(46, 0, -10, 0), Qt::AlignVCenter | Qt::AlignLeft, text());

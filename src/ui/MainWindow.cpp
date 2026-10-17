@@ -120,8 +120,16 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     auto *workspaceLayout = new QVBoxLayout(workspace);
     workspaceLayout->setContentsMargins(0, 0, 0, 0);
 
-    m_pages->addWidget(new LibraryPage(immichClient, folderSync, m_pages));
-    m_pages->addWidget(new ExplorePage(immichClient, m_pages));
+    auto *libraryPage = new LibraryPage(themeManager, immichClient, folderSync, m_pages);
+    auto *explorePage = new ExplorePage(themeManager, immichClient, m_pages);
+    connect(explorePage, &ExplorePage::copyRequested, libraryPage, &LibraryPage::copyAsset);
+    connect(explorePage, &ExplorePage::downloadRequested, libraryPage,
+            &LibraryPage::downloadAsset);
+    connect(explorePage, &ExplorePage::trashRequested, libraryPage, &LibraryPage::trashAsset);
+    connect(explorePage, &ExplorePage::deleteRequested, libraryPage,
+            &LibraryPage::deleteAssetPermanently);
+    m_pages->addWidget(libraryPage);
+    m_pages->addWidget(explorePage);
     m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);

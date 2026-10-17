@@ -90,6 +90,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/ColorButton.h
     src/ui/widgets/MediaTile.cpp
     src/ui/widgets/MediaTile.h
+    src/ui/widgets/MediaViewerDialog.cpp
+    src/ui/widgets/MediaViewerDialog.h
     src/ui/widgets/ShareLinkDialog.cpp
     src/ui/widgets/ShareLinkDialog.h
     src/ui/widgets/SummaryTile.cpp
@@ -102,8 +104,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/SoftwareVideoWidget.h
     src/ui/widgets/VideoHoverPreview.cpp
     src/ui/widgets/VideoHoverPreview.h
-    src/ui/widgets/VideoPlayerDialog.cpp
-    src/ui/widgets/VideoPlayerDialog.h
+    src/ui/widgets/VideoPlayerWidget.cpp
+    src/ui/widgets/VideoPlayerWidget.h
     src/ui/widgets/ZoomPanWidget.cpp
     src/ui/widgets/ZoomPanWidget.h
     resources/resources.qrc

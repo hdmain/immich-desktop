@@ -1,6 +1,5 @@
-#include "ui/widgets/VideoPlayerDialog.h"
+#include "ui/widgets/VideoPlayerWidget.h"
 #include "ui/IconUtils.h"
-#include "ui/widgets/ShareLinkDialog.h"
 
 #include "ui/widgets/SoftwareVideoWidget.h"
 #include "ui/widgets/ZoomPanWidget.h"
@@ -10,8 +9,9 @@
 #include <QLabel>
 #include <QMediaPlayer>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QShortcut>
 #include <QSlider>
-#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVideoFrame>
@@ -19,52 +19,51 @@
 
 namespace Aurora {
 
-VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &asset,
-                                     QWidget *parent)
-    : QDialog(parent)
-    , m_asset(asset)
+VideoPlayerWidget::VideoPlayerWidget(ImmichClient *client, QWidget *parent)
+    : QWidget(parent)
+    , m_client(client)
     , m_player(new QMediaPlayer(this))
     , m_audio(new QAudioOutput(this))
     , m_sink(new QVideoSink(this))
     , m_video(new SoftwareVideoWidget(this))
+    , m_zoomView(new ZoomPanWidget(this))
+    , m_overlayButton(new QPushButton(this))
     , m_playButton(new QPushButton(this))
-    , m_downloadButton(new QPushButton(tr("Download"), this))
-    , m_trashButton(new QPushButton(tr("Trash"), this))
-    , m_deleteButton(new QPushButton(tr("Delete"), this))
     , m_positionSlider(new QSlider(Qt::Horizontal, this))
     , m_volumeSlider(new QSlider(Qt::Horizontal, this))
     , m_timeLabel(new QLabel(QStringLiteral("0:00 / 0:00"), this))
-    , m_statusLabel(new QLabel(tr("Opening stream…"), this))
+    , m_statusLabel(new QLabel(this))
 {
-    setAttribute(Qt::WA_DeleteOnClose);
-    setAttribute(Qt::WA_StyledBackground, true);
-    setWindowTitle(asset.fileName.isEmpty() ? tr("Video") : asset.fileName);
-    resize(1000, 700);
-    configureActionButton(m_downloadButton, QStringLiteral(":/icons/download.svg"));
-    configureActionButton(m_trashButton, QStringLiteral(":/icons/trash.svg"));
-    configureActionButton(m_deleteButton, QStringLiteral(":/icons/x.svg"));
-
     m_video->setMinimumSize(640, 360);
     m_player->setAudioOutput(m_audio);
     m_player->setVideoOutput(m_sink);
     m_audio->setVolume(0.8f);
 
-    auto *zoomView = new ZoomPanWidget(this);
-    zoomView->setHostedWidget(m_video);
-    zoomView->setMinimumSize(640, 360);
+    m_zoomView->setHostedWidget(m_video);
+    m_zoomView->setMinimumSize(640, 360);
+
+    m_overlayButton->setObjectName(QStringLiteral("videoOverlayButton"));
+    m_overlayButton->setFixedSize(72, 72);
+    m_overlayButton->setIconSize(QSize(36, 36));
+    m_overlayButton->setCursor(Qt::PointingHandCursor);
+    m_overlayButton->setToolTip(tr("Play (Space)"));
+    m_overlayButton->setAccessibleName(tr("Play"));
+    m_overlayButton->setIcon(QIcon(renderSvgIcon(QStringLiteral(":/icons/play.svg"),
+                                                 Qt::white, QSize(36, 36),
+                                                 devicePixelRatioF())));
 
     m_playButton->setFixedSize(40, 36);
-    m_playButton->setToolTip(tr("Play"));
-    m_downloadButton->setToolTip(tr("Download original file"));
-    m_trashButton->setToolTip(tr("Move to trash"));
-    m_deleteButton->setToolTip(tr("Delete permanently"));
     m_positionSlider->setRange(0, 1000);
     m_positionSlider->setEnabled(false);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(80);
     m_volumeSlider->setMaximumWidth(120);
     m_volumeSlider->setToolTip(tr("Volume"));
+    // Keep arrow keys free for the viewer's previous/next navigation.
+    m_positionSlider->setFocusPolicy(Qt::NoFocus);
+    m_volumeSlider->setFocusPolicy(Qt::NoFocus);
     m_statusLabel->setProperty("subheading", true);
+    m_statusLabel->hide();
 
     auto *controls = new QHBoxLayout;
     controls->setSpacing(10);
@@ -75,34 +74,20 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
     volumeLabel->setProperty("subheading", true);
     controls->addWidget(volumeLabel);
     controls->addWidget(m_volumeSlider);
-    controls->addWidget(m_downloadButton);
-    auto *share = new QPushButton(tr("Share link"), this);
-    configureActionButton(share, QStringLiteral(":/icons/external-link.svg"));
-    controls->addWidget(share);
-    connect(share, &QPushButton::clicked, this, [this, client] {
-        (new ShareLinkDialog(client, m_asset, this))->show();
-    });
-    controls->addWidget(m_trashButton);
-    controls->addWidget(m_deleteButton);
 
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
-    layout->addWidget(zoomView, 1);
+    layout->addWidget(m_zoomView, 1);
     layout->addWidget(m_statusLabel);
     layout->addLayout(controls);
 
-    connect(m_playButton, &QPushButton::clicked,
-            this, &VideoPlayerDialog::togglePlayback);
-    connect(m_downloadButton, &QPushButton::clicked, this, [this] {
-        emit downloadRequested(m_asset);
-    });
-    connect(m_trashButton, &QPushButton::clicked, this, [this] {
-        emit trashRequested(m_asset);
-    });
-    connect(m_deleteButton, &QPushButton::clicked, this, [this] {
-        emit deleteRequested(m_asset);
-    });
+    auto *playShortcut = new QShortcut(QKeySequence(Qt::Key_Space), this);
+    playShortcut->setContext(Qt::WindowShortcut);
+    connect(playShortcut, &QShortcut::activated, this, &VideoPlayerWidget::togglePlayback);
+
+    connect(m_overlayButton, &QPushButton::clicked, this, &VideoPlayerWidget::play);
+    connect(m_playButton, &QPushButton::clicked, this, &VideoPlayerWidget::togglePlayback);
     connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int value) {
         m_audio->setVolume(value / 100.0f);
     });
@@ -124,13 +109,15 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
                     m_video->setFrame(image);
             });
     connect(m_player, &QMediaPlayer::positionChanged,
-            this, &VideoPlayerDialog::updatePosition);
+            this, &VideoPlayerWidget::updatePosition);
     connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 duration) {
         m_positionSlider->setEnabled(duration > 0);
         updatePosition(m_player->position());
     });
-    connect(m_player, &QMediaPlayer::playbackStateChanged,
-            this, [this] { updatePlaybackButton(); });
+    connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this] {
+        updatePlaybackButton();
+        updateOverlay();
+    });
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this,
             [this](QMediaPlayer::MediaStatus status) {
                 switch (status) {
@@ -158,38 +145,89 @@ VideoPlayerDialog::VideoPlayerDialog(ImmichClient *client, const ImmichAsset &as
                 m_statusLabel->show();
             });
 
-    const QUrl streamUrl = client->videoStreamUrl(asset.id);
-    if (!streamUrl.isValid()) {
-        m_statusLabel->setText(tr("Could not start the video stream."));
-        m_playButton->setEnabled(false);
-    } else {
-        // Defer open so the dialog can paint first.
-        QTimer::singleShot(0, this, [this, streamUrl] {
-            m_player->setSource(streamUrl);
-            m_player->play();
-        });
-    }
     updatePlaybackButton();
 }
 
-void VideoPlayerDialog::togglePlayback()
+void VideoPlayerWidget::setAsset(const ImmichAsset &asset, bool autoplay)
+{
+    stop();
+    m_asset = asset;
+    m_video->clearFrame();
+    m_positionSlider->setValue(0);
+    m_positionSlider->setEnabled(false);
+    m_timeLabel->setText(QStringLiteral("0:00 / 0:00"));
+    m_statusLabel->hide();
+    m_playButton->setEnabled(true);
+    updateOverlay();
+    if (autoplay) {
+        // Defer open so the window can paint first.
+        QTimer::singleShot(0, this, [this, id = asset.id] {
+            if (m_asset.id == id)
+                play();
+        });
+    }
+}
+
+void VideoPlayerWidget::setPoster(const QPixmap &poster)
+{
+    if (m_player->playbackState() == QMediaPlayer::StoppedState && !poster.isNull())
+        m_video->setFrame(poster.toImage());
+}
+
+void VideoPlayerWidget::play()
+{
+    if (!m_sourceSet) {
+        const QUrl streamUrl = m_client->videoStreamUrl(m_asset.id);
+        if (!streamUrl.isValid()) {
+            m_statusLabel->setText(tr("Could not start the video stream."));
+            m_statusLabel->show();
+            m_playButton->setEnabled(false);
+            return;
+        }
+        m_player->setSource(streamUrl);
+        m_sourceSet = true;
+    }
+    m_player->play();
+}
+
+void VideoPlayerWidget::togglePlayback()
 {
     if (m_player->playbackState() == QMediaPlayer::PlayingState)
         m_player->pause();
     else
-        m_player->play();
+        play();
 }
 
-void VideoPlayerDialog::updatePlaybackButton()
+void VideoPlayerWidget::stop()
+{
+    m_player->stop();
+    m_player->setSource(QUrl());
+    m_sourceSet = false;
+}
+
+void VideoPlayerWidget::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateOverlay();
+}
+
+void VideoPlayerWidget::updatePlaybackButton()
 {
     const bool playing = m_player->playbackState() == QMediaPlayer::PlayingState;
     configureActionButton(m_playButton, playing ? QStringLiteral(":/icons/pause.svg")
                                                : QStringLiteral(":/icons/play.svg"));
-    m_playButton->setToolTip(playing ? tr("Pause") : tr("Play"));
+    m_playButton->setToolTip(playing ? tr("Pause (Space)") : tr("Play (Space)"));
     m_playButton->setAccessibleName(playing ? tr("Pause") : tr("Play"));
 }
 
-void VideoPlayerDialog::updatePosition(qint64 position)
+void VideoPlayerWidget::updateOverlay()
+{
+    m_overlayButton->move(m_zoomView->geometry().center() - m_overlayButton->rect().center());
+    m_overlayButton->setVisible(m_player->playbackState() == QMediaPlayer::StoppedState);
+    m_overlayButton->raise();
+}
+
+void VideoPlayerWidget::updatePosition(qint64 position)
 {
     const qint64 duration = m_player->duration();
     if (!m_seeking && duration > 0) {
@@ -200,7 +238,7 @@ void VideoPlayerDialog::updatePosition(qint64 position)
         QStringLiteral("%1 / %2").arg(formatTime(position), formatTime(duration)));
 }
 
-QString VideoPlayerDialog::formatTime(qint64 milliseconds)
+QString VideoPlayerWidget::formatTime(qint64 milliseconds)
 {
     const qint64 totalSeconds = qMax<qint64>(0, milliseconds / 1000);
     const qint64 hours = totalSeconds / 3600;

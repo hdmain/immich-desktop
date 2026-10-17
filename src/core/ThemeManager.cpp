@@ -176,6 +176,12 @@ QString ThemeManager::buildStyleSheet() const
         }
         QPushButton[windowControl="true"]:hover { background: %6; }
         QPushButton#closeButton:hover { background: #E5484D; color: white; }
+        QPushButton#videoOverlayButton {
+            background: rgba(0, 0, 0, 140);
+            border: none;
+            border-radius: 36px;
+        }
+        QPushButton#videoOverlayButton:hover { background: rgba(0, 0, 0, 190); }
         QDialogButtonBox QPushButton { min-width: 88px; }
         QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit {
             background: %6;
