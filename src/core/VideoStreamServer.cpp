@@ -6,6 +6,7 @@
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QSslConfiguration>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
@@ -70,10 +71,12 @@ bool VideoStreamServer::start()
     return m_server->listen(QHostAddress::LocalHost, 0);
 }
 
-void VideoStreamServer::setCredentials(const QUrl &apiBaseUrl, const QString &apiKey)
+void VideoStreamServer::setCredentials(const QUrl &apiBaseUrl, const QString &apiKey,
+                                       const QSslConfiguration &sslConfig)
 {
     m_apiBaseUrl = apiBaseUrl;
     m_apiKey = apiKey;
+    m_sslConfig = sslConfig;
 }
 
 QUrl VideoStreamServer::streamUrl(const QString &assetId) const
@@ -195,6 +198,11 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
     startUpstream(client, assetUrl, rangeHeader, isHead, /*sendApiKey=*/true, /*redirects=*/0);
 }
 
+bool VideoStreamServer::isOriginHost(const QUrl &url, const QUrl &apiBase)
+{
+    return url.scheme() == QStringLiteral("https") && url.host() == apiBase.host();
+}
+
 void VideoStreamServer::startUpstream(QTcpSocket *client, const QUrl &url,
                                       const QByteArray &rangeHeader, bool isHead,
                                       bool sendApiKey, int redirects)
@@ -208,6 +216,10 @@ void VideoStreamServer::startUpstream(QTcpSocket *client, const QUrl &url,
 
     QNetworkRequest upstream(url);
     upstream.setRawHeader("Accept", "*/*");
+    // Apply the mTLS/custom-CA config to the Immich origin only; CDN/S3
+    // redirect hops below have a different host and keep default TLS.
+    if (isOriginHost(url, m_apiBaseUrl))
+        upstream.setSslConfiguration(m_sslConfig);
     if (sendApiKey && !m_apiKey.isEmpty())
         upstream.setRawHeader("x-api-key", m_apiKey.toUtf8());
     if (!rangeHeader.isEmpty())

@@ -2,7 +2,12 @@
 #include "ui/IconUtils.h"
 
 #include "core/ImmichClient.h"
+#include "core/TlsConfig.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -12,6 +17,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <functional>
+
 namespace Aurora {
 
 ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
@@ -20,6 +27,13 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     , m_serverUrl(new QLineEdit(this))
     , m_localServerUrl(new QLineEdit(this))
     , m_apiKey(new QLineEdit(this))
+    , m_certFormat(new QComboBox(this))
+    , m_clientCertPath(new QLineEdit(this))
+    , m_clientKeyPath(new QLineEdit(this))
+    , m_clientKeyLabel(new QLabel(tr("Client key"), this))
+    , m_caCertPath(new QLineEdit(this))
+    , m_keyPassword(new QLineEdit(this))
+    , m_rememberKeyPassword(new QCheckBox(tr("Remember password"), this))
     , m_status(new QLabel(this))
     , m_saveButton(new QPushButton(tr("Save & test connection"), this))
 {
@@ -58,6 +72,69 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     m_apiKey->setEchoMode(QLineEdit::Password);
     m_apiKey->setClearButtonEnabled(true);
 
+    m_certFormat->addItem(tr("PKCS#12 (.p12/.pfx)"));
+    m_certFormat->addItem(tr("PEM certificate + key"));
+    m_certFormat->setCurrentIndex(static_cast<int>(current.certFormat));
+    m_clientCertPath->setText(current.clientCertPath);
+    m_clientCertPath->setClearButtonEnabled(true);
+    m_clientKeyPath->setText(current.clientKeyPath);
+    m_clientKeyPath->setClearButtonEnabled(true);
+    m_caCertPath->setText(current.caCertPath);
+    m_caCertPath->setClearButtonEnabled(true);
+    m_keyPassword->setText(current.keyPassword);
+    m_keyPassword->setEchoMode(QLineEdit::Password);
+    m_keyPassword->setClearButtonEnabled(true);
+    m_rememberKeyPassword->setChecked(current.rememberKeyPassword);
+
+    const QString pemFilter = tr("PEM files (*.pem *.crt *.cer *.key)");
+    // Pairs a line edit with a Browse… button that seeds its dialog from the
+    // current path's directory and the given filter.
+    const auto makePathRow = [this](QLineEdit *edit, const QString &caption,
+                                    std::function<QString()> filter) {
+        auto *container = new QWidget(this);
+        auto *row = new QHBoxLayout(container);
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(8);
+        auto *browse = new QPushButton(tr("Browse…"), this);
+        connect(browse, &QPushButton::clicked, this, [this, edit, caption, filter] {
+            const QString dir = QFileInfo(edit->text().trimmed()).absolutePath();
+            const QString picked =
+                QFileDialog::getOpenFileName(this, caption, dir, filter());
+            if (!picked.isEmpty())
+                edit->setText(picked);
+        });
+        row->addWidget(edit, 1);
+        row->addWidget(browse);
+        return container;
+    };
+
+    auto *clientCertRow = makePathRow(
+        m_clientCertPath, tr("Select client certificate"), [this, pemFilter] {
+            return m_certFormat->currentIndex() == static_cast<int>(TlsCertFormat::Pkcs12)
+                       ? tr("PKCS#12 bundles (*.p12 *.pfx)")
+                       : pemFilter;
+        });
+    auto *clientKeyRow =
+        makePathRow(m_clientKeyPath, tr("Select client key"),
+                    [pemFilter] { return pemFilter; });
+    auto *caCertRow = makePathRow(m_caCertPath, tr("Select CA certificate"),
+                                  [pemFilter] { return pemFilter; });
+
+    // The client key only exists as a separate file in PEM mode; in PKCS#12 it
+    // lives inside the bundle, so hide the whole row (label + field + button)
+    // there. clientKeyRow is a container widget, so hiding it hides the Browse
+    // button too — hiding only the line edit would strand the button.
+    const auto applyKeyRowVisibility = [this, clientKeyRow] {
+        const bool pem = m_certFormat->currentIndex() == static_cast<int>(TlsCertFormat::Pem);
+        m_clientKeyLabel->setVisible(pem);
+        clientKeyRow->setVisible(pem);
+    };
+    connect(m_certFormat, &QComboBox::currentIndexChanged, this,
+            [applyKeyRowVisibility] { applyKeyRowVisibility(); });
+
+    auto *certTitle = new QLabel(tr("Client certificate (optional)"), card);
+    certTitle->setProperty("section", true);
+
     auto *form = new QFormLayout;
     form->setContentsMargins(0, 4, 0, 0);
     form->setHorizontalSpacing(18);
@@ -65,6 +142,23 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     form->addRow(tr("Immich URL"), m_serverUrl);
     form->addRow(tr("Local URL"), m_localServerUrl);
     form->addRow(tr("API Key"), m_apiKey);
+    form->addRow(certTitle);
+    form->addRow(tr("Format"), m_certFormat);
+    form->addRow(tr("Client cert"), clientCertRow);
+    form->addRow(m_clientKeyLabel, clientKeyRow);
+    form->addRow(tr("Server CA"), caCertRow);
+    auto *caHint = new QLabel(
+        tr("Certificate that signed the server (or its reverse proxy). Needed when "
+           "the server uses a private/internal CA. This is separate from the client "
+           "certificate above and is not taken from the bundle."),
+        card);
+    caHint->setWordWrap(true);
+    caHint->setProperty("hint", true);
+    form->addRow(QString(), caHint);
+    form->addRow(tr("Key password"), m_keyPassword);
+    form->addRow(QString(), m_rememberKeyPassword);
+
+    applyKeyRowVisibility();
 
     auto *privacy = new QLabel(
         tr("The API key is stored locally in this app's settings and is never sent "
@@ -127,6 +221,12 @@ void ConnectionPage::saveAndTest()
     ImmichConnectionSettings settings;
     settings.serverUrl = url.toString(QUrl::RemoveQuery | QUrl::RemoveFragment);
     settings.apiKey = m_apiKey->text();
+    settings.certFormat = static_cast<TlsCertFormat>(m_certFormat->currentIndex());
+    settings.clientCertPath = m_clientCertPath->text().trimmed();
+    settings.clientKeyPath = m_clientKeyPath->text().trimmed();
+    settings.caCertPath = m_caCertPath->text().trimmed();
+    settings.keyPassword = m_keyPassword->text();
+    settings.rememberKeyPassword = m_rememberKeyPassword->isChecked();
 
     const QString localText = m_localServerUrl->text().trimmed();
     if (!localText.isEmpty()) {

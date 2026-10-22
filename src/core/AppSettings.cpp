@@ -153,6 +153,16 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
         }
     }
 #endif
+
+    result.certFormat = static_cast<TlsCertFormat>(
+        m_settings.value(QStringLiteral("immich/certFormat"), 0).toInt());
+    result.clientCertPath = m_settings.value(QStringLiteral("immich/clientCertPath")).toString();
+    result.clientKeyPath = m_settings.value(QStringLiteral("immich/clientKeyPath")).toString();
+    result.caCertPath = m_settings.value(QStringLiteral("immich/caCertPath")).toString();
+    result.rememberKeyPassword = m_settings.value(QStringLiteral("immich/rememberKeyPassword"), false).toBool();
+    result.keyPassword = unprotectSecret(
+        m_settings.value(QStringLiteral("immich/keyPassword")).toString());
+
     return result;
 }
 
@@ -164,6 +174,20 @@ void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connectio
     const QString apiKey = connection.apiKey.trimmed();
     const QString protectedKey = protectSecret(apiKey);
     m_settings.setValue(QStringLiteral("immich/apiKey"), protectedKey);
+
+    m_settings.setValue(QStringLiteral("immich/certFormat"), static_cast<int>(connection.certFormat));
+    m_settings.setValue(QStringLiteral("immich/clientCertPath"), connection.clientCertPath.trimmed());
+    m_settings.setValue(QStringLiteral("immich/clientKeyPath"), connection.clientKeyPath.trimmed());
+    m_settings.setValue(QStringLiteral("immich/caCertPath"), connection.caCertPath.trimmed());
+    m_settings.setValue(QStringLiteral("immich/rememberKeyPassword"), connection.rememberKeyPassword);
+
+    if (connection.rememberKeyPassword) {
+        const QString protectedPassword = protectSecret(connection.keyPassword);
+        m_settings.setValue(QStringLiteral("immich/keyPassword"), protectedPassword);
+    } else {
+        m_settings.remove(QStringLiteral("immich/keyPassword"));
+    }
+
     m_settings.sync();
 }
 

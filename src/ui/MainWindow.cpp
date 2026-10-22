@@ -21,6 +21,8 @@
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QIcon>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -170,6 +172,10 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
             [this](int) { refreshTrayIcon(); });
     connect(m_immichClient, &ImmichClient::transferActivityChanged, this,
             &MainWindow::refreshTrayIcon);
+    connect(m_immichClient, &ImmichClient::sslPasswordNeeded, this,
+            &MainWindow::promptClientCertPassword);
+    connect(m_immichClient, &ImmichClient::configurationChanged, this,
+            [this](bool) { m_sslPasswordAttempts = 0; });
 
     const QList<Qt::Edges> resizeEdges = {
         Qt::TopEdge, Qt::BottomEdge, Qt::LeftEdge, Qt::RightEdge,
@@ -368,6 +374,31 @@ void MainWindow::maybeShowGitHubStarPrompt()
             QUrl(QStringLiteral("https://github.com/%1")
                      .arg(QString::fromLatin1(Config::GitHubRepository))));
     }
+}
+
+void MainWindow::promptClientCertPassword()
+{
+    // provideKeyPassword re-emits sslPasswordNeeded on a wrong password; the
+    // guard stops a reopened dialog, the attempt cap stops an unbounded retry
+    // loop. configurationChanged resets the count for a new connection attempt.
+    if (m_sslPasswordPromptOpen)
+        return;
+    if (m_sslPasswordAttempts >= 3) {
+        m_settingsPage->showConnection();
+        return;
+    }
+
+    m_sslPasswordPromptOpen = true;
+    ++m_sslPasswordAttempts;
+    bool ok = false;
+    const QString password = QInputDialog::getText(
+        this, tr("Certificate password"),
+        tr("Enter the password for your client certificate:"),
+        QLineEdit::Password, QString(), &ok);
+    m_sslPasswordPromptOpen = false;
+
+    if (ok && !password.isEmpty() && m_immichClient)
+        m_immichClient->provideKeyPassword(password);
 }
 
 void MainWindow::refreshTrayIcon()

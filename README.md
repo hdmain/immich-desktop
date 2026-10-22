@@ -77,6 +77,10 @@ chmod +x immich-desktop-x86_64.AppImage   # or immich-desktop-aarch64.AppImage
 ./immich-desktop-x86_64.AppImage
 ```
 
+### mTLS / Client Certificates
+
+If your Immich server is behind an mTLS reverse proxy, you can configure client certificate authentication in **Settings → Immich Server**. The desktop app supports **PKCS#12** (`.p12` / `.pfx`, single password-protected bundle) or **separate PEM certificate + PEM private key** files. You can also supply a custom CA certificate to verify servers with private or internal CAs. The private-key password can be stored (remembered) or you'll be prompted when needed via a "Remember password" checkbox. Client certificate authentication applies to the remote server URL only; the optional Local URL connects without it.
+
 ## Roadmap
 
 Plans can shift , track progress and ideas in

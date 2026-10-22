@@ -50,6 +50,8 @@ set(IMMICH_SOURCES
     src/core/ThemeManager.h
     src/core/ThumbnailCache.cpp
     src/core/ThumbnailCache.h
+    src/core/TlsConfig.cpp
+    src/core/TlsConfig.h
     src/core/UpdateManager.cpp
     src/core/UpdateManager.h
     src/core/UploadQueueStore.cpp
@@ -267,3 +269,6 @@ elseif(UNIX AND NOT APPLE)
 endif()
 
 include(CPack)
+
+enable_testing()
+add_subdirectory(tests)

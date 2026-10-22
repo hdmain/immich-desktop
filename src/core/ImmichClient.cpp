@@ -1,5 +1,6 @@
 #include "core/ImmichClient.h"
 
+#include "core/TlsConfig.h"
 #include "core/VideoStreamServer.h"
 
 #include <QBuffer>
@@ -146,6 +147,12 @@ ImmichClient::ImmichClient(QObject *parent)
     connect(m_reachabilityTimer, &QTimer::timeout, this, &ImmichClient::probeReachability);
     setupNetworkMonitoring();
     restoreUploadQueue();
+    // Build the client-cert SSL config from stored settings BEFORE any request
+    // fires. Without this, startup auto-load requests go out cert-less and poison
+    // the QNetworkAccessManager connection pool for the host, so later
+    // cert-bearing requests reuse the cert-less socket and the mTLS handshake
+    // never happens (observed as SSL error 11).
+    rebuildSslConfig();
     if (isConfigured()) {
         m_endpointProbeTimer->start();
         m_reachabilityTimer->start();
@@ -291,6 +298,8 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
     if (persist)
         m_store.saveImmichConnection(m_connection);
 
+    rebuildSslConfig();
+
     setActiveServerUrl(m_connection.serverUrl, false);
 
     if (isConfigured()) {
@@ -311,6 +320,47 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
             ensureStreamServer();
         emit configurationChanged(isConfigured());
     }
+}
+
+void ImmichClient::rebuildSslConfig()
+{
+    const TlsConfigResult result = TlsConfig::build(m_connection, effectivePassword());
+    // Empty-but-needed or a wrong non-empty password both re-open the prompt
+    // (bounded UI-side by the 3-attempt cap). Other build errors toast.
+    if (result.needsPassword || result.badPassword) {
+        emit sslPasswordNeeded();
+        return;
+    }
+    if (!result.ok) {
+        emit requestFailed(tr("Connection"), result.error);
+        return;
+    }
+    m_sslConfig = result.config;
+    // Drop any pooled connections so a later request can't reuse a socket whose
+    // TLS handshake happened under the old (or cert-less) config.
+    m_network->clearConnectionCache();
+}
+
+void ImmichClient::provideKeyPassword(const QString &password)
+{
+    m_sessionKeyPassword = password;
+    rebuildSslConfig();
+    if (isConfigured()) {
+        probeEndpoints();
+        probeReachability();
+    }
+}
+
+QString ImmichClient::effectivePassword() const
+{
+    return m_sessionKeyPassword.isEmpty() ? m_connection.keyPassword : m_sessionKeyPassword;
+}
+
+QSslConfiguration ImmichClient::sslConfigForActiveEndpoint() const
+{
+    if (!m_usingLocalEndpoint && m_connection.hasClientCert())
+        return m_sslConfig;
+    return QSslConfiguration::defaultConfiguration();
 }
 
 void ImmichClient::releaseMemoryCaches()
@@ -358,6 +408,8 @@ void ImmichClient::probeEndpoints()
     request.setTransferTimeout(1500);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::SameOriginRedirectPolicy);
+    // Local probe targets the LAN endpoint, which never uses the client cert.
+    request.setSslConfiguration(QSslConfiguration::defaultConfiguration());
 
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this,
@@ -407,6 +459,7 @@ void ImmichClient::probeReachability()
     request.setTransferTimeout(2500);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::SameOriginRedirectPolicy);
+    request.setSslConfiguration(sslConfigForActiveEndpoint());
 
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
@@ -444,7 +497,7 @@ void ImmichClient::ensureStreamServer()
     apiBase.setPath(basePath);
     apiBase.setQuery(QString());
     apiBase.setFragment({});
-    m_streamServer->setCredentials(apiBase, m_connection.apiKey);
+    m_streamServer->setCredentials(apiBase, m_connection.apiKey, sslConfigForActiveEndpoint());
 }
 
 QUrl ImmichClient::videoStreamUrl(const QString &assetId)
@@ -473,6 +526,7 @@ QNetworkRequest ImmichClient::authenticatedRequest(const QUrl &url) const
     result.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                         QNetworkRequest::SameOriginRedirectPolicy);
     result.setTransferTimeout(30000);
+    result.setSslConfiguration(sslConfigForActiveEndpoint());
     return result;
 }
 
@@ -498,6 +552,13 @@ QString ImmichClient::errorMessage(QNetworkReply *reply, const QByteArray &body)
             if (!messages.isEmpty())
                 return messages.join(QStringLiteral(", "));
         }
+    }
+    if (reply->error() == QNetworkReply::SslHandshakeFailedError) {
+        // A wrong key password surfaces here, not as needsPassword — re-prompt
+        // on the remote cert endpoint (debounced UI-side).
+        if (!m_usingLocalEndpoint && m_connection.hasClientCert())
+            emit const_cast<ImmichClient *>(this)->sslPasswordNeeded();
+        return tr("TLS handshake failed — check your client certificate and CA certificate.");
     }
     if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401)
         return tr("Authentication failed. Check the API key and its permissions.");
@@ -1660,6 +1721,8 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
 
     const ImmichConnectionSettings connection = m_connection;
     const QString serverUrl = activeServerUrl();
+    // Captured on the main thread: the worker must not touch m_connection/m_usingLocalEndpoint.
+    const QSslConfiguration sslConfig = sslConfigForActiveEndpoint();
     QPointer<ImmichClient> self(this);
 
     const bool tileImage = resultSize.startsWith(QStringLiteral("tile:"));
@@ -1667,7 +1730,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
     const bool usesPreview = tileImage || resultSize == QStringLiteral("preview");
 
     m_imagePool.start([this, self, assetId, resultSize, pendingKey, connection, serverUrl,
-                       tileImage, tileDimension, usesPreview] {
+                       sslConfig, tileImage, tileDimension, usesPreview] {
         auto finishFail = [self, assetId, resultSize, pendingKey](const QString &message) {
             if (!self)
                 return;
@@ -1769,6 +1832,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
             request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                                  QNetworkRequest::SameOriginRedirectPolicy);
             request.setTransferTimeout(15000);
+            request.setSslConfiguration(sslConfig);
             QNetworkReply *reply = network.get(request);
             constexpr qsizetype maximumImageBytes = 32 * 1024 * 1024;
             QByteArray body;

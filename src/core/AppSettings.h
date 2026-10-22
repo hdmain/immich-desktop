@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Theme.h"
+#include "core/TlsConfig.h"
 
 #include <QDateTime>
 #include <QSettings>
@@ -27,12 +28,21 @@ struct ImmichConnectionSettings {
     QString localServerUrl;
     QString apiKey;
 
+    TlsCertFormat certFormat = TlsCertFormat::Pkcs12;
+    QString clientCertPath;
+    QString clientKeyPath;
+    QString caCertPath;
+    QString keyPassword;
+    bool rememberKeyPassword = false;
+
     bool isConfigured() const
     {
         return !serverUrl.trimmed().isEmpty() && !apiKey.trimmed().isEmpty();
     }
 
     bool hasLocalServerUrl() const { return !localServerUrl.trimmed().isEmpty(); }
+
+    bool hasClientCert() const { return !clientCertPath.trimmed().isEmpty(); }
 };
 
 struct WindowSettings {

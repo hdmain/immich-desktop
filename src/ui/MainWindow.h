@@ -55,6 +55,7 @@ private:
     void updateResizeHandles();
     void notifyUpdateAvailable();
     void maybeShowGitHubStarPrompt();
+    void promptClientCertPassword();
     void refreshTrayIcon();
 
     TopBar *m_topBar;
@@ -70,6 +71,8 @@ private:
     bool m_autoCheckScheduled = false;
     bool m_starPromptScheduled = false;
     bool m_forceQuit = false;
+    bool m_sslPasswordPromptOpen = false;
+    int m_sslPasswordAttempts = 0;
 };
 
 } // namespace Aurora

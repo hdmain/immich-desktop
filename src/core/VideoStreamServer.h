@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QObject>
+#include <QSslConfiguration>
 #include <QUrl>
 
 class QNetworkAccessManager;
@@ -18,8 +19,13 @@ public:
     explicit VideoStreamServer(QObject *parent = nullptr);
 
     bool start();
-    void setCredentials(const QUrl &apiBaseUrl, const QString &apiKey);
+    void setCredentials(const QUrl &apiBaseUrl, const QString &apiKey,
+                        const QSslConfiguration &sslConfig);
     QUrl streamUrl(const QString &assetId) const;
+
+    // True when url is the Immich origin (same host, https): the only hop that
+    // gets the mTLS/custom-CA config. CDN/S3 redirect hosts return false.
+    static bool isOriginHost(const QUrl &url, const QUrl &apiBase);
 
 private:
     struct Session {
@@ -39,6 +45,7 @@ private:
     QNetworkAccessManager *m_network;
     QUrl m_apiBaseUrl;
     QString m_apiKey;
+    QSslConfiguration m_sslConfig;
     QString m_sessionToken;
     QHash<QTcpSocket *, Session> m_sessions;
 };
