@@ -431,7 +431,6 @@ void ExplorePage::refresh()
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_browseStatus->setText(tr("Loading explore…"));
-    setPage(Page::Browse);
     if (!m_client->loadExplore()) {
         m_loading = false;
         m_refreshButton->setEnabled(true);
@@ -477,8 +476,8 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
     m_loading = false;
     m_loadedOnce = true;
     m_refreshButton->setEnabled(true);
+    // Refresh the overview in place; an open album, tag or person stays open.
     clearSections();
-    setPage(Page::Browse);
 
     auto *peopleLayout = qobject_cast<QHBoxLayout *>(m_peopleSection.host->layout());
     for (const ImmichPerson &person : data.people) {
