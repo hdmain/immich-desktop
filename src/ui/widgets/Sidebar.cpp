@@ -4,14 +4,28 @@
 #include "core/AppSettings.h"
 #include "core/ThemeManager.h"
 #include "ui/widgets/AnimatedButton.h"
+#include "ui/widgets/BrowseTree.h"
 
 #include <QButtonGroup>
 #include <QEasingCurve>
 #include <QLabel>
+#include <QScrollArea>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 
 namespace Aurora {
+namespace {
+
+// Button-group ids for browse sections, kept clear of the page indices 0-6.
+constexpr int kSectionIdBase = 10;
+
+int sectionId(BrowseSection section)
+{
+    return kSectionIdBase + static_cast<int>(section);
+}
+
+} // namespace
 
 Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
     : QWidget(parent)
@@ -27,6 +41,25 @@ Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
 {
     setObjectName(QStringLiteral("sidebar"));
 
+    for (BrowseSection section :
+         {BrowseSection::Albums, BrowseSection::Tags, BrowseSection::Folders}) {
+        auto *tree = new BrowseTree(section, this);
+        tree->hide();
+        m_trees.insert(section, tree);
+        m_treeExpanded.insert(section, false);
+        // Wait for the sidebar to lay out the newly shown or resized list.
+        connect(tree, &BrowseTree::itemSelected, this, [this, tree] {
+            QTimer::singleShot(0, this, [this, tree] {
+                const QRect rect = tree->selectedRect();
+                if (!tree->isVisible() || rect.isEmpty())
+                    return;
+                const QPoint center =
+                    tree->viewport()->mapTo(m_scroll->widget(), rect.center());
+                m_scroll->ensureVisible(center.x(), center.y(), 0, rect.height());
+            });
+        });
+    }
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(14, 18, 14, 14);
     layout->setSpacing(8);
@@ -34,12 +67,24 @@ Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
     m_navigationLabel->setProperty("subheading", true);
     m_navigationLabel->setContentsMargins(8, 4, 0, 8);
     layout->addWidget(m_navigationLabel);
+
+    auto *navigation = new QWidget;
+    navigation->setObjectName(QStringLiteral("sidebarNavigation"));
+    auto *navigationColumn = new QVBoxLayout(navigation);
+    navigationColumn->setContentsMargins(0, 0, 0, 0);
     m_navigationLayout->setContentsMargins(0, 0, 0, 0);
     m_navigationLayout->setSpacing(8);
-    layout->addLayout(m_navigationLayout);
+    navigationColumn->addLayout(m_navigationLayout);
+    navigationColumn->addStretch();
+    auto *scroll = new QScrollArea(this);
+    m_scroll = scroll;
+    scroll->setObjectName(QStringLiteral("sidebarScroll"));
+    scroll->setWidget(navigation);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    layout->addWidget(scroll, 1);
     showMainNavigation();
-
-    layout->addStretch();
 
     m_toggleButton->setCheckable(false);
     connect(m_toggleButton, &QPushButton::clicked, this, &Sidebar::toggleCollapsed);
@@ -58,6 +103,23 @@ Sidebar::Sidebar(ThemeManager *themeManager, QWidget *parent)
     connect(m_themeManager, &ThemeManager::appearanceChanged, this,
             [this] { refreshLayout(false); });
     refreshLayout(false);
+}
+
+BrowseTree *Sidebar::browseTree(BrowseSection section) const
+{
+    return m_trees.value(section);
+}
+
+bool Sidebar::isSectionExpanded(BrowseSection section) const
+{
+    return m_treeExpanded.value(section);
+}
+
+void Sidebar::updateTreeVisibility()
+{
+    const bool collapsed = m_themeManager->minimalistUi() || isCollapsed();
+    for (auto it = m_trees.cbegin(); it != m_trees.cend(); ++it)
+        it.value()->setVisible(!m_settingsMode && !collapsed && m_treeExpanded.value(it.key()));
 }
 
 void Sidebar::toggleCollapsed()
@@ -101,6 +163,7 @@ void Sidebar::refreshLayout(bool animate)
                                               : QStringLiteral(":/icons/panel-left-close.svg"));
     for (AnimatedButton *button : findChildren<AnimatedButton *>())
         button->setIconOnly(collapsed);
+    updateTreeVisibility();
 
     const int target = collapsed ? 76 : 224;
     m_widthAnimation->stop();
@@ -120,12 +183,39 @@ void Sidebar::setCurrentPage(int index)
     else
         showSettingsNavigation();
 
+    for (BrowseTree *tree : m_trees)
+        tree->selectValue({});
     if (auto *button = m_navigationGroup->button(index))
         button->setChecked(true);
 }
 
-void Sidebar::addNavigation(const QString &label, const QString &icon, int index,
-                            bool checkable)
+void Sidebar::setActiveSection(BrowseSection section, const QString &itemValue)
+{
+    showMainNavigation();
+    // An album, tag or folder opened from elsewhere (e.g. the info panel) should
+    // show up in its list, not just light up the section button.
+    if (!itemValue.isEmpty())
+        expandSection(section);
+    for (auto it = m_trees.cbegin(); it != m_trees.cend(); ++it)
+        it.value()->selectValue(it.key() == section ? itemValue : QString());
+    if (auto *button = m_navigationGroup->button(sectionId(section)))
+        button->setChecked(true);
+}
+
+void Sidebar::expandSection(BrowseSection section)
+{
+    auto *button = qobject_cast<AnimatedButton *>(m_navigationGroup->button(sectionId(section)));
+    if (!m_trees.contains(section) || m_treeExpanded.value(section))
+        return;
+    if (button)
+        button->setExpanded(true);
+    m_treeExpanded.insert(section, true);
+    updateTreeVisibility();
+    emit sectionExpanded(section);
+}
+
+AnimatedButton *Sidebar::addNavigation(const QString &label, const QString &icon, int index,
+                                       bool checkable)
 {
     auto *button = new AnimatedButton(label, icon, m_themeManager, this);
     button->setCheckable(checkable);
@@ -133,9 +223,35 @@ void Sidebar::addNavigation(const QString &label, const QString &icon, int index
     if (checkable)
         m_navigationGroup->addButton(button, index);
     m_navigationLayout->addWidget(button);
-    connect(button, &QPushButton::clicked, this, [this, index] {
-        emit pageRequested(index);
+    if (index < kSectionIdBase) {
+        connect(button, &QPushButton::clicked, this, [this, index] {
+            emit pageRequested(index);
+        });
+    }
+    return button;
+}
+
+void Sidebar::addSectionNavigation(BrowseSection section, const QString &label,
+                                   const QString &icon)
+{
+    AnimatedButton *button = addNavigation(label, icon, sectionId(section));
+    // Opening a section also unfolds its list; only the chevron folds it again.
+    connect(button, &QPushButton::clicked, this, [this, section] {
+        expandSection(section);
+        emit sectionRequested(section);
     });
+    BrowseTree *tree = m_trees.value(section);
+    if (!tree)
+        return;
+    button->setExpandable(true);
+    button->setExpanded(m_treeExpanded.value(section));
+    connect(button, &AnimatedButton::expandToggled, this, [this, section](bool expanded) {
+        m_treeExpanded.insert(section, expanded);
+        updateTreeVisibility();
+        if (expanded)
+            emit sectionExpanded(section);
+    });
+    m_navigationLayout->addWidget(tree);
 }
 
 void Sidebar::clearNavigation()
@@ -150,7 +266,9 @@ void Sidebar::clearNavigation()
     while (auto *item = m_navigationLayout->takeAt(0)) {
         if (auto *widget = item->widget()) {
             widget->hide();
-            widget->deleteLater();
+            // Trees keep their loaded albums, tags and folders between rebuilds.
+            if (!qobject_cast<BrowseTree *>(widget))
+                widget->deleteLater();
         }
         delete item;
     }
@@ -168,10 +286,22 @@ void Sidebar::showMainNavigation()
                   QStringLiteral(":/icons/images.svg"), 0);
     addNavigation(tr("Explore"),
                   QStringLiteral(":/icons/layout-dashboard.svg"), 1);
+    addSectionNavigation(BrowseSection::People, tr("People"), QStringLiteral(":/icons/users.svg"));
+    addSectionNavigation(BrowseSection::Favorites, tr("Favorites"),
+                         QStringLiteral(":/icons/heart.svg"));
+    addSectionNavigation(BrowseSection::Archive, tr("Archive"),
+                         QStringLiteral(":/icons/archive.svg"));
+    addSectionNavigation(BrowseSection::Albums, tr("Albums"),
+                         QStringLiteral(":/icons/book-image.svg"));
+    addSectionNavigation(BrowseSection::Tags, tr("Tags"), QStringLiteral(":/icons/tag.svg"));
+    addSectionNavigation(BrowseSection::Folders, tr("Folders"),
+                         QStringLiteral(":/icons/folder.svg"));
+    addSectionNavigation(BrowseSection::Trash, tr("Trash"), QStringLiteral(":/icons/trash.svg"));
     addNavigation(tr("Settings"),
                   QStringLiteral(":/icons/settings.svg"), 2);
     if (auto *libraryButton = m_navigationGroup->button(0))
         libraryButton->setChecked(true);
+    updateTreeVisibility();
 }
 
 void Sidebar::showSettingsNavigation()
@@ -194,6 +324,7 @@ void Sidebar::showSettingsNavigation()
                   QStringLiteral(":/icons/star.svg"), 6);
     addNavigation(tr("Back"),
                   QStringLiteral(":/icons/arrow-left.svg"), 0, false);
+    updateTreeVisibility();
 }
 
 } // namespace Aurora

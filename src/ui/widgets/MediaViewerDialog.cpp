@@ -103,6 +103,12 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
             &MediaViewerDialog::placeRequested);
     connect(m_infoPanel, &AssetInfoPanel::dateRequested, this,
             &MediaViewerDialog::dateRequested);
+    connect(m_infoPanel, &AssetInfoPanel::albumRequested, this,
+            &MediaViewerDialog::albumRequested);
+    connect(m_infoPanel, &AssetInfoPanel::tagRequested, this,
+            &MediaViewerDialog::tagRequested);
+    connect(m_infoPanel, &AssetInfoPanel::folderRequested, this,
+            &MediaViewerDialog::folderRequested);
     connect(m_client, &ImmichClient::assetDetailsLoaded, this,
             [this](const ImmichAssetDetails &details) {
                 if (details.asset.id == m_asset.id && !details.asset.fileName.isEmpty())

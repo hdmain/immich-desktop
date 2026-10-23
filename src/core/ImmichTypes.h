@@ -37,6 +37,20 @@ struct ImmichPerson {
     bool hidden = false;
 };
 
+struct ImmichAlbum {
+    QString id;
+    QString name;
+    int assetCount = 0;
+    QString thumbnailAssetId;
+};
+
+struct ImmichTag {
+    QString id;
+    QString name;
+    QString path; // Full hierarchy, e.g. "Cars/BMW".
+    QString parentId;
+};
+
 struct ImmichAssetDetails {
     ImmichAsset asset;
     QDateTime localDateTime; // Wall-clock time where the photo was taken, held as UTC.
@@ -58,9 +72,10 @@ struct ImmichAssetDetails {
     QString state;
     QString country;
     QString description;
-    QString folder;
+    QString folder;     // For display: the part below the server's storage root.
+    QString folderPath; // Full server path, for opening the folder.
     QList<ImmichPerson> people;
-    QStringList tags;
+    QList<ImmichTag> tags;
     QString ownerId;
     QString ownerName;
     bool sharedByOtherUser = false;

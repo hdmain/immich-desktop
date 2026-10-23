@@ -77,7 +77,7 @@ Snap Store ships `amd64` and `arm64`.
 
 1. Install Immich Desktop from Snap, the Arch Linux AUR, or a [GitHub release](https://github.com/hdmain/immich-desktop/releases/latest).
 2. Open the app and go to **Settings → Immich Server**.
-3. Enter your Immich server URL and an API key with permissions such as `user.read`, `asset.read`, `asset.view`, `asset.upload`, `asset.download`, `asset.delete`, and `person.read` (add `album.read` to list a photo's albums in the info panel). Optionally set a **Local URL** for LAN use.
+3. Enter your Immich server URL and an API key with permissions such as `user.read`, `asset.read`, `asset.view`, `asset.upload`, `asset.download`, `asset.delete`, and `person.read`, plus optionally `album.read`, `tag.read` and `folder.read` for the Albums, Tags and Folders sections in the sidebar (`album.read` also lists a photo's albums in the info panel). Optionally set a **Local URL** for LAN use.
 4. Test the connection, save, then browse **Library** or **Explore**.
 5. (Optional) Open **Settings → Folder Sync**, choose folders with the system file picker (use **+** to add more), enable watching, and turn on **Upload only when Immich is available on the local network** if you only want uploads over LAN. Drop photos or videos into those folders; they appear in Library with sync status badges and upload when allowed. Each folder has its own Browse, Open folder, and Remove controls.
 

@@ -2072,6 +2072,9 @@ MediaViewerDialog *LibraryPage::openAsset(const ImmichAsset &asset)
     connect(viewer, &MediaViewerDialog::personRequested, this, &LibraryPage::personRequested);
     connect(viewer, &MediaViewerDialog::placeRequested, this, &LibraryPage::placeRequested);
     connect(viewer, &MediaViewerDialog::dateRequested, this, &LibraryPage::dateRequested);
+    connect(viewer, &MediaViewerDialog::albumRequested, this, &LibraryPage::albumRequested);
+    connect(viewer, &MediaViewerDialog::tagRequested, this, &LibraryPage::tagRequested);
+    connect(viewer, &MediaViewerDialog::folderRequested, this, &LibraryPage::folderRequested);
     viewer->show();
     return viewer;
 }

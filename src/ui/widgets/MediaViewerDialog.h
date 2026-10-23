@@ -38,6 +38,9 @@ signals:
     void personRequested(const Aurora::ImmichPerson &person);
     void placeRequested(const QString &city);
     void dateRequested(const QDate &date);
+    void albumRequested(const Aurora::ImmichAlbum &album);
+    void tagRequested(const Aurora::ImmichTag &tag);
+    void folderRequested(const QString &path, const QString &title);
 
 private:
     void setAsset(const ImmichAsset &asset, bool autoplay = false);
