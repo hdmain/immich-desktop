@@ -163,6 +163,8 @@ private:
     MediaViewerDialog *openAsset(const Aurora::ImmichAsset &asset, bool fromCollection);
     void setCollectionTileSize(int size);
     void applyIndexZoom();
+    void clearTrashView();
+    void updateCollectionSubtitle();
     void setCollectionHero(const QPixmap &thumb, bool personStyle);
     void scheduleCollectionLayout();
     void scheduleCollectionVisibility();
@@ -240,6 +242,9 @@ private:
     bool m_collectionCompactGrid = false;
     int m_collectionTileSize = 180;
     ZoomSlider *m_collectionZoomSlider = nullptr;
+    QPushButton *m_restoreAllButton = nullptr;
+    QPushButton *m_emptyTrashButton = nullptr;
+    int m_trashDays = 0;
 
     bool m_loadedOnce = false;
     bool m_loading = false;

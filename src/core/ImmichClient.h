@@ -83,6 +83,10 @@ public:
     void fetchAssetInfo(const QString &assetId);
     void fetchAssetDetails(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
+    void restoreFromTrash(const QStringList &assetIds);
+    void restoreAllFromTrash();
+    void emptyTrash();
+    void loadTrashDays();
     void createSharedLink(const QString &assetId, const QUuid &requestId, const QString &password = {});
     QUrl sharedLinkUrl(const QString &key) const;
     bool isUploading() const;
@@ -135,6 +139,10 @@ signals:
     void assetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                               const QString &contentType);
     void assetsDeleted(const QStringList &assetIds, bool permanent);
+    // assetIds is empty when everything in the trash was restored.
+    void assetsRestored(const QStringList &assetIds);
+    void trashEmptied();
+    void trashDaysLoaded(int days);
     void sharedLinkCreated(const QUuid &requestId, const QUrl &url);
     void sharedLinkFailed(const QUuid &requestId, const QString &message);
     void requestFailed(const QString &operation, const QString &message, bool willRetry = false);
@@ -174,6 +182,8 @@ private:
     void setActiveServerUrl(const QString &url, bool usingLocal);
     void finishConnectionTest();
     void requestAssetDetails(const QString &assetId);
+    void postTrashAction(const QString &path, const QJsonObject &body,
+                         std::function<void()> done);
     void fetchBrowseList(const QString &kind, const QUrl &url,
                          std::function<void(const QByteArray &)> handle);
     void setupNetworkMonitoring();

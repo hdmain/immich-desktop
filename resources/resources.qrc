@@ -41,6 +41,7 @@
         <file alias="icons/panel-left-open.svg">icons/panel-left-open.svg</file>
         <file alias="icons/play.svg">icons/play.svg</file>
         <file alias="icons/refresh-cw.svg">icons/refresh-cw.svg</file>
+        <file alias="icons/rotate-ccw.svg">icons/rotate-ccw.svg</file>
         <file alias="icons/settings.svg">icons/settings.svg</file>
         <file alias="icons/share.svg">icons/share.svg</file>
         <file alias="icons/server.svg">icons/server.svg</file>
@@ -86,6 +87,7 @@
         <file alias="icons/tabler/panel-left-open.svg">icons/tabler/panel-left-open.svg</file>
         <file alias="icons/tabler/play.svg">icons/tabler/play.svg</file>
         <file alias="icons/tabler/refresh-cw.svg">icons/tabler/refresh-cw.svg</file>
+        <file alias="icons/tabler/rotate-ccw.svg">icons/tabler/rotate-ccw.svg</file>
         <file alias="icons/tabler/save.svg">icons/tabler/save.svg</file>
         <file alias="icons/tabler/server.svg">icons/tabler/server.svg</file>
         <file alias="icons/tabler/settings.svg">icons/tabler/settings.svg</file>
@@ -132,6 +134,7 @@
         <file alias="icons/bootstrap/palette.svg">icons/bootstrap/palette.svg</file>
         <file alias="icons/bootstrap/play.svg">icons/bootstrap/play.svg</file>
         <file alias="icons/bootstrap/refresh-cw.svg">icons/bootstrap/refresh-cw.svg</file>
+        <file alias="icons/bootstrap/rotate-ccw.svg">icons/bootstrap/rotate-ccw.svg</file>
         <file alias="icons/bootstrap/save.svg">icons/bootstrap/save.svg</file>
         <file alias="icons/bootstrap/server.svg">icons/bootstrap/server.svg</file>
         <file alias="icons/bootstrap/settings.svg">icons/bootstrap/settings.svg</file>

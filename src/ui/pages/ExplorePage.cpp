@@ -17,6 +17,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLocale>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -284,6 +285,29 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     m_collectionZoomSlider = new ZoomSlider(collectionToolbar);
     m_collectionZoomSlider->setValue(m_collectionTileSize);
     m_collectionZoomSlider->setCompact(true);
+    m_restoreAllButton = new QPushButton(tr("Restore all"), collectionToolbar);
+    configureActionButton(m_restoreAllButton, QStringLiteral(":/icons/rotate-ccw.svg"));
+    m_emptyTrashButton = new QPushButton(tr("Empty trash"), collectionToolbar);
+    configureActionButton(m_emptyTrashButton, QStringLiteral(":/icons/circle-x.svg"));
+    for (QPushButton *button : {m_restoreAllButton, m_emptyTrashButton}) {
+        button->setCursor(Qt::PointingHandCursor);
+        button->hide();
+        collectionToolbarLayout->addWidget(button);
+    }
+    connect(m_restoreAllButton, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::question(this, tr("Restore all"),
+                                  tr("Restore everything in the trash to your library?")) ==
+            QMessageBox::Yes)
+            m_client->restoreAllFromTrash();
+    });
+    connect(m_emptyTrashButton, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::warning(this, tr("Empty trash"),
+                                 tr("Permanently delete everything in the trash? This can't "
+                                    "be undone."),
+                                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) ==
+            QMessageBox::Yes)
+            m_client->emptyTrash();
+    });
     collectionToolbarLayout->addWidget(m_collectionZoomSlider);
     connect(m_collectionZoomSlider, &ZoomSlider::valueChanged, this,
             &ExplorePage::setCollectionTileSize);
@@ -403,6 +427,21 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
                     m_indexSection == BrowseSection::Albums)
                     showIndex(BrowseSection::Albums);
             });
+    connect(m_client, &ImmichClient::trashDaysLoaded, this, [this](int days) {
+        m_trashDays = days;
+    });
+    connect(m_client, &ImmichClient::assetsRestored, this, [this](const QStringList &assetIds) {
+        if (m_collectionFilterKind != QStringLiteral("trash"))
+            return;
+        if (assetIds.isEmpty())
+            clearTrashView();
+        else
+            handleAssetsDeleted(assetIds);
+    });
+    connect(m_client, &ImmichClient::trashEmptied, this, [this] {
+        if (m_collectionFilterKind == QStringLiteral("trash"))
+            clearTrashView();
+    });
     connect(m_client, &ImmichClient::peopleLoaded, this,
             [this](const QList<ImmichPerson> &people) {
                 m_allPeople = people;
@@ -932,6 +971,7 @@ void ExplorePage::showSection(BrowseSection section)
         showLibraryView(QStringLiteral("archive"), section, tr("Archive"));
         break;
     case BrowseSection::Trash:
+        m_client->loadTrashDays();
         showLibraryView(QStringLiteral("trash"), section, tr("Trash"));
         break;
     }
@@ -1139,7 +1179,31 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     setCollectionHero(heroThumb, personStyle);
 
     m_collectionLoadMore->setVisible(false);
+    const bool trash = filterKind == QStringLiteral("trash");
+    m_restoreAllButton->setVisible(trash);
+    m_emptyTrashButton->setVisible(trash);
     setPage(Page::Collection);
+}
+
+void ExplorePage::updateCollectionSubtitle()
+{
+    if (m_collectionTiles.isEmpty()) {
+        m_collectionSubtitle->setText(m_collectionFilterKind == QStringLiteral("trash")
+                                          ? tr("Trash is empty")
+                                          : tr("Nothing here yet"));
+        return;
+    }
+    QString subtitle = tr("%n item(s)", nullptr, m_collectionTiles.size());
+    if (m_collectionFilterKind == QStringLiteral("trash") && m_trashDays > 0)
+        subtitle += tr(" · deleted permanently after %n day(s)", nullptr, m_trashDays);
+    m_collectionSubtitle->setText(subtitle);
+}
+
+void ExplorePage::clearTrashView()
+{
+    clearCollectionTimeline();
+    updateCollectionLoadMore({});
+    m_collectionSubtitle->setText(tr("Trash is empty"));
 }
 
 void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
@@ -1177,6 +1241,8 @@ void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
         return true;
     });
     populateSection(&m_recentSection, !m_recentSection.cards.isEmpty());
+    if (!m_collectionFilterKind.isEmpty())
+        updateCollectionSubtitle();
     scheduleCollectionLayout();
 }
 
@@ -1262,7 +1328,7 @@ void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &f
     }
 
     appendCollectionAssets(assets);
-    m_collectionSubtitle->setText(tr("%n item(s)", nullptr, m_collectionTiles.size()));
+    updateCollectionSubtitle();
     updateCollectionLoadMore(nextPage);
     scheduleCollectionLayout();
     scheduleCollectionVisibility();
@@ -1288,6 +1354,14 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         connect(tile, &MediaTile::shareRequested, this, [this](const ImmichAsset &asset) {
             (new ShareLinkDialog(m_client, asset, this))->show();
         });
+        connect(tile, &MediaTile::copyRequested, this, &ExplorePage::copyRequested);
+        connect(tile, &MediaTile::downloadRequested, this, &ExplorePage::downloadRequested);
+        connect(tile, &MediaTile::trashRequested, this, &ExplorePage::trashRequested);
+        connect(tile, &MediaTile::deleteRequested, this, &ExplorePage::deleteRequested);
+        connect(tile, &MediaTile::restoreRequested, this, [this](const ImmichAsset &asset) {
+            m_client->restoreFromTrash({asset.id});
+        });
+        tile->setTrashed(m_collectionFilterKind == QStringLiteral("trash"));
     }
 }
 
@@ -1511,6 +1585,11 @@ MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCol
     connect(viewer, &MediaViewerDialog::albumRequested, this, &ExplorePage::albumRequested);
     connect(viewer, &MediaViewerDialog::tagRequested, this, &ExplorePage::tagRequested);
     connect(viewer, &MediaViewerDialog::folderRequested, this, &ExplorePage::folderRequested);
+    if (fromCollection && m_collectionFilterKind == QStringLiteral("trash")) {
+        viewer->setTrashMode(true);
+        connect(viewer, &MediaViewerDialog::restoreRequested, this,
+                [this](const ImmichAsset &asset) { m_client->restoreFromTrash({asset.id}); });
+    }
     viewer->show();
     return viewer;
 }

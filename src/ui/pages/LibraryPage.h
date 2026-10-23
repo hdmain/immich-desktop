@@ -249,6 +249,7 @@ private:
     int m_flushedBucketCount = 0;
     QDate m_pendingScrollToDate;
     QDate m_pendingDay;
+    bool m_reloadOnShow = false;
 
     // Year grid state.
     QList<YearSummary> m_yearSummaries;

@@ -26,6 +26,8 @@ public:
     qreal aspectRatio() const;
     bool hasThumbnail() const;
     int thumbnailDimension() const;
+    // Trashed tiles offer Restore instead of Copy, Share and Move to trash.
+    void setTrashed(bool trashed);
     bool hasThumbnailError() const;
     void setThumbnail(const QPixmap &thumbnail);
     void setThumbnailError(const QString &message);
@@ -43,6 +45,7 @@ signals:
     void downloadRequested(const Aurora::ImmichAsset &asset);
     void shareRequested(const Aurora::ImmichAsset &asset);
     void infoRequested(const Aurora::ImmichAsset &asset);
+    void restoreRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
 
@@ -63,6 +66,7 @@ private:
     VideoHoverPreview *m_hoverPreview = nullptr;
     ImmichAsset m_asset;
     QPixmap m_thumbnail;
+    bool m_trashed = false;
     QPoint m_pressPos;
     qreal m_resolvedAspectRatio;
     QString m_error;

@@ -1936,6 +1936,66 @@ void ImmichClient::fetchAssetOriginal(const QString &assetId)
     });
 }
 
+void ImmichClient::restoreFromTrash(const QStringList &assetIds)
+{
+    QJsonArray ids;
+    for (const QString &id : assetIds) {
+        if (isValidImmichId(id))
+            ids.append(id);
+    }
+    if (ids.isEmpty())
+        return;
+    postTrashAction(QStringLiteral("/trash/restore/assets"), {{QStringLiteral("ids"), ids}},
+                    [this, assetIds] { emit assetsRestored(assetIds); });
+}
+
+void ImmichClient::restoreAllFromTrash()
+{
+    postTrashAction(QStringLiteral("/trash/restore"), {}, [this] { emit assetsRestored({}); });
+}
+
+void ImmichClient::emptyTrash()
+{
+    postTrashAction(QStringLiteral("/trash/empty"), {}, [this] { emit trashEmptied(); });
+}
+
+void ImmichClient::postTrashAction(const QString &path, const QJsonObject &body,
+                                   std::function<void()> done)
+{
+    if (!ensureConfigured(tr("Trash")))
+        return;
+    QNetworkRequest request = authenticatedRequest(apiUrl(path));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, done = std::move(done)] {
+        const QByteArray response = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError)
+            emit requestFailed(tr("Trash"), errorMessage(reply, response));
+        else
+            done();
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::loadTrashDays()
+{
+    if (!isConfigured())
+        return;
+    auto *reply = m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/server/config"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        if (reply->error() == QNetworkReply::NoError) {
+            const int days = QJsonDocument::fromJson(reply->readAll())
+                                 .object()
+                                 .value(QStringLiteral("trashDays"))
+                                 .toInt();
+            if (days > 0)
+                emit trashDaysLoaded(days);
+        }
+        reply->deleteLater();
+    });
+}
+
 void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
 {
     if (!ensureConfigured(tr("Delete")))
