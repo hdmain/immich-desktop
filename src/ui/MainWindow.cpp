@@ -251,10 +251,10 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::raiseToFront()
 {
+    // Only lift minimization; a fullscreen or maximized window keeps its state.
     if (isMinimized() || !isVisible())
         setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
     show();
-    showNormal();
     raise();
     activateWindow();
 
