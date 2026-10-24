@@ -1,6 +1,7 @@
 #include "ui/pages/ConnectionPage.h"
 #include "ui/IconUtils.h"
 
+#include "core/CustomHeaders.h"
 #include "core/ImmichClient.h"
 #include "core/TlsConfig.h"
 
@@ -28,6 +29,7 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     , m_serverUrl(new QLineEdit(this))
     , m_localServerUrl(new QLineEdit(this))
     , m_apiKey(new QLineEdit(this))
+    , m_enableCustomHeaders(new QCheckBox(tr("Enable custom HTTP headers"), this))
     , m_enableClientCert(new QCheckBox(tr("Enable client certificate"), this))
     , m_certFormat(new QComboBox(this))
     , m_clientCertPath(new QLineEdit(this))
@@ -84,6 +86,7 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     m_apiKey->setEchoMode(QLineEdit::Password);
     m_apiKey->setClearButtonEnabled(true);
 
+    m_enableCustomHeaders->setChecked(!current.customHeaders.isEmpty());
     m_enableClientCert->setChecked(current.hasClientCert());
     m_certFormat->addItem(tr("PKCS#12 (.p12/.pfx)"));
     m_certFormat->addItem(tr("PEM certificate + key"));
@@ -139,6 +142,55 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     form->addRow(tr("Immich URL"), m_serverUrl);
     form->addRow(tr("Local URL"), m_localServerUrl);
     form->addRow(tr("API Key"), m_apiKey);
+
+    form->addRow(QString(), m_enableCustomHeaders);
+
+    m_headerFields = new QWidget(card);
+    auto *headersSectionLayout = new QVBoxLayout(m_headerFields);
+    headersSectionLayout->setContentsMargins(0, 0, 0, 0);
+    headersSectionLayout->setSpacing(8);
+
+    auto *headersHint = new QLabel(
+        tr("Sent with every request to your Immich server, including the local URL "
+           "and video playback, but not to third-party CDN addresses. Values are "
+           "stored locally in this app's plaintext settings file."),
+        m_headerFields);
+    headersHint->setProperty("subheading", true);
+    headersHint->setWordWrap(true);
+
+    m_headerRowsLayout = new QVBoxLayout;
+    m_headerRowsLayout->setContentsMargins(0, 0, 0, 0);
+    m_headerRowsLayout->setSpacing(8);
+
+    auto *addHeader = new QPushButton(tr("Add header"), m_headerFields);
+    configureActionButton(addHeader, QStringLiteral(":/ui/plus.svg"));
+    addHeader->setCursor(Qt::PointingHandCursor);
+
+    headersSectionLayout->addWidget(headersHint);
+    headersSectionLayout->addLayout(m_headerRowsLayout);
+    auto *addHeaderRowLayout = new QHBoxLayout;
+    addHeaderRowLayout->addWidget(addHeader);
+    addHeaderRowLayout->addStretch();
+    headersSectionLayout->addLayout(addHeaderRowLayout);
+    form->addRow(m_headerFields);
+
+    if (current.customHeaders.isEmpty()) {
+        addHeaderRow();
+    } else {
+        for (const auto &header : current.customHeaders)
+            addHeaderRow(header.first, header.second);
+    }
+
+    connect(addHeader, &QPushButton::clicked, this, [this] {
+        this->addHeaderRow();
+        if (!m_headerRows.isEmpty())
+            m_headerRows.last().first->setFocus();
+    });
+
+    connect(m_enableCustomHeaders, &QCheckBox::toggled, this,
+            &ConnectionPage::updateHeaderVisibility);
+    updateHeaderVisibility();
+
     form->addRow(QString(), m_enableClientCert);
 
     m_clientCertFields = new QWidget(card);
@@ -209,6 +261,67 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
             this, &ConnectionPage::showActiveEndpoint);
 }
 
+void ConnectionPage::addHeaderRow(const QString &name, const QString &value)
+{
+    auto *row = new QWidget(this);
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+
+    auto *nameEdit = new QLineEdit(name, row);
+    nameEdit->setPlaceholderText(QStringLiteral("X-Custom-Header"));
+    nameEdit->setAccessibleName(tr("Header name"));
+    nameEdit->setClearButtonEnabled(true);
+
+    auto *valueEdit = new QLineEdit(value, row);
+    valueEdit->setPlaceholderText(tr("value"));
+    valueEdit->setAccessibleName(tr("Header value"));
+    valueEdit->setClearButtonEnabled(true);
+
+    auto *remove = new QPushButton(row);
+    remove->setObjectName(QStringLiteral("removeHeaderButton"));
+    configureActionButton(remove, QStringLiteral(":/icons/trash.svg"));
+    remove->setCursor(Qt::PointingHandCursor);
+    remove->setToolTip(tr("Remove header"));
+    remove->setAccessibleName(tr("Remove header"));
+
+    layout->addWidget(nameEdit, 2);
+    layout->addWidget(valueEdit, 3);
+    layout->addWidget(remove);
+    m_headerRowsLayout->addWidget(row);
+    m_headerRows.append(qMakePair(nameEdit, valueEdit));
+
+    connect(nameEdit, &QLineEdit::returnPressed, this, &ConnectionPage::saveAndTest);
+    connect(valueEdit, &QLineEdit::returnPressed, this, &ConnectionPage::saveAndTest);
+    connect(remove, &QPushButton::clicked, this, [this, row, nameEdit, valueEdit] {
+        for (qsizetype i = 0; i < m_headerRows.size(); ++i) {
+            if (m_headerRows.at(i).first == nameEdit &&
+                m_headerRows.at(i).second == valueEdit) {
+                m_headerRows.removeAt(i);
+                break;
+            }
+        }
+        m_headerRowsLayout->removeWidget(row);
+        row->hide();
+        row->deleteLater();
+        if (m_headerRows.isEmpty())
+            addHeaderRow();
+    });
+}
+
+QList<QPair<QString, QString>> ConnectionPage::headerRows() const
+{
+    QList<QPair<QString, QString>> headers;
+    headers.reserve(m_headerRows.size());
+    for (const auto &row : m_headerRows) {
+        // Keep fully empty rows so validationError() reports the row number
+        // the user sees; normalize() drops them before persisting.
+        headers.append(qMakePair(row.first->text().trimmed(),
+                                 row.second->text().trimmed()));
+    }
+    return headers;
+}
+
 void ConnectionPage::saveAndTest()
 {
     QUrl url = QUrl::fromUserInput(m_serverUrl->text().trimmed());
@@ -253,11 +366,26 @@ void ConnectionPage::saveAndTest()
         m_localServerUrl->setText(settings.localServerUrl);
     }
 
+    if (m_enableCustomHeaders->isChecked()) {
+        const auto headers = headerRows();
+        const QString headerError = CustomHeaders::validationError(headers);
+        if (!headerError.isEmpty()) {
+            m_status->setText(headerError);
+            return;
+        }
+        settings.customHeaders = CustomHeaders::normalize(headers);
+    }
+
     m_serverUrl->setText(settings.serverUrl);
     m_client->setConnection(settings);
     m_saveButton->setEnabled(false);
     m_status->setText(tr("Testing connection…"));
     m_client->testConnection();
+}
+
+void ConnectionPage::updateHeaderVisibility()
+{
+    m_headerFields->setVisible(m_enableCustomHeaders->isChecked());
 }
 
 void ConnectionPage::updateClientCertVisibility()

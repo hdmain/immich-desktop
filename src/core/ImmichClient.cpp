@@ -1,5 +1,6 @@
 #include "core/ImmichClient.h"
 
+#include "core/CustomHeaders.h"
 #include "core/TlsConfig.h"
 #include "core/VideoStreamServer.h"
 
@@ -385,10 +386,12 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
     normalized.serverUrl = normalizeServerUrl(normalized.serverUrl);
     normalized.localServerUrl = normalizeServerUrl(normalized.localServerUrl);
     normalized.apiKey = normalized.apiKey.trimmed();
+    normalized.customHeaders = CustomHeaders::normalize(normalized.customHeaders);
 
     const bool changed = normalized.serverUrl != m_connection.serverUrl ||
                          normalized.localServerUrl != m_connection.localServerUrl ||
-                         normalized.apiKey != m_connection.apiKey;
+                         normalized.apiKey != m_connection.apiKey ||
+                         normalized.customHeaders != m_connection.customHeaders;
     m_connection = normalized;
     if (persist)
         m_store.saveImmichConnection(m_connection);
@@ -506,6 +509,7 @@ void ImmichClient::probeEndpoints()
                          QNetworkRequest::SameOriginRedirectPolicy);
     // Local probe targets the LAN endpoint, which never uses the client cert.
     request.setSslConfiguration(QSslConfiguration::defaultConfiguration());
+    CustomHeaders::applyTo(request, m_connection.customHeaders);
 
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this,
@@ -556,6 +560,7 @@ void ImmichClient::probeReachability()
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::SameOriginRedirectPolicy);
     request.setSslConfiguration(sslConfigForActiveEndpoint());
+    CustomHeaders::applyTo(request, m_connection.customHeaders);
 
     auto *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
@@ -593,7 +598,9 @@ void ImmichClient::ensureStreamServer()
     apiBase.setPath(basePath);
     apiBase.setQuery(QString());
     apiBase.setFragment({});
-    m_streamServer->setCredentials(apiBase, m_connection.apiKey, sslConfigForActiveEndpoint());
+    m_streamServer->setCredentials(apiBase, m_connection.apiKey,
+                                   sslConfigForActiveEndpoint(),
+                                   m_connection.customHeaders);
 }
 
 QUrl ImmichClient::videoStreamUrl(const QString &assetId)
@@ -623,6 +630,7 @@ QNetworkRequest ImmichClient::authenticatedRequest(const QUrl &url) const
                         QNetworkRequest::SameOriginRedirectPolicy);
     result.setTransferTimeout(30000);
     result.setSslConfiguration(sslConfigForActiveEndpoint());
+    CustomHeaders::applyTo(result, m_connection.customHeaders);
     return result;
 }
 
@@ -2006,6 +2014,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
                                  QNetworkRequest::SameOriginRedirectPolicy);
             request.setTransferTimeout(15000);
             request.setSslConfiguration(sslConfig);
+            CustomHeaders::applyTo(request, connection.customHeaders);
             QNetworkReply *reply = network.get(request);
             constexpr qsizetype maximumImageBytes = 32 * 1024 * 1024;
             QByteArray body;

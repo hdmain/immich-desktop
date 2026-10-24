@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QList>
+#include <QPair>
 #include <QWidget>
 
 class QCheckBox;
@@ -7,6 +9,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QVBoxLayout;
 
 namespace Aurora {
 
@@ -25,11 +28,16 @@ private slots:
 
 private:
     void updateClientCertVisibility();
+    void updateHeaderVisibility();
+    void addHeaderRow(const QString &name = {}, const QString &value = {});
+    QList<QPair<QString, QString>> headerRows() const;
 
     ImmichClient *m_client;
     QLineEdit *m_serverUrl;
     QLineEdit *m_localServerUrl;
     QLineEdit *m_apiKey;
+    QCheckBox *m_enableCustomHeaders;
+    QWidget *m_headerFields = nullptr;
     QCheckBox *m_enableClientCert;
     QWidget *m_clientCertFields = nullptr;
     QComboBox *m_certFormat;
@@ -42,6 +50,8 @@ private:
     QCheckBox *m_rememberKeyPassword;
     QLabel *m_status;
     QPushButton *m_saveButton;
+    QVBoxLayout *m_headerRowsLayout = nullptr;
+    QList<QPair<QLineEdit *, QLineEdit *>> m_headerRows;
 };
 
 } // namespace Aurora

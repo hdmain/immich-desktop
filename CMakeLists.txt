@@ -36,6 +36,8 @@ set(IMMICH_SOURCES
     src/main.cpp
     src/core/AppSettings.cpp
     src/core/AppSettings.h
+    src/core/CustomHeaders.cpp
+    src/core/CustomHeaders.h
     src/core/AutoStart.cpp
     src/core/AutoStart.h
     src/core/FolderSyncService.cpp

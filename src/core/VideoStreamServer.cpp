@@ -1,5 +1,7 @@
 #include "core/VideoStreamServer.h"
 
+#include "core/CustomHeaders.h"
+
 #include <QHostAddress>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -71,12 +73,15 @@ bool VideoStreamServer::start()
     return m_server->listen(QHostAddress::LocalHost, 0);
 }
 
-void VideoStreamServer::setCredentials(const QUrl &apiBaseUrl, const QString &apiKey,
-                                       const QSslConfiguration &sslConfig)
+void VideoStreamServer::setCredentials(
+    const QUrl &apiBaseUrl, const QString &apiKey,
+    const QSslConfiguration &sslConfig,
+    const QList<QPair<QString, QString>> &customHeaders)
 {
     m_apiBaseUrl = apiBaseUrl;
     m_apiKey = apiKey;
     m_sslConfig = sslConfig;
+    m_customHeaders = customHeaders;
 }
 
 QUrl VideoStreamServer::streamUrl(const QString &assetId) const
@@ -200,7 +205,13 @@ void VideoStreamServer::serveRequest(QTcpSocket *client, const QByteArray &reque
 
 bool VideoStreamServer::isOriginHost(const QUrl &url, const QUrl &apiBase)
 {
-    return url.scheme() == QStringLiteral("https") && url.host() == apiBase.host();
+    return url.scheme() == QStringLiteral("https") && isApiHost(url, apiBase);
+}
+
+bool VideoStreamServer::isApiHost(const QUrl &url, const QUrl &apiBase)
+{
+    return !apiBase.host().isEmpty() &&
+           url.host().compare(apiBase.host(), Qt::CaseInsensitive) == 0;
 }
 
 void VideoStreamServer::startUpstream(QTcpSocket *client, const QUrl &url,
@@ -218,10 +229,15 @@ void VideoStreamServer::startUpstream(QTcpSocket *client, const QUrl &url,
     upstream.setRawHeader("Accept", "*/*");
     // Apply the mTLS/custom-CA config to the Immich origin only; CDN/S3
     // redirect hops below have a different host and keep default TLS.
-    if (isOriginHost(url, m_apiBaseUrl))
+    const bool origin = isOriginHost(url, m_apiBaseUrl);
+    if (origin)
         upstream.setSslConfiguration(m_sslConfig);
     if (sendApiKey && !m_apiKey.isEmpty())
         upstream.setRawHeader("x-api-key", m_apiKey.toUtf8());
+    // Custom headers belong to the Immich host even when it is plain HTTP
+    // (for example a LAN Local URL); CDN/S3 redirect hops use another host.
+    if (isApiHost(url, m_apiBaseUrl))
+        CustomHeaders::applyTo(upstream, m_customHeaders);
     if (!rangeHeader.isEmpty())
         upstream.setRawHeader("Range", rangeHeader);
     // Follow Immich → CDN/S3 ourselves so we can drop the API key on the

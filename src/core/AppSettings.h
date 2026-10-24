@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/CustomHeaders.h"
 #include "core/Theme.h"
 #include "core/TlsConfig.h"
 
@@ -27,6 +28,7 @@ struct ImmichConnectionSettings {
     QString serverUrl;
     QString localServerUrl;
     QString apiKey;
+    CustomHeaders::HeaderList customHeaders;
 
     TlsCertFormat certFormat = TlsCertFormat::Pkcs12;
     QString clientCertPath;

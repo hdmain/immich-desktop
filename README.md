@@ -94,6 +94,14 @@ chmod +x immich-desktop-x86_64.AppImage   # or immich-desktop-aarch64.AppImage
 
 If your Immich server is behind an mTLS reverse proxy, enable **Client certificate** in **Settings → Immich Server**. The app supports **PKCS#12** (`.p12` / `.pfx`) or **separate PEM certificate + PEM private key**, plus an optional custom CA. The key password can be remembered or prompted when needed. Client certificates apply to the remote server URL only; the optional Local URL connects without them.
 
+### Custom HTTP headers
+
+If a reverse proxy in front of Immich requires extra headers, turn on **Enable custom HTTP headers** under **Settings → Immich Server**. Click **Add header**, enter the name and value, then save. Each header is sent with every request to your Immich server, including requests to the optional Local URL and those made for video playback. They are not sent to third-party CDN or S3 addresses that Immich redirects to. The following header names are reserved by the app and cannot be overridden: `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Range`, and `x-api-key`. Values are stored locally in the app's plaintext settings file.
+
+The same headers are used for both URLs, so do not store secrets here if your Local URL is plain HTTP.
+
+For example, for Cloudflare Access add `CF-Access-Client-Id` and `CF-Access-Client-Secret` with the values from your service token.
+
 ## Roadmap
 
 Plans can shift, track progress and ideas in
@@ -106,6 +114,7 @@ Plans can shift, track progress and ideas in
 - Explore: people and places as in-page galleries (Library-style person/place views)
 - Folder Sync: multiple watched local folders, LAN-only upload option, unsaved/saving/error badges in Library
 - Share links with optional password; mTLS client certificates for reverse proxies
+- Custom HTTP headers for reverse-proxy authentication (e.g. Cloudflare Access)
 - Video streaming player and hover preview
 - Offline browsing via local disk cache + queued uploads when offline
 - Themes (light / dark / custom), collapsible sidebar, system tray, autostart, single-instance

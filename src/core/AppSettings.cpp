@@ -139,6 +139,8 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
     result.serverUrl = m_settings.value(QStringLiteral("immich/serverUrl")).toString();
     result.localServerUrl =
         m_settings.value(QStringLiteral("immich/localServerUrl")).toString();
+    result.customHeaders = CustomHeaders::deserialize(
+        m_settings.value(QStringLiteral("immich/customHeaders")).toString());
     const QString storedKey =
         m_settings.value(QStringLiteral("immich/apiKey")).toString();
     result.apiKey = unprotectSecret(storedKey);
@@ -174,6 +176,9 @@ void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connectio
     const QString apiKey = connection.apiKey.trimmed();
     const QString protectedKey = protectSecret(apiKey);
     m_settings.setValue(QStringLiteral("immich/apiKey"), protectedKey);
+    m_settings.setValue(
+        QStringLiteral("immich/customHeaders"),
+        CustomHeaders::serialize(CustomHeaders::normalize(connection.customHeaders)));
 
     m_settings.setValue(QStringLiteral("immich/certFormat"), static_cast<int>(connection.certFormat));
     m_settings.setValue(QStringLiteral("immich/clientCertPath"), connection.clientCertPath.trimmed());

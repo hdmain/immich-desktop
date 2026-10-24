@@ -231,6 +231,57 @@ private slots:
         QVERIFY(!VideoStreamServer::isOriginHost(
             QUrl(QStringLiteral("http://immich.example.com/api")), api));
     }
+
+    // --- API host-match: custom headers follow the Immich host even over plain
+    // HTTP, but must never reach a CDN/S3 redirect hop (spec Verification gate a). ---
+
+    void apiHost_sameHostHttp_matched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("http://immich.example.com/api/assets/x")), api));
+    }
+
+    void apiHost_sameHostHttps_matched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://immich.example.com/api/x")), api));
+    }
+
+    void apiHost_mixedCase_matched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://IMMICH.Example.COM/x")), api));
+    }
+
+    void apiHost_cdnHost_notMatched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(!VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://s3.amazonaws.com/bucket/object")), api));
+    }
+
+    void apiHost_suffixHost_notMatched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(!VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://immich.example.com.evil.com/x")), api));
+    }
+
+    void apiHost_userInfoTrick_notMatched()
+    {
+        const QUrl api(QStringLiteral("https://immich.example.com"));
+        QVERIFY(!VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://immich.example.com@evil.com/x")), api));
+    }
+
+    void apiHost_emptyBase_notMatched()
+    {
+        QVERIFY(!VideoStreamServer::isApiHost(
+            QUrl(QStringLiteral("https://immich.example.com/x")), QUrl()));
+    }
 };
 
 QTEST_MAIN(TlsConfigTest)
