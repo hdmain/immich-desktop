@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "sourceRevision": "23dee6f7173391afa5e29aab2d3e8a7627474fc9",
+  "catalogs": {
+    "de": {
+      "sha256": "6aec096183cd30419d7a817c26c756d554e3af1d6bfed256f2d096b67b889ba9",
+      "size": 16551
+    },
+    "en": {
+      "sha256": "bfafdae59289fcd25c98417e0648b74c5fe2a282df0f1d21f1161324bad52d7c",
+      "size": 77406
+    },
+    "fr": {
+      "sha256": "cecbfb36aa6d4693d7b6fcfa93c60e422bf195d1dea60378f5306eb6dcfd52f6",
+      "size": 16769
+    }
+  }
+}
