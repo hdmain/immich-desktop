@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceRevision": "23dee6f7173391afa5e29aab2d3e8a7627474fc9",
+  "sourceRevision": "fbe1f6795e1472c29ed81f52a76db22736ccc175",
   "catalogs": {
     "de": {
       "sha256": "6aec096183cd30419d7a817c26c756d554e3af1d6bfed256f2d096b67b889ba9",
@@ -13,6 +13,10 @@
     "fr": {
       "sha256": "cecbfb36aa6d4693d7b6fcfa93c60e422bf195d1dea60378f5306eb6dcfd52f6",
       "size": 16769
+    },
+    "pl": {
+      "sha256": "8ea74e6758e9b06e14ed11e64f44d90d4f7963c820a9fe367259363b1bb0398b",
+      "size": 84917
     }
   }
 }
