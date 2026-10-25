@@ -10,7 +10,10 @@ enum class ColorRole {
     Background,
     Panel,
     Button,
-    Accent
+    Accent,
+    Text,
+    MutedText,
+    Border
 };
 
 class ThemeManager final : public QObject {

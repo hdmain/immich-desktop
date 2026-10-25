@@ -55,6 +55,9 @@ void ThemeManager::setCustomColor(ColorRole role, const QColor &color)
     case ColorRole::Panel: m_settings.customPalette.panel = color; break;
     case ColorRole::Button: m_settings.customPalette.button = color; break;
     case ColorRole::Accent: m_settings.customPalette.accent = color; break;
+    case ColorRole::Text: m_settings.customPalette.text = color; break;
+    case ColorRole::MutedText: m_settings.customPalette.mutedText = color; break;
+    case ColorRole::Border: m_settings.customPalette.border = color; break;
     }
     m_settings.preset = ThemePreset::Custom;
     refresh();

@@ -179,14 +179,16 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, QWidget *parent)
         content, &paletteLayout);
     auto *colorGrid = new QGridLayout;
     colorGrid->setSpacing(10);
-    colorGrid->addWidget(new ColorButton(tr("Background"), ColorRole::Background,
-                                         themeManager, paletteCard), 0, 0);
-    colorGrid->addWidget(new ColorButton(tr("Panels"), ColorRole::Panel,
-                                         themeManager, paletteCard), 0, 1);
-    colorGrid->addWidget(new ColorButton(tr("Buttons"), ColorRole::Button,
-                                         themeManager, paletteCard), 1, 0);
-    colorGrid->addWidget(new ColorButton(tr("Accent"), ColorRole::Accent,
-                                         themeManager, paletteCard), 1, 1);
+    const QList<QPair<QString, ColorRole>> colors = {
+        {tr("Background"), ColorRole::Background}, {tr("Panels"), ColorRole::Panel},
+        {tr("Buttons"), ColorRole::Button},        {tr("Borders"), ColorRole::Border},
+        {tr("Text"), ColorRole::Text},             {tr("Muted text"), ColorRole::MutedText},
+        {tr("Accent"), ColorRole::Accent}};
+    for (int i = 0; i < colors.size(); ++i) {
+        colorGrid->addWidget(new ColorButton(colors.at(i).first, colors.at(i).second,
+                                             themeManager, paletteCard),
+                             i / 2, i % 2);
+    }
     colorGrid->setColumnStretch(0, 1);
     colorGrid->setColumnStretch(1, 1);
     paletteLayout->addLayout(colorGrid);

@@ -46,6 +46,9 @@ QColor ColorButton::roleColor() const
     case ColorRole::Panel: return p.panel;
     case ColorRole::Button: return p.button;
     case ColorRole::Accent: return p.accent;
+    case ColorRole::Text: return p.text;
+    case ColorRole::MutedText: return p.mutedText;
+    case ColorRole::Border: return p.border;
     }
     return {};
 }
