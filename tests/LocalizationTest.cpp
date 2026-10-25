@@ -14,6 +14,7 @@ private slots:
         QVERIFY(languages.contains(QStringLiteral("de")));
         QVERIFY(languages.contains(QStringLiteral("fr")));
         QVERIFY(languages.contains(QStringLiteral("pl")));
+        QVERIFY(languages.contains(QStringLiteral("zh_CN")));
     }
 
     void selection_data()
@@ -42,6 +43,10 @@ private slots:
             << QString("pl") << QString("Biblioteka");
         QTest::newRow("Polish override") << QString("pl") << QStringList{"en-US"}
             << QString("pl") << QString("Biblioteka");
+        QTest::newRow("Chinese system") << QString() << QStringList{"zh-CN", "en"}
+            << QString("zh_CN") << QString("媒体库");
+        QTest::newRow("Chinese override") << QString("zh_CN") << QStringList{"en-US"}
+            << QString("zh_CN") << QString("媒体库");
     }
 
     void selection()

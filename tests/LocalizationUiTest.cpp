@@ -41,7 +41,7 @@ private slots:
         host.window()->showAppearanceSettings();
         host.window()->show();
 
-        for (const auto &language : {QStringLiteral("de"), QStringLiteral("fr"), QStringLiteral("pl"), QStringLiteral("en")}) {
+        for (const auto &language : {QStringLiteral("de"), QStringLiteral("fr"), QStringLiteral("pl"), QStringLiteral("zh_CN"), QStringLiteral("en")}) {
             QPointer<Aurora::MainWindow> oldWindow(host.window());
             auto *combo = host.window()->findChild<QComboBox *>(QStringLiteral("languageCombo"));
             QVERIFY(combo);
@@ -60,14 +60,16 @@ private slots:
             QTRY_VERIFY(appearance->isVisible());
             const QString expected = language == QStringLiteral("de") ? QStringLiteral("Darstellung")
                 : language == QStringLiteral("fr") ? QStringLiteral("Apparence")
-                : language == QStringLiteral("pl") ? QStringLiteral("Wygląd") : QStringLiteral("Appearance");
+                : language == QStringLiteral("pl") ? QStringLiteral("Wygląd")
+                : language == QStringLiteral("zh_CN") ? QStringLiteral("外观") : QStringLiteral("Appearance");
             bool headingFound = false;
             for (const auto *label : appearance->findChildren<QLabel *>())
                 headingFound |= label->text() == expected;
             QVERIFY2(headingFound, qPrintable(expected));
             const QString upload = language == QStringLiteral("de") ? QStringLiteral("Hochladen")
                 : language == QStringLiteral("fr") ? QStringLiteral("Importer")
-                : language == QStringLiteral("pl") ? QStringLiteral("Wyślij") : QStringLiteral("Upload");
+                : language == QStringLiteral("pl") ? QStringLiteral("Wyślij")
+                : language == QStringLiteral("zh_CN") ? QStringLiteral("上传") : QStringLiteral("Upload");
             bool uploadFound = false;
             for (const auto *button : host.window()->findChildren<QPushButton *>())
                 uploadFound |= button->accessibleName() == upload && button->toolTip() == upload;
