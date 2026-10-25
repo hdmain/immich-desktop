@@ -31,7 +31,8 @@
 
 - **Library** - Immich-style timeline with day groups, Years view, zoomable grids (Ctrl+scroll), and progressive month loading
 - **Explore** - people, places, and recent media; open a person or place as an in-app Library-style gallery
-- **Viewer** - step through photos and videos with on-screen controls or arrow keys; optional info panel (date, camera, location, people, albums)
+- **Library sections** - People, Favorites, Archive, Albums, Tags, Folders, and Trash in the sidebar; albums, tags, and folders expand into lists, and the trash can restore or permanently delete
+- **Viewer** - step through photos and videos with on-screen controls or arrow keys; optional info panel (date, camera, location, people, albums, tags, folder) that links to those pages
 - **Search** - find photos and videos across your library
 - **Folder Sync** - watch multiple local folders and auto-upload new photos/videos to Immich (Windows, macOS, Linux); add another folder with **+**
   - Optional **local-network only** mode: upload only when your Immich Local URL is reachable
@@ -110,7 +111,8 @@ Plans can shift, track progress and ideas in
 ### Shipped
 
 - Library timeline with search, Years view, zoomable grids, progressive month loading, preview, trash, upload & download
-- Shared viewer with photo/video navigation and an info panel (people, places, albums, EXIF)
+- Shared viewer with photo/video navigation and an info panel (people, places, albums, tags, folder, EXIF)
+- Sidebar sections for people, favorites, archive, albums, tags, folders, and trash (view-only for now)
 - Explore: people and places as in-page galleries (Library-style person/place views)
 - Folder Sync: multiple watched local folders, LAN-only upload option, unsaved/saving/error badges in Library
 - Share links with optional password; mTLS client certificates for reverse proxies
@@ -122,7 +124,7 @@ Plans can shift, track progress and ideas in
 
 ### Near term
 
-- **Albums** - browse, create, add/remove assets, cover photos
+- **Albums & tags** - create albums and tags, add/remove assets, cover photos
 - **Bulk actions** - multi-select favorite, archive, download, trash, album assign
 - **Upload reliability** - pause/resume, per-file progress, clearer failure recovery
 - **Explore polish** - map improvements, people naming/merge hooks, better empty states
@@ -132,7 +134,7 @@ Plans can shift, track progress and ideas in
 
 - **Sharing** - album links, partner sharing, richer public URL workflows
 - **Memories & faces** - Immich memories feed and richer face/person management
-- **Smart library tools** - duplicates, archive views, advanced filters (type, camera, date)
+- **Smart library tools** - duplicates, advanced filters (type, camera, date)
 - **Notifications** - tray alerts for finished uploads and available updates
 - **Sync health** - richer Folder Sync history, last sync time, cache size controls
 
