@@ -81,4 +81,6 @@ add_test(NAME TranslationUpdaterTest COMMAND TranslationUpdaterTest)
 if(IMMICH_PYTHON)
     add_test(NAME PolishCatalogTest COMMAND "${IMMICH_PYTHON}" -X utf8
         "${CMAKE_CURRENT_SOURCE_DIR}/PolishCatalogTest.py")
+    add_test(NAME ChineseCatalogTest COMMAND "${IMMICH_PYTHON}" -X utf8
+        "${CMAKE_CURRENT_SOURCE_DIR}/ChineseCatalogTest.py")
 endif()
