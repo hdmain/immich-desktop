@@ -27,6 +27,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <algorithm>
 #include <memory>
 
 namespace Aurora {
@@ -108,7 +109,9 @@ ImmichAssetDetails assetDetailsFromObject(const QJsonObject &object)
     details.country = exif.value(QStringLiteral("country")).toString();
     details.description = exif.value(QStringLiteral("description")).toString();
 
-    details.folder = displayFolder(object.value(QStringLiteral("originalPath")).toString());
+    const QString originalPath = object.value(QStringLiteral("originalPath")).toString();
+    details.folder = displayFolder(originalPath);
+    details.folderPath = originalPath.left(qMax(0, originalPath.lastIndexOf(u'/')));
 
     for (const QJsonValue &value : object.value(QStringLiteral("people")).toArray()) {
         const QJsonObject person = value.toObject();
@@ -125,11 +128,14 @@ ImmichAssetDetails assetDetailsFromObject(const QJsonObject &object)
         owner.value(QStringLiteral("email")).toString());
 
     for (const QJsonValue &value : object.value(QStringLiteral("tags")).toArray()) {
-        const QJsonObject tag = value.toObject();
-        const QString name = tag.value(QStringLiteral("value")).toString(
-            tag.value(QStringLiteral("name")).toString());
-        if (!name.isEmpty())
-            details.tags.append(name);
+        const QJsonObject tagObject = value.toObject();
+        ImmichTag tag;
+        tag.id = tagObject.value(QStringLiteral("id")).toString();
+        tag.name = tagObject.value(QStringLiteral("name")).toString();
+        tag.path = tagObject.value(QStringLiteral("value")).toString(tag.name);
+        tag.parentId = tagObject.value(QStringLiteral("parentId")).toString();
+        if (!tag.id.isEmpty())
+            details.tags.append(tag);
     }
     return details;
 }
@@ -1074,10 +1080,154 @@ void ImmichClient::loadAssetsForCity(const QString &city, int page, int pageSize
     searchFilteredAssets(QStringLiteral("city"), city, page, pageSize);
 }
 
+void ImmichClient::loadAssetsForAlbum(const QString &albumId, int page, int pageSize)
+{
+    searchFilteredAssets(QStringLiteral("album"), albumId, page, pageSize);
+}
+
+void ImmichClient::loadAssetsForTag(const QString &tagId, int page, int pageSize)
+{
+    searchFilteredAssets(QStringLiteral("tag"), tagId, page, pageSize);
+}
+
+void ImmichClient::loadAssetsForFolder(const QString &path)
+{
+    QUrl url = apiUrl(QStringLiteral("/view/folder"));
+    url.setQuery(QUrlQuery{{QStringLiteral("path"), path}});
+    fetchBrowseList(QStringLiteral("folder"), url, [this, path](const QByteArray &body) {
+        QList<ImmichAsset> assets;
+        for (const QJsonValue &value : QJsonDocument::fromJson(body).array()) {
+            const ImmichAsset asset = assetFromObject(value.toObject());
+            if (!asset.id.isEmpty())
+                assets.append(asset);
+        }
+        std::sort(assets.begin(), assets.end(),
+                  [](const ImmichAsset &a, const ImmichAsset &b) { return a.takenAt > b.takenAt; });
+        emit filteredAssetsLoaded(QStringLiteral("folder"), path, assets, {});
+    });
+}
+
+void ImmichClient::loadCollectionAssets(const QString &kind, const QString &value, int page)
+{
+    if (kind == QStringLiteral("folder"))
+        loadAssetsForFolder(value);
+    else
+        searchFilteredAssets(kind, value, page, 80);
+}
+
+void ImmichClient::loadAlbums()
+{
+    fetchBrowseList(QStringLiteral("albums"), apiUrl(QStringLiteral("/albums")),
+                    [this](const QByteArray &body) {
+                        QList<ImmichAlbum> albums;
+                        for (const QJsonValue &value : QJsonDocument::fromJson(body).array()) {
+                            const QJsonObject object = value.toObject();
+                            ImmichAlbum album;
+                            album.id = object.value(QStringLiteral("id")).toString();
+                            album.name = object.value(QStringLiteral("albumName")).toString();
+                            album.assetCount = object.value(QStringLiteral("assetCount")).toInt();
+                            album.thumbnailAssetId =
+                                object.value(QStringLiteral("albumThumbnailAssetId")).toString();
+                            if (!album.id.isEmpty())
+                                albums.append(album);
+                        }
+                        std::sort(albums.begin(), albums.end(),
+                                  [](const ImmichAlbum &a, const ImmichAlbum &b) {
+                                      return QString::localeAwareCompare(a.name, b.name) < 0;
+                                  });
+                        emit albumsLoaded(albums);
+                    });
+}
+
+void ImmichClient::loadTags()
+{
+    fetchBrowseList(QStringLiteral("tags"), apiUrl(QStringLiteral("/tags")),
+                    [this](const QByteArray &body) {
+                        QList<ImmichTag> tags;
+                        for (const QJsonValue &value : QJsonDocument::fromJson(body).array()) {
+                            const QJsonObject object = value.toObject();
+                            ImmichTag tag;
+                            tag.id = object.value(QStringLiteral("id")).toString();
+                            tag.name = object.value(QStringLiteral("name")).toString();
+                            tag.path = object.value(QStringLiteral("value")).toString(tag.name);
+                            tag.parentId = object.value(QStringLiteral("parentId")).toString();
+                            if (!tag.id.isEmpty())
+                                tags.append(tag);
+                        }
+                        std::sort(tags.begin(), tags.end(),
+                                  [](const ImmichTag &a, const ImmichTag &b) {
+                                      return QString::localeAwareCompare(a.path, b.path) < 0;
+                                  });
+                        emit tagsLoaded(tags);
+                    });
+}
+
+void ImmichClient::loadFolderPaths()
+{
+    fetchBrowseList(QStringLiteral("folders"), apiUrl(QStringLiteral("/view/folder/unique-paths")),
+                    [this](const QByteArray &body) {
+                        QStringList paths;
+                        for (const QJsonValue &value : QJsonDocument::fromJson(body).array())
+                            paths.append(value.toString());
+                        paths.removeAll(QString());
+                        paths.sort();
+                        emit folderPathsLoaded(paths);
+                    });
+}
+
+void ImmichClient::loadPeople()
+{
+    QUrl url = apiUrl(QStringLiteral("/people"));
+    url.setQuery(QUrlQuery{{QStringLiteral("withHidden"), QStringLiteral("true")},
+                           {QStringLiteral("size"), QStringLiteral("1000")}});
+    fetchBrowseList(QStringLiteral("people"), url, [this](const QByteArray &body) {
+        QList<ImmichPerson> people;
+        const QJsonArray items =
+            QJsonDocument::fromJson(body).object().value(QStringLiteral("people")).toArray();
+        for (const QJsonValue &value : items) {
+            const QJsonObject object = value.toObject();
+            ImmichPerson person;
+            person.id = object.value(QStringLiteral("id")).toString();
+            person.name = object.value(QStringLiteral("name")).toString();
+            person.favorite = object.value(QStringLiteral("isFavorite")).toBool();
+            person.hidden = object.value(QStringLiteral("isHidden")).toBool();
+            if (!person.id.isEmpty())
+                people.append(person);
+        }
+        emit peopleLoaded(people);
+    });
+}
+
+void ImmichClient::fetchBrowseList(const QString &kind, const QUrl &url,
+                                   std::function<void(const QByteArray &)> handle)
+{
+    if (!isConfigured())
+        return;
+    QNetworkRequest request = authenticatedRequest(url);
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, kind, handle = std::move(handle)] {
+                const QByteArray body = reply->readAll();
+                if (reply->error() == QNetworkReply::NoError) {
+                    handle(body);
+                } else {
+                    const int status =
+                        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                    emit browseListFailed(kind, status == 403);
+                }
+                reply->deleteLater();
+            });
+}
+
 void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString &filterValue,
                                         int page, int pageSize)
 {
-    if (!ensureConfigured(tr("Load explore")) || filterValue.trimmed().isEmpty())
+    // Favorites, archive and trash are whole-library views without a value.
+    const bool needsValue = filterKind != QStringLiteral("favorites") &&
+                            filterKind != QStringLiteral("archive") &&
+                            filterKind != QStringLiteral("trash");
+    if (!ensureConfigured(tr("Load explore")) || (needsValue && filterValue.trimmed().isEmpty()))
         return;
 
     QJsonObject body;
@@ -1092,6 +1242,17 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
         body.insert(QStringLiteral("personIds"), personIds);
     } else if (filterKind == QStringLiteral("city")) {
         body.insert(QStringLiteral("city"), filterValue);
+    } else if (filterKind == QStringLiteral("album")) {
+        body.insert(QStringLiteral("albumIds"), QJsonArray{filterValue});
+    } else if (filterKind == QStringLiteral("tag")) {
+        body.insert(QStringLiteral("tagIds"), QJsonArray{filterValue});
+    } else if (filterKind == QStringLiteral("favorites")) {
+        body.insert(QStringLiteral("isFavorite"), true);
+    } else if (filterKind == QStringLiteral("archive")) {
+        body.insert(QStringLiteral("visibility"), QStringLiteral("archive"));
+    } else if (filterKind == QStringLiteral("trash")) {
+        body.insert(QStringLiteral("withDeleted"), true);
+        body.insert(QStringLiteral("trashedAfter"), QStringLiteral("1970-01-01T00:00:00.000Z"));
     } else {
         return;
     }
@@ -1677,14 +1838,19 @@ void ImmichClient::requestAssetDetails(const QString &assetId)
     connect(albumsReply, &QNetworkReply::finished, this, [this, albumsReply, assetId] {
         const QByteArray body = albumsReply->readAll();
         if (albumsReply->error() == QNetworkReply::NoError) {
-            QStringList names;
+            QList<ImmichAlbum> albums;
             for (const QJsonValue &value : QJsonDocument::fromJson(body).array()) {
-                const QString name =
-                    value.toObject().value(QStringLiteral("albumName")).toString();
-                if (!name.isEmpty())
-                    names.append(name);
+                const QJsonObject object = value.toObject();
+                ImmichAlbum album;
+                album.id = object.value(QStringLiteral("id")).toString();
+                album.name = object.value(QStringLiteral("albumName")).toString();
+                album.assetCount = object.value(QStringLiteral("assetCount")).toInt();
+                album.thumbnailAssetId =
+                    object.value(QStringLiteral("albumThumbnailAssetId")).toString();
+                if (!album.id.isEmpty())
+                    albums.append(album);
             }
-            emit assetAlbumsLoaded(assetId, names);
+            emit assetAlbumsLoaded(assetId, albums);
         } else {
             const int status =
                 albumsReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -1766,6 +1932,66 @@ void ImmichClient::fetchAssetOriginal(const QString &assetId)
                 .section(u';', 0, 0)
                 .trimmed();
         emit assetOriginalFetched(assetId, *body, contentType);
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::restoreFromTrash(const QStringList &assetIds)
+{
+    QJsonArray ids;
+    for (const QString &id : assetIds) {
+        if (isValidImmichId(id))
+            ids.append(id);
+    }
+    if (ids.isEmpty())
+        return;
+    postTrashAction(QStringLiteral("/trash/restore/assets"), {{QStringLiteral("ids"), ids}},
+                    [this, assetIds] { emit assetsRestored(assetIds); });
+}
+
+void ImmichClient::restoreAllFromTrash()
+{
+    postTrashAction(QStringLiteral("/trash/restore"), {}, [this] { emit assetsRestored({}); });
+}
+
+void ImmichClient::emptyTrash()
+{
+    postTrashAction(QStringLiteral("/trash/empty"), {}, [this] { emit trashEmptied(); });
+}
+
+void ImmichClient::postTrashAction(const QString &path, const QJsonObject &body,
+                                   std::function<void()> done)
+{
+    if (!ensureConfigured(tr("Trash")))
+        return;
+    QNetworkRequest request = authenticatedRequest(apiUrl(path));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, done = std::move(done)] {
+        const QByteArray response = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError)
+            emit requestFailed(tr("Trash"), errorMessage(reply, response));
+        else
+            done();
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::loadTrashDays()
+{
+    if (!isConfigured())
+        return;
+    auto *reply = m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/server/config"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        if (reply->error() == QNetworkReply::NoError) {
+            const int days = QJsonDocument::fromJson(reply->readAll())
+                                 .object()
+                                 .value(QStringLiteral("trashDays"))
+                                 .toInt();
+            if (days > 0)
+                emit trashDaysLoaded(days);
+        }
         reply->deleteLater();
     });
 }

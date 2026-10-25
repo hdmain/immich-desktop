@@ -55,6 +55,9 @@ signals:
     void personRequested(const Aurora::ImmichPerson &person);
     void placeRequested(const QString &city);
     void dateRequested(const QDate &date);
+    void albumRequested(const Aurora::ImmichAlbum &album);
+    void tagRequested(const Aurora::ImmichTag &tag);
+    void folderRequested(const QString &path, const QString &title);
 
 public slots:
     void showDay(const QDate &day);
@@ -246,6 +249,7 @@ private:
     int m_flushedBucketCount = 0;
     QDate m_pendingScrollToDate;
     QDate m_pendingDay;
+    bool m_reloadOnShow = false;
 
     // Year grid state.
     QList<YearSummary> m_yearSummaries;

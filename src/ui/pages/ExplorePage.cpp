@@ -1,8 +1,10 @@
 #include "ui/pages/ExplorePage.h"
 
 #include "core/AppSettings.h"
+#include "ui/FolderPaths.h"
 #include "ui/GridZoom.h"
 #include "ui/IconUtils.h"
+#include "ui/widgets/FlowLayout.h"
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ShareLinkDialog.h"
@@ -15,6 +17,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLocale>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -79,22 +82,61 @@ void ExploreCard::setCaption(const QString &text)
     m_caption->setText(text);
 }
 
+void ExploreCard::setTileSize(int size)
+{
+    if (m_style == Style::Person) {
+        // Face thumbnails are ~256px crops; growing past that only blurs them.
+        const int cap = qRound(256 / devicePixelRatioF());
+        const int diameter = qBound(64, qRound(size * 0.6), cap);
+        m_image->setFixedSize(diameter, diameter);
+        setFixedSize(diameter + 12, diameter + 40);
+    } else if (m_style == Style::Place) {
+        const int width = qMax(120, qRound(size * 0.95));
+        m_image->setFixedSize(width, qRound(width * 0.6));
+        setFixedSize(width, m_image->height() + 44);
+    }
+    showPixmap();
+}
+
+QSize ExploreCard::imageSize() const
+{
+    return m_image->size();
+}
+
 void ExploreCard::setPixmap(const QPixmap &pixmap)
 {
+    // A late small thumbnail must not replace a sharper cover loaded for zoom.
+    if (!pixmap.isNull() && !m_source.isNull() &&
+        qMax(pixmap.width(), pixmap.height()) < qMax(m_source.width(), m_source.height()))
+        return;
+    m_source = pixmap;
+    showPixmap();
+}
+
+void ExploreCard::showPixmap()
+{
+    const QPixmap &pixmap = m_source;
     if (pixmap.isNull()) {
         m_image->clear();
         m_image->setText(QStringLiteral("…"));
         return;
     }
 
+    const qreal ratio = devicePixelRatioF();
+    const QSize deviceSize = m_image->size() * ratio;
+    QPixmap shown;
     if (m_style == Style::Person) {
-        m_image->setPixmap(circularPixmap(pixmap, m_image->size()));
-        m_image->setStyleSheet(QStringLiteral(
-            "QLabel { background: transparent; border-radius: 48px; }"));
+        shown = circularPixmap(pixmap, deviceSize);
+        m_image->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
     } else {
-        m_image->setPixmap(pixmap.scaled(m_image->size(), Qt::KeepAspectRatioByExpanding,
-                                         Qt::FastTransformation));
+        const QPixmap scaled =
+            pixmap.scaled(deviceSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        shown = scaled.copy(QRect(QPoint((scaled.width() - deviceSize.width()) / 2,
+                                         (scaled.height() - deviceSize.height()) / 2),
+                                  deviceSize));
     }
+    shown.setDevicePixelRatio(ratio);
+    m_image->setPixmap(shown);
 }
 
 void ExploreCard::mouseReleaseEvent(QMouseEvent *event)
@@ -217,9 +259,6 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     collectionToolbarLayout->setContentsMargins(16, 12, 16, 12);
     collectionToolbarLayout->setSpacing(14);
 
-    m_collectionBack = new QPushButton(tr("← Explore"), collectionToolbar);
-    configureActionButton(m_collectionBack, QStringLiteral(":/icons/arrow-left.svg"));
-    m_collectionBack->setCursor(Qt::PointingHandCursor);
 
     m_collectionHero = new QLabel(collectionToolbar);
     m_collectionHero->setFixedSize(64, 64);
@@ -227,20 +266,48 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
 
     auto *collectionText = new QVBoxLayout;
     collectionText->setSpacing(2);
-    m_collectionTitle = new QLabel(collectionToolbar);
+    m_collectionTrail = new QWidget(collectionToolbar);
+    auto *trailLayout = new QHBoxLayout(m_collectionTrail);
+    trailLayout->setContentsMargins(0, 0, 0, 0);
+    trailLayout->setSpacing(8);
+    m_collectionTitle = new QLabel(m_collectionTrail);
     m_collectionTitle->setProperty("heading", true);
+    trailLayout->addWidget(m_collectionTitle);
+    trailLayout->addStretch(1);
     m_collectionSubtitle = new QLabel(collectionToolbar);
     m_collectionSubtitle->setProperty("subheading", true);
     m_collectionSubtitle->setWordWrap(true);
-    collectionText->addWidget(m_collectionTitle);
+    collectionText->addWidget(m_collectionTrail);
     collectionText->addWidget(m_collectionSubtitle);
 
-    collectionToolbarLayout->addWidget(m_collectionBack);
     collectionToolbarLayout->addWidget(m_collectionHero);
     collectionToolbarLayout->addLayout(collectionText, 1);
     m_collectionZoomSlider = new ZoomSlider(collectionToolbar);
     m_collectionZoomSlider->setValue(m_collectionTileSize);
     m_collectionZoomSlider->setCompact(true);
+    m_restoreAllButton = new QPushButton(tr("Restore all"), collectionToolbar);
+    configureActionButton(m_restoreAllButton, QStringLiteral(":/icons/rotate-ccw.svg"));
+    m_emptyTrashButton = new QPushButton(tr("Empty trash"), collectionToolbar);
+    configureActionButton(m_emptyTrashButton, QStringLiteral(":/icons/circle-x.svg"));
+    for (QPushButton *button : {m_restoreAllButton, m_emptyTrashButton}) {
+        button->setCursor(Qt::PointingHandCursor);
+        button->hide();
+        collectionToolbarLayout->addWidget(button);
+    }
+    connect(m_restoreAllButton, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::question(this, tr("Restore all"),
+                                  tr("Restore everything in the trash to your library?")) ==
+            QMessageBox::Yes)
+            m_client->restoreAllFromTrash();
+    });
+    connect(m_emptyTrashButton, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::warning(this, tr("Empty trash"),
+                                 tr("Permanently delete everything in the trash? This can't "
+                                    "be undone."),
+                                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) ==
+            QMessageBox::Yes)
+            m_client->emptyTrash();
+    });
     collectionToolbarLayout->addWidget(m_collectionZoomSlider);
     connect(m_collectionZoomSlider, &ZoomSlider::valueChanged, this,
             &ExplorePage::setCollectionTileSize);
@@ -282,15 +349,133 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     connect(m_collectionVisibilityTimer, &QTimer::timeout, this,
             &ExplorePage::updateVisibleCollectionThumbs);
 
+    m_collectionChips = new QWidget(m_collectionPage);
+    auto *chipsLayout = new FlowLayout(m_collectionChips, 8);
+    chipsLayout->setContentsMargins(16, 0, 16, 10);
+    m_collectionChips->hide();
+
     collectionRoot->addWidget(collectionToolbar);
+    collectionRoot->addWidget(m_collectionChips);
     collectionRoot->addWidget(m_collectionScroll, 1);
     collectionRoot->addWidget(m_collectionLoadMore);
 
+    // ---- Index (all albums, tags, folders or people) ----
+    m_indexPage = new QWidget;
+    auto *indexRoot = new QVBoxLayout(m_indexPage);
+    indexRoot->setContentsMargins(0, 0, 0, 0);
+    indexRoot->setSpacing(0);
+    auto *indexToolbar = new QWidget(m_indexPage);
+    indexToolbar->setObjectName(QStringLiteral("libraryToolbar"));
+    auto *indexToolbarLayout = new QHBoxLayout(indexToolbar);
+    indexToolbarLayout->setContentsMargins(16, 12, 16, 12);
+    auto *indexText = new QVBoxLayout;
+    indexText->setSpacing(2);
+    indexToolbarLayout->addLayout(indexText, 1);
+    auto *indexRefresh = new QPushButton(tr("Refresh"), indexToolbar);
+    configureActionButton(indexRefresh, QStringLiteral(":/icons/refresh-cw.svg"));
+    indexRefresh->setCursor(Qt::PointingHandCursor);
+    indexToolbarLayout->addWidget(indexRefresh);
+    connect(indexRefresh, &QPushButton::clicked, this, [this] {
+        if (m_indexSection == BrowseSection::People)
+            m_client->loadPeople();
+        else
+            emit listRefreshRequested(m_indexSection);
+    });
+    m_showHiddenPeople = new QPushButton(indexToolbar);
+    m_showHiddenPeople->setCheckable(true);
+    m_showHiddenPeople->setCursor(Qt::PointingHandCursor);
+    m_showHiddenPeople->hide();
+    indexToolbarLayout->addWidget(m_showHiddenPeople);
+    connect(m_showHiddenPeople, &QPushButton::toggled, this,
+            [this] { showIndex(BrowseSection::People); });
+    m_indexZoomSlider = new ZoomSlider(indexToolbar);
+    m_indexZoomSlider->setValue(m_collectionTileSize);
+    indexToolbarLayout->addWidget(m_indexZoomSlider);
+    connect(m_indexZoomSlider, &ZoomSlider::valueChanged, this,
+            &ExplorePage::setCollectionTileSize);
+    connect(m_indexZoomSlider, &ZoomSlider::stepRequested, this, [this](int steps) {
+        setCollectionTileSize(GridZoom::step(m_collectionTileSize, steps));
+    });
+    m_indexTitle = new QLabel(indexToolbar);
+    m_indexTitle->setProperty("heading", true);
+    m_indexSubtitle = new QLabel(indexToolbar);
+    m_indexSubtitle->setProperty("subheading", true);
+    indexText->addWidget(m_indexTitle);
+    indexText->addWidget(m_indexSubtitle);
+    m_indexHost = new QWidget;
+    auto *indexFlow = new FlowLayout(m_indexHost, 16);
+    indexFlow->setContentsMargins(16, 8, 16, 16);
+    m_indexScroll = new QScrollArea(m_indexPage);
+    m_indexScroll->setObjectName(QStringLiteral("libraryScroll"));
+    m_indexScroll->setWidget(m_indexHost);
+    m_indexScroll->setWidgetResizable(true);
+    m_indexScroll->setFrameShape(QFrame::NoFrame);
+    m_indexScroll->viewport()->installEventFilter(this);
+    indexRoot->addWidget(indexToolbar);
+    indexRoot->addWidget(m_indexScroll, 1);
+
     m_stack->addWidget(m_browsePage);
     m_stack->addWidget(m_collectionPage);
+    m_stack->addWidget(m_indexPage);
 
     connect(m_refreshButton, &QPushButton::clicked, this, &ExplorePage::refresh);
-    connect(m_collectionBack, &QPushButton::clicked, this, &ExplorePage::backToBrowse);
+    connect(m_client, &ImmichClient::albumsLoaded, this,
+            [this](const QList<ImmichAlbum> &albums) {
+                m_albums = albums;
+                m_loadedLists.insert(BrowseSection::Albums);
+                if (m_stack->currentIndex() == static_cast<int>(Page::Index) &&
+                    m_indexSection == BrowseSection::Albums)
+                    showIndex(BrowseSection::Albums);
+            });
+    connect(m_client, &ImmichClient::trashDaysLoaded, this, [this](int days) {
+        m_trashDays = days;
+    });
+    connect(m_client, &ImmichClient::assetsRestored, this, [this](const QStringList &assetIds) {
+        if (m_collectionFilterKind != QStringLiteral("trash"))
+            return;
+        if (assetIds.isEmpty())
+            clearTrashView();
+        else
+            handleAssetsDeleted(assetIds);
+    });
+    connect(m_client, &ImmichClient::trashEmptied, this, [this] {
+        if (m_collectionFilterKind == QStringLiteral("trash"))
+            clearTrashView();
+    });
+    connect(m_client, &ImmichClient::peopleLoaded, this,
+            [this](const QList<ImmichPerson> &people) {
+                m_allPeople = people;
+                m_loadedLists.insert(BrowseSection::People);
+                if (m_stack->currentIndex() == static_cast<int>(Page::Index) &&
+                    m_indexSection == BrowseSection::People)
+                    showIndex(BrowseSection::People);
+            });
+    connect(m_client, &ImmichClient::tagsLoaded, this, [this](const QList<ImmichTag> &tags) {
+        m_tags = tags;
+        m_loadedLists.insert(BrowseSection::Tags);
+        if (m_stack->currentIndex() == static_cast<int>(Page::Index) &&
+            m_indexSection == BrowseSection::Tags)
+            showIndex(BrowseSection::Tags);
+        // A tag opened from the info panel before the list arrived has no parents yet.
+        if (m_stack->currentIndex() == static_cast<int>(Page::Collection) &&
+            m_collectionFilterKind == QStringLiteral("tag")) {
+            for (const ImmichTag &tag : tags) {
+                if (tag.id == m_collectionFilterValue)
+                    showTagTrail(tag);
+            }
+        }
+    });
+    connect(m_client, &ImmichClient::folderPathsLoaded, this, [this](const QStringList &paths) {
+        m_folderPaths = paths;
+        m_loadedLists.insert(BrowseSection::Folders);
+        m_folderRoot = folderTreeRoot(paths);
+        if (m_stack->currentIndex() == static_cast<int>(Page::Index) &&
+            m_indexSection == BrowseSection::Folders)
+            showIndex(BrowseSection::Folders);
+        if (m_stack->currentIndex() == static_cast<int>(Page::Collection) &&
+            m_collectionFilterKind == QStringLiteral("folder"))
+            showFolderTrail(m_collectionFilterValue, m_collectionTitle->text());
+    });
     connect(m_collectionLoadMore, &QPushButton::clicked, this,
             &ExplorePage::requestCollectionNextPage);
 
@@ -300,9 +485,15 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
             &ExplorePage::showPersonThumbnail);
     connect(m_client, &ImmichClient::thumbnailLoaded, this, &ExplorePage::showAssetThumbnail);
     connect(m_client, &ImmichClient::requestFailed, this, &ExplorePage::showRequestError);
+    connect(m_client, &ImmichClient::browseListFailed, this, [this](const QString &kind, bool) {
+        if (kind == QStringLiteral("folder") &&
+            m_collectionFilterKind == QStringLiteral("folder") && m_collectionTiles.isEmpty())
+            m_collectionSubtitle->setText(tr("This folder couldn't be loaded."));
+    });
     connect(m_client, &ImmichClient::assetsDeleted, this,
             [this](const QStringList &assetIds, bool) { handleAssetsDeleted(assetIds); });
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
+        m_loadedLists.clear();
         m_refreshButton->setEnabled(configured);
         if (configured) {
             m_loadedOnce = false;
@@ -327,7 +518,7 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
         auto *zoomShortcut = new QShortcut(keys, this);
         zoomShortcut->setContext(Qt::WindowShortcut);
         connect(zoomShortcut, &QShortcut::activated, this, [this, steps] {
-            if (m_stack->currentIndex() != static_cast<int>(Page::Collection))
+            if (m_stack->currentIndex() == static_cast<int>(Page::Browse))
                 return;
             setCollectionTileSize(steps == 0 ? GridZoom::kDefault
                                              : GridZoom::step(m_collectionTileSize, steps));
@@ -349,12 +540,31 @@ void ExplorePage::setCollectionTileSize(int size)
         scrollBar->maximum() > 0 ? qreal(scrollBar->value()) / scrollBar->maximum() : 0.0;
     m_collectionTileSize = size;
     m_collectionZoomSlider->setValue(size);
+    m_indexZoomSlider->setValue(size);
     layoutCollection();
     scrollBar->setValue(qRound(position * scrollBar->maximum()));
+    applyIndexZoom();
 
     TimelineSettings timeline = AppSettings().loadTimeline();
     timeline.tileSize = size;
     AppSettings().saveTimeline(timeline);
+}
+
+void ExplorePage::applyIndexZoom()
+{
+    if (m_stack->currentIndex() != static_cast<int>(Page::Index))
+        return;
+    for (ExploreCard *card : m_indexHost->findChildren<ExploreCard *>())
+        card->setTileSize(m_collectionTileSize);
+    // Covers are ordinary photos, so large ones can use the sharper preview.
+    for (auto it = m_indexAssetCards.cbegin(); it != m_indexAssetCards.cend(); ++it) {
+        const int wanted =
+            GridZoom::tileImageDimension(it.value()->imageSize(), devicePixelRatioF());
+        if (wanted > m_indexRequestedCovers.value(it.key())) {
+            m_indexRequestedCovers.insert(it.key(), wanted);
+            m_client->loadTileImage(it.key(), wanted);
+        }
+    }
 }
 
 void ExplorePage::setPage(Page page)
@@ -409,7 +619,8 @@ void ExplorePage::resizeEvent(QResizeEvent *event)
 
 bool ExplorePage::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_collectionScroll->viewport() && event->type() == QEvent::Wheel) {
+    if ((watched == m_collectionScroll->viewport() || watched == m_indexScroll->viewport()) &&
+        event->type() == QEvent::Wheel) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         if (wheel->modifiers() & Qt::ControlModifier) {
             const int delta = wheel->angleDelta().y();
@@ -431,7 +642,6 @@ void ExplorePage::refresh()
     m_loading = true;
     m_refreshButton->setEnabled(false);
     m_browseStatus->setText(tr("Loading explore…"));
-    setPage(Page::Browse);
     if (!m_client->loadExplore()) {
         m_loading = false;
         m_refreshButton->setEnabled(true);
@@ -477,8 +687,9 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
     m_loading = false;
     m_loadedOnce = true;
     m_refreshButton->setEnabled(true);
+    // Refresh the overview in place; an open album, tag or person stays open.
     clearSections();
-    setPage(Page::Browse);
+    m_people = data.people;
 
     auto *peopleLayout = qobject_cast<QHBoxLayout *>(m_peopleSection.host->layout());
     for (const ImmichPerson &person : data.people) {
@@ -566,6 +777,8 @@ void ExplorePage::showPersonThumbnail(const QString &personId, const QPixmap &th
 
     if (ExploreCard *card = m_personCards.value(personId))
         card->setPixmap(thumbnail);
+    if (ExploreCard *card = m_indexPersonCards.value(personId))
+        card->setPixmap(thumbnail);
 
     if (m_collectionPersonStyle && m_collectionFilterKind == QStringLiteral("person") &&
         m_collectionFilterValue == personId && !thumbnail.isNull() &&
@@ -579,6 +792,8 @@ void ExplorePage::showAssetThumbnail(const QString &assetId, const QPixmap &thum
         if (raw)
             raw->setPixmap(thumbnail);
     }
+    for (ExploreCard *card : m_indexAssetCards.values(assetId))
+        card->setPixmap(thumbnail);
 
     if (const QPointer<MediaTile> tile = m_collectionTiles.value(assetId)) {
         tile->setThumbnail(thumbnail);
@@ -587,7 +802,7 @@ void ExplorePage::showAssetThumbnail(const QString &assetId, const QPixmap &thum
             scheduleCollectionVisibility();
     }
 
-    if (!m_collectionPersonStyle && m_collectionFilterKind == QStringLiteral("city") &&
+    if (!m_collectionPersonStyle && !m_collectionHeroAssetId.isEmpty() &&
         m_stack->currentIndex() == static_cast<int>(Page::Collection) &&
         assetId == m_collectionHeroAssetId && !thumbnail.isNull())
         setCollectionHero(thumbnail, false);
@@ -637,9 +852,12 @@ void ExplorePage::openPerson(const ImmichPerson &person)
     const QPixmap cachedFace = m_personThumbCache.value(person.id);
     showCollectionPage(title, tr("Loading photos…"), QStringLiteral("person"), person.id,
                        cachedFace, true);
+    setCrumbs({{tr("People"), [this] { showIndex(BrowseSection::People); }}}, title);
+    setChips({}, {});
     // Force a fresh face fetch so the hero updates even if a prior request is in flight.
     m_client->loadPersonThumbnail(person.id);
     m_client->loadAssetsForPerson(person.id);
+    emit sectionShown(BrowseSection::People, person.id, title);
 }
 
 void ExplorePage::showPerson(const ImmichPerson &person)
@@ -658,10 +876,286 @@ void ExplorePage::openPlace(const ImmichPlace &place)
     m_pendingPersonStyle = false;
     showCollectionPage(place.city, tr("Loading photos…"), QStringLiteral("city"), place.city,
                        {}, false);
+    setCrumbs({{tr("Explore"), [this] { showOverview(); }}}, place.city);
+    setChips({}, {});
     m_collectionHeroAssetId = place.sampleAsset.id;
     if (!place.sampleAsset.id.isEmpty())
         m_client->loadThumbnail(place.sampleAsset.id);
     m_client->loadAssetsForCity(place.city);
+    emit overviewShown();
+}
+
+void ExplorePage::showAlbum(const ImmichAlbum &album)
+{
+    openCollection(QStringLiteral("album"), album.id, album.name, BrowseSection::Albums);
+    setCrumbs({{tr("Albums"), [this] { showIndex(BrowseSection::Albums); }}}, album.name);
+    setChips({}, {});
+    m_collectionHeroAssetId = album.thumbnailAssetId;
+    if (!album.thumbnailAssetId.isEmpty())
+        m_client->loadThumbnail(album.thumbnailAssetId);
+}
+
+void ExplorePage::showTag(const ImmichTag &tag)
+{
+    openCollection(QStringLiteral("tag"), tag.id, tag.name, BrowseSection::Tags);
+    showTagTrail(tag);
+}
+
+void ExplorePage::showTagTrail(const ImmichTag &tag)
+{
+    QList<Crumb> crumbs;
+    QHash<QString, ImmichTag> byId;
+    for (const ImmichTag &entry : m_tags)
+        byId.insert(entry.id, entry);
+    for (QString parentId = tag.parentId; byId.contains(parentId);
+         parentId = byId.value(parentId).parentId) {
+        const ImmichTag parent = byId.value(parentId);
+        crumbs.prepend({parent.name, [this, parent] { showTag(parent); }});
+    }
+    crumbs.prepend({tr("Tags"), [this] { showIndex(BrowseSection::Tags); }});
+    setCrumbs(crumbs, tag.name);
+
+    QList<Crumb> children;
+    for (const ImmichTag &child : m_tags) {
+        if (child.parentId == tag.id)
+            children.append({child.name, [this, child] { showTag(child); }});
+    }
+    setChips(children, QStringLiteral(":/icons/tag.svg"));
+}
+
+void ExplorePage::showFolder(const QString &path, const QString &title)
+{
+    const QStringList segments =
+        folderRelativePath(path, m_folderRoot).split(u'/', Qt::SkipEmptyParts);
+    openCollection(QStringLiteral("folder"), path, segments.isEmpty() ? title : segments.last(),
+                   BrowseSection::Folders);
+    showFolderTrail(path, title);
+}
+
+void ExplorePage::showFolderTrail(const QString &path, const QString &title)
+{
+    const QStringList segments =
+        folderRelativePath(path, m_folderRoot).split(u'/', Qt::SkipEmptyParts);
+    const QString name = segments.isEmpty() ? title : segments.last();
+    QList<Crumb> crumbs{{tr("Folders"), [this] { showIndex(BrowseSection::Folders); }}};
+    QString ancestor = m_folderRoot;
+    for (qsizetype i = 0; i + 1 < segments.size(); ++i) {
+        ancestor = folderPathJoin(ancestor, segments.at(i));
+        crumbs.append({segments.at(i), [this, ancestor] { showFolder(ancestor, {}); }});
+    }
+    setCrumbs(crumbs, name);
+    setChips(folderChildren(path), QStringLiteral(":/icons/folder.svg"));
+}
+
+void ExplorePage::showOverview()
+{
+    backToBrowse();
+}
+
+void ExplorePage::showSection(BrowseSection section)
+{
+    switch (section) {
+    case BrowseSection::People:
+        m_client->loadPeople();
+        showIndex(section);
+        break;
+    case BrowseSection::Albums:
+    case BrowseSection::Tags:
+    case BrowseSection::Folders:
+        showIndex(section);
+        break;
+    case BrowseSection::Favorites:
+        showLibraryView(QStringLiteral("favorites"), section, tr("Favorites"));
+        break;
+    case BrowseSection::Archive:
+        showLibraryView(QStringLiteral("archive"), section, tr("Archive"));
+        break;
+    case BrowseSection::Trash:
+        m_client->loadTrashDays();
+        showLibraryView(QStringLiteral("trash"), section, tr("Trash"));
+        break;
+    }
+}
+
+void ExplorePage::showLibraryView(const QString &kind, BrowseSection section,
+                                  const QString &title)
+{
+    openCollection(kind, {}, title, section);
+    setCrumbs({}, title);
+    setChips({}, {});
+}
+
+void ExplorePage::openCollection(const QString &kind, const QString &value,
+                                 const QString &title, BrowseSection section)
+{
+    m_pendingCollectionTitle = title;
+    m_pendingPersonStyle = false;
+    showCollectionPage(title, tr("Loading photos…"), kind, value, {}, false);
+    m_client->loadCollectionAssets(kind, value);
+    emit sectionShown(section, value, title);
+}
+
+void ExplorePage::showIndex(BrowseSection section)
+{
+    m_indexSection = section;
+    while (QLayoutItem *item = m_indexHost->layout()->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    m_indexAssetCards.clear();
+    m_indexPersonCards.clear();
+    m_indexRequestedCovers.clear();
+
+    auto addChip = [this](const QString &label, const QString &icon,
+                          std::function<void()> open) {
+        auto *chip = new QPushButton(label, m_indexHost);
+        configureActionButton(chip, icon);
+        chip->setCursor(Qt::PointingHandCursor);
+        connect(chip, &QPushButton::clicked, this, open);
+        m_indexHost->layout()->addWidget(chip);
+    };
+
+    QString title;
+    QString subtitle;
+    if (section == BrowseSection::Albums) {
+        title = tr("Albums");
+        subtitle = m_albums.isEmpty() ? tr("No albums yet")
+                                      : tr("%n album(s)", nullptr, m_albums.size());
+        for (const ImmichAlbum &album : m_albums) {
+            auto *card = new ExploreCard(ExploreCard::Style::Place, m_indexHost);
+            card->setCaption(tr("%1\n%n item(s)", nullptr, album.assetCount).arg(album.name));
+            card->setPixmap(QPixmap());
+            m_indexHost->layout()->addWidget(card);
+            connect(card, &ExploreCard::activated, this, [this, album] { showAlbum(album); });
+            if (!album.thumbnailAssetId.isEmpty()) {
+                m_indexAssetCards.insert(album.thumbnailAssetId, card);
+                m_client->loadThumbnail(album.thumbnailAssetId);
+            }
+        }
+    } else if (section == BrowseSection::People) {
+        title = tr("People");
+        const bool showHidden = m_showHiddenPeople->isChecked();
+        int shown = 0;
+        int hidden = 0;
+        for (const ImmichPerson &person : m_allPeople.isEmpty() ? m_people : m_allPeople) {
+            if (person.hidden)
+                ++hidden;
+            if (person.hidden && !showHidden)
+                continue;
+            ++shown;
+            auto *card = new ExploreCard(ExploreCard::Style::Person, m_indexHost);
+            const QString name = person.name.isEmpty() ? tr("Unnamed") : person.name;
+            card->setCaption(person.hidden ? tr("%1 (hidden)").arg(name) : name);
+            card->setPixmap(m_personThumbCache.value(person.id));
+            m_indexHost->layout()->addWidget(card);
+            m_indexPersonCards.insert(person.id, card);
+            connect(card, &ExploreCard::activated, this, [this, person] { openPerson(person); });
+            if (!m_personThumbCache.contains(person.id))
+                m_client->loadPersonThumbnail(person.id);
+        }
+        subtitle = shown == 0 ? tr("No people recognized yet")
+                              : tr("%n person(s)", nullptr, shown);
+        // The label says what clicking does, so it always reflects the current state.
+        m_showHiddenPeople->setText(showHidden ? tr("Hide hidden")
+                                               : tr("Show hidden (%1)").arg(hidden));
+        configureActionButton(m_showHiddenPeople, showHidden ? QStringLiteral(":/icons/eye-off.svg")
+                                                             : QStringLiteral(":/icons/eye.svg"));
+        m_showHiddenPeople->setToolTip(showHidden ? tr("Hide people marked hidden in Immich")
+                                                  : tr("Show people marked hidden in Immich"));
+    } else if (section == BrowseSection::Tags) {
+        title = tr("Tags");
+        QSet<QString> ids;
+        for (const ImmichTag &tag : m_tags)
+            ids.insert(tag.id);
+        for (const ImmichTag &tag : m_tags) {
+            if (ids.contains(tag.parentId))
+                continue;
+            addChip(tag.name, QStringLiteral(":/icons/tag.svg"), [this, tag] { showTag(tag); });
+        }
+        subtitle = m_tags.isEmpty() ? tr("No tags yet") : tr("%n tag(s)", nullptr, m_tags.size());
+    } else if (section == BrowseSection::Folders) {
+        title = tr("Folders");
+        const QList<Crumb> folders = folderChildren(m_folderRoot);
+        subtitle = folders.isEmpty() ? tr("No folders")
+                                     : tr("%n folder(s)", nullptr, folders.size());
+        for (const Crumb &folder : folders)
+            addChip(folder.label, QStringLiteral(":/icons/folder.svg"), folder.open);
+    }
+
+    if (!m_loadedLists.contains(section) && m_indexHost->layout()->count() == 0)
+        subtitle = tr("Loading…");
+    m_showHiddenPeople->setVisible(section == BrowseSection::People &&
+                                   (m_showHiddenPeople->isChecked() ||
+                                    std::any_of(m_allPeople.cbegin(), m_allPeople.cend(),
+                                                [](const ImmichPerson &p) { return p.hidden; })));
+    m_indexTitle->setText(title);
+    m_indexSubtitle->setText(subtitle);
+    m_collectionTileSize = GridZoom::clamp(AppSettings().loadTimeline().tileSize);
+    m_indexZoomSlider->setValue(m_collectionTileSize);
+    setPage(Page::Index);
+    applyIndexZoom();
+    emit sectionShown(section, {}, title);
+}
+
+void ExplorePage::setCrumbs(const QList<Crumb> &crumbs, const QString &title)
+{
+    auto *layout = static_cast<QHBoxLayout *>(m_collectionTrail->layout());
+    while (layout->count() > 0) {
+        QLayoutItem *item = layout->takeAt(0);
+        if (QWidget *widget = item->widget(); widget && widget != m_collectionTitle)
+            widget->deleteLater();
+        delete item;
+    }
+    for (const Crumb &crumb : crumbs) {
+        auto *link = new QPushButton(crumb.label, m_collectionTrail);
+        link->setProperty("linkButton", true);
+        link->setCursor(Qt::PointingHandCursor);
+        connect(link, &QPushButton::clicked, this, crumb.open);
+        auto *separator = new QLabel(QStringLiteral("›"), m_collectionTrail);
+        separator->setProperty("subheading", true);
+        layout->addWidget(link);
+        layout->addWidget(separator);
+    }
+    m_collectionTitle->setText(title);
+    layout->addWidget(m_collectionTitle);
+    layout->addStretch(1);
+}
+
+void ExplorePage::setChips(const QList<Crumb> &chips, const QString &iconResource)
+{
+    QLayout *layout = m_collectionChips->layout();
+    while (QLayoutItem *item = layout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    for (const Crumb &chip : chips) {
+        auto *button = new QPushButton(chip.label, m_collectionChips);
+        configureActionButton(button, iconResource);
+        button->setCursor(Qt::PointingHandCursor);
+        connect(button, &QPushButton::clicked, this, chip.open);
+        layout->addWidget(button);
+    }
+    m_collectionChips->setVisible(!chips.isEmpty());
+}
+
+QList<ExplorePage::Crumb> ExplorePage::folderChildren(const QString &path)
+{
+    QStringList names;
+    for (const QString &folder : m_folderPaths) {
+        const QString relative = folderRelativePath(folder, path);
+        const QString child = relative.section(u'/', 0, 0);
+        if (!child.isEmpty() && !names.contains(child))
+            names.append(child);
+    }
+    names.sort(Qt::CaseInsensitive);
+    QList<Crumb> children;
+    for (const QString &name : names) {
+        const QString childPath = folderPathJoin(path, name);
+        children.append({name, [this, childPath] { showFolder(childPath, {}); }});
+    }
+    return children;
 }
 
 void ExplorePage::showCollectionPage(const QString &title, const QString &subtitle,
@@ -685,7 +1179,31 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     setCollectionHero(heroThumb, personStyle);
 
     m_collectionLoadMore->setVisible(false);
+    const bool trash = filterKind == QStringLiteral("trash");
+    m_restoreAllButton->setVisible(trash);
+    m_emptyTrashButton->setVisible(trash);
     setPage(Page::Collection);
+}
+
+void ExplorePage::updateCollectionSubtitle()
+{
+    if (m_collectionTiles.isEmpty()) {
+        m_collectionSubtitle->setText(m_collectionFilterKind == QStringLiteral("trash")
+                                          ? tr("Trash is empty")
+                                          : tr("Nothing here yet"));
+        return;
+    }
+    QString subtitle = tr("%n item(s)", nullptr, m_collectionTiles.size());
+    if (m_collectionFilterKind == QStringLiteral("trash") && m_trashDays > 0)
+        subtitle += tr(" · deleted permanently after %n day(s)", nullptr, m_trashDays);
+    m_collectionSubtitle->setText(subtitle);
+}
+
+void ExplorePage::clearTrashView()
+{
+    clearCollectionTimeline();
+    updateCollectionLoadMore({});
+    m_collectionSubtitle->setText(tr("Trash is empty"));
 }
 
 void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
@@ -723,6 +1241,8 @@ void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
         return true;
     });
     populateSection(&m_recentSection, !m_recentSection.cards.isEmpty());
+    if (!m_collectionFilterKind.isEmpty())
+        updateCollectionSubtitle();
     scheduleCollectionLayout();
 }
 
@@ -808,7 +1328,7 @@ void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &f
     }
 
     appendCollectionAssets(assets);
-    m_collectionSubtitle->setText(tr("%n item(s)", nullptr, m_collectionTiles.size()));
+    updateCollectionSubtitle();
     updateCollectionLoadMore(nextPage);
     scheduleCollectionLayout();
     scheduleCollectionVisibility();
@@ -834,6 +1354,14 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         connect(tile, &MediaTile::shareRequested, this, [this](const ImmichAsset &asset) {
             (new ShareLinkDialog(m_client, asset, this))->show();
         });
+        connect(tile, &MediaTile::copyRequested, this, &ExplorePage::copyRequested);
+        connect(tile, &MediaTile::downloadRequested, this, &ExplorePage::downloadRequested);
+        connect(tile, &MediaTile::trashRequested, this, &ExplorePage::trashRequested);
+        connect(tile, &MediaTile::deleteRequested, this, &ExplorePage::deleteRequested);
+        connect(tile, &MediaTile::restoreRequested, this, [this](const ImmichAsset &asset) {
+            m_client->restoreFromTrash({asset.id});
+        });
+        tile->setTrashed(m_collectionFilterKind == QStringLiteral("trash"));
     }
 }
 
@@ -1012,20 +1540,14 @@ void ExplorePage::requestCollectionNextPage()
 {
     bool ok = false;
     const int page = m_collectionNextPage.toInt(&ok);
-    if (!ok || page <= 0 || m_collectionFilterKind.isEmpty() ||
-        m_collectionFilterValue.isEmpty())
+    if (!ok || page <= 0 || m_collectionFilterKind.isEmpty())
         return;
 
     m_collectionLoadingMore = true;
     m_collectionLoadMore->setEnabled(false);
     setActionButtonLabel(m_collectionLoadMore, tr("Loading…"));
 
-    if (m_collectionFilterKind == QStringLiteral("person"))
-        m_client->loadAssetsForPerson(m_collectionFilterValue, page);
-    else if (m_collectionFilterKind == QStringLiteral("city"))
-        m_client->loadAssetsForCity(m_collectionFilterValue, page);
-    else
-        m_collectionLoadingMore = false;
+    m_client->loadCollectionAssets(m_collectionFilterKind, m_collectionFilterValue, page);
 }
 
 void ExplorePage::backToBrowse()
@@ -1038,6 +1560,7 @@ void ExplorePage::backToBrowse()
     clearCollectionTimeline();
     setPage(Page::Browse);
     updateEmptyState();
+    emit overviewShown();
 }
 
 MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCollection)
@@ -1059,6 +1582,14 @@ MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCol
     connect(viewer, &MediaViewerDialog::personRequested, this, &ExplorePage::personRequested);
     connect(viewer, &MediaViewerDialog::placeRequested, this, &ExplorePage::placeRequested);
     connect(viewer, &MediaViewerDialog::dateRequested, this, &ExplorePage::dateRequested);
+    connect(viewer, &MediaViewerDialog::albumRequested, this, &ExplorePage::albumRequested);
+    connect(viewer, &MediaViewerDialog::tagRequested, this, &ExplorePage::tagRequested);
+    connect(viewer, &MediaViewerDialog::folderRequested, this, &ExplorePage::folderRequested);
+    if (fromCollection && m_collectionFilterKind == QStringLiteral("trash")) {
+        viewer->setTrashMode(true);
+        connect(viewer, &MediaViewerDialog::restoreRequested, this,
+                [this](const ImmichAsset &asset) { m_client->restoreFromTrash({asset.id}); });
+    }
     viewer->show();
     return viewer;
 }

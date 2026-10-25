@@ -20,6 +20,8 @@
 #include <QUrl>
 #include <QUuid>
 
+#include <functional>
+
 class QNetworkAccessManager;
 class QNetworkInformation;
 class QNetworkReply;
@@ -56,6 +58,15 @@ public:
     bool loadExplore();
     void loadAssetsForPerson(const QString &personId, int page = 1, int pageSize = 80);
     void loadAssetsForCity(const QString &city, int page = 1, int pageSize = 80);
+    void loadAssetsForAlbum(const QString &albumId, int page = 1, int pageSize = 80);
+    void loadAssetsForTag(const QString &tagId, int page = 1, int pageSize = 80);
+    void loadAssetsForFolder(const QString &path);
+    // kind: person, city, album, tag, folder, favorites, archive or trash.
+    void loadCollectionAssets(const QString &kind, const QString &value, int page = 1);
+    void loadAlbums();
+    void loadTags();
+    void loadFolderPaths();
+    void loadPeople();
     void loadThumbnail(const QString &assetId);
     void loadPreview(const QString &assetId);
     // Emits thumbnailLoaded with an image of up to maximumDimension pixels,
@@ -72,6 +83,10 @@ public:
     void fetchAssetInfo(const QString &assetId);
     void fetchAssetDetails(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
+    void restoreFromTrash(const QStringList &assetIds);
+    void restoreAllFromTrash();
+    void emptyTrash();
+    void loadTrashDays();
     void createSharedLink(const QString &assetId, const QUuid &requestId, const QString &password = {});
     QUrl sharedLinkUrl(const QString &key) const;
     bool isUploading() const;
@@ -95,6 +110,13 @@ signals:
     void timelineBucketFailed(const QDate &month, const QString &message);
     void newestAssetsPolled(const QList<Aurora::ImmichAsset> &assets);
     void exploreLoaded(const Aurora::ImmichExploreData &data, bool fromCache = false);
+    void albumsLoaded(const QList<Aurora::ImmichAlbum> &albums);
+    void tagsLoaded(const QList<Aurora::ImmichTag> &tags);
+    void folderPathsLoaded(const QStringList &paths);
+    // Every person, including those hidden in Immich (person.hidden is set).
+    void peopleLoaded(const QList<Aurora::ImmichPerson> &people);
+    // kind is "albums", "tags" or "folders" for the lists, "folder" for one folder's photos.
+    void browseListFailed(const QString &kind, bool permissionDenied);
     void filteredAssetsLoaded(const QString &filterKind, const QString &filterValue,
                               const QList<Aurora::ImmichAsset> &assets, const QString &nextPage);
     void thumbnailLoaded(const QString &assetId, const QPixmap &thumbnail);
@@ -112,11 +134,15 @@ signals:
     void assetInfoFailed(const QString &assetId, const QString &message);
     void assetDetailsLoaded(const Aurora::ImmichAssetDetails &details);
     void assetDetailsFailed(const QString &assetId, const QString &message);
-    void assetAlbumsLoaded(const QString &assetId, const QStringList &albumNames);
+    void assetAlbumsLoaded(const QString &assetId, const QList<Aurora::ImmichAlbum> &albums);
     void assetAlbumsFailed(const QString &assetId, bool permissionDenied);
     void assetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                               const QString &contentType);
     void assetsDeleted(const QStringList &assetIds, bool permanent);
+    // assetIds is empty when everything in the trash was restored.
+    void assetsRestored(const QStringList &assetIds);
+    void trashEmptied();
+    void trashDaysLoaded(int days);
     void sharedLinkCreated(const QUuid &requestId, const QUrl &url);
     void sharedLinkFailed(const QUuid &requestId, const QString &message);
     void requestFailed(const QString &operation, const QString &message, bool willRetry = false);
@@ -156,6 +182,10 @@ private:
     void setActiveServerUrl(const QString &url, bool usingLocal);
     void finishConnectionTest();
     void requestAssetDetails(const QString &assetId);
+    void postTrashAction(const QString &path, const QJsonObject &body,
+                         std::function<void()> done);
+    void fetchBrowseList(const QString &kind, const QUrl &url,
+                         std::function<void(const QByteArray &)> handle);
     void setupNetworkMonitoring();
     void queueLibraryCache(const QList<ImmichAsset> &assets);
     void flushLibraryCache();

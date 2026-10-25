@@ -39,6 +39,11 @@ qreal MediaTile::aspectRatio() const
     return m_resolvedAspectRatio;
 }
 
+void MediaTile::setTrashed(bool trashed)
+{
+    m_trashed = trashed;
+}
+
 bool MediaTile::hasThumbnail() const
 {
     return !m_thumbnail.isNull();
@@ -299,7 +304,14 @@ void MediaTile::contextMenuEvent(QContextMenuEvent *event)
 {
     QMenu menu(this);
     menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
-    if (!m_asset.isLocalPending()) {
+    if (m_trashed) {
+        menu.addAction(tr("Info"), this, [this] { emit infoRequested(m_asset); });
+        menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
+        menu.addSeparator();
+        menu.addAction(tr("Restore"), this, [this] { emit restoreRequested(m_asset); });
+        menu.addAction(tr("Delete permanently"), this,
+                       [this] { emit deleteRequested(m_asset); });
+    } else if (!m_asset.isLocalPending()) {
         menu.addAction(tr("Info"), this, [this] { emit infoRequested(m_asset); });
         if (!m_asset.isVideo())
             menu.addAction(tr("Copy"), this, [this] { emit copyRequested(m_asset); });

@@ -29,15 +29,20 @@ public:
 
     void updateNavigation();
     void setInfoPanelVisible(bool visible);
+    void setTrashMode(bool trashMode);
 
 signals:
     void copyRequested(const Aurora::ImmichAsset &asset);
     void downloadRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
+    void restoreRequested(const Aurora::ImmichAsset &asset);
     void personRequested(const Aurora::ImmichPerson &person);
     void placeRequested(const QString &city);
     void dateRequested(const QDate &date);
+    void albumRequested(const Aurora::ImmichAlbum &album);
+    void tagRequested(const Aurora::ImmichTag &tag);
+    void folderRequested(const QString &path, const QString &title);
 
 private:
     void setAsset(const ImmichAsset &asset, bool autoplay = false);
@@ -56,6 +61,10 @@ private:
     QPushButton *m_previousButton;
     QPushButton *m_nextButton;
     QPushButton *m_copyButton;
+    QPushButton *m_shareButton;
+    QPushButton *m_trashButton;
+    QPushButton *m_restoreButton;
+    bool m_trashMode = false;
     QPushButton *m_infoButton;
     AssetInfoPanel *m_infoPanel;
 };

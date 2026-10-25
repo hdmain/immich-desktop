@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ImmichClient.h"
+#include "ui/BrowseSection.h"
 
 #include <QDate>
 #include <QFrame>
@@ -11,6 +12,8 @@
 #include <QPointer>
 #include <QSet>
 #include <QWidget>
+
+#include <functional>
 
 class QEvent;
 class QHideEvent;
@@ -42,6 +45,9 @@ public:
     explicit ExploreCard(Style style, QWidget *parent = nullptr);
     void setCaption(const QString &text);
     void setPixmap(const QPixmap &pixmap);
+    // Scales person and place cards with the grid zoom (index pages).
+    void setTileSize(int size);
+    QSize imageSize() const;
 
 signals:
     void activated();
@@ -51,8 +57,11 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
+    void showPixmap();
+
     Style m_style;
     QLabel *m_image;
+    QPixmap m_source;
     QLabel *m_caption;
 };
 
@@ -70,10 +79,23 @@ signals:
     void personRequested(const Aurora::ImmichPerson &person);
     void placeRequested(const QString &city);
     void dateRequested(const QDate &date);
+    void albumRequested(const Aurora::ImmichAlbum &album);
+    void tagRequested(const Aurora::ImmichTag &tag);
+    void folderRequested(const QString &path, const QString &title);
+
+    void sectionShown(Aurora::BrowseSection section, const QString &itemValue,
+                      const QString &title);
+    void overviewShown();
+    void listRefreshRequested(Aurora::BrowseSection section);
 
 public slots:
+    void showOverview();
+    void showSection(Aurora::BrowseSection section);
     void showPerson(const Aurora::ImmichPerson &person);
     void showPlace(const QString &city);
+    void showAlbum(const Aurora::ImmichAlbum &album);
+    void showTag(const Aurora::ImmichTag &tag);
+    void showFolder(const QString &path, const QString &title);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -98,7 +120,12 @@ private slots:
     void updateVisibleCollectionThumbs();
 
 private:
-    enum class Page : int { Browse = 0, Collection = 1 };
+    enum class Page : int { Browse = 0, Collection = 1, Index = 2 };
+
+    struct Crumb {
+        QString label;
+        std::function<void()> open;
+    };
 
     struct SectionRow {
         QLabel *header = nullptr;
@@ -113,6 +140,15 @@ private:
         QList<MediaTile *> tiles;
     };
 
+    void showTagTrail(const ImmichTag &tag);
+    void showFolderTrail(const QString &path, const QString &title);
+    void showIndex(BrowseSection section);
+    void showLibraryView(const QString &kind, BrowseSection section, const QString &title);
+    void setCrumbs(const QList<Crumb> &crumbs, const QString &title);
+    void setChips(const QList<Crumb> &chips, const QString &iconResource);
+    QList<Crumb> folderChildren(const QString &path);
+    void openCollection(const QString &kind, const QString &value, const QString &title,
+                        BrowseSection section);
     void clearSections();
     void updateEmptyState();
     void populateSection(SectionRow *section, bool visible);
@@ -126,6 +162,9 @@ private:
     void setPage(Page page);
     MediaViewerDialog *openAsset(const Aurora::ImmichAsset &asset, bool fromCollection);
     void setCollectionTileSize(int size);
+    void applyIndexZoom();
+    void clearTrashView();
+    void updateCollectionSubtitle();
     void setCollectionHero(const QPixmap &thumb, bool personStyle);
     void scheduleCollectionLayout();
     void scheduleCollectionVisibility();
@@ -153,9 +192,32 @@ private:
     QList<ImmichAsset> m_recentAssets;
     QHash<QString, QPixmap> m_personThumbCache;
 
-    // Collection detail (Library-style timeline for one person/place)
+    // Lists behind the index pages, breadcrumbs and child chips.
+    QList<ImmichAlbum> m_albums;
+    QList<ImmichTag> m_tags;
+    QStringList m_folderPaths;
+    QString m_folderRoot;
+    QList<ImmichPerson> m_people;
+    QList<ImmichPerson> m_allPeople; // Includes hidden people.
+    QSet<BrowseSection> m_loadedLists;
+
+    // Index (all albums, tags, folders or people)
+    QWidget *m_indexPage = nullptr;
+    QLabel *m_indexTitle = nullptr;
+    QLabel *m_indexSubtitle = nullptr;
+    QWidget *m_indexHost = nullptr;
+    QScrollArea *m_indexScroll = nullptr;
+    ZoomSlider *m_indexZoomSlider = nullptr;
+    QHash<QString, int> m_indexRequestedCovers;
+    QPushButton *m_showHiddenPeople = nullptr;
+    QMultiHash<QString, ExploreCard *> m_indexAssetCards;
+    QHash<QString, ExploreCard *> m_indexPersonCards;
+    BrowseSection m_indexSection = BrowseSection::Albums;
+
+    // Collection detail (Library-style timeline for one person, place, album, ...)
     QWidget *m_collectionPage = nullptr;
-    QPushButton *m_collectionBack = nullptr;
+    QWidget *m_collectionTrail = nullptr;
+    QWidget *m_collectionChips = nullptr;
     QLabel *m_collectionHero = nullptr;
     QLabel *m_collectionTitle = nullptr;
     QLabel *m_collectionSubtitle = nullptr;
@@ -180,6 +242,9 @@ private:
     bool m_collectionCompactGrid = false;
     int m_collectionTileSize = 180;
     ZoomSlider *m_collectionZoomSlider = nullptr;
+    QPushButton *m_restoreAllButton = nullptr;
+    QPushButton *m_emptyTrashButton = nullptr;
+    int m_trashDays = 0;
 
     bool m_loadedOnce = false;
     bool m_loading = false;

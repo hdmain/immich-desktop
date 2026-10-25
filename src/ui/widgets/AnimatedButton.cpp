@@ -5,6 +5,7 @@
 
 #include <QEnterEvent>
 #include <QFont>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPropertyAnimation>
 
@@ -58,6 +59,58 @@ void AnimatedButton::setIconResource(const QString &iconResource)
     update();
 }
 
+void AnimatedButton::setExpandable(bool expandable)
+{
+    m_expandable = expandable;
+    update();
+}
+
+void AnimatedButton::setExpanded(bool expanded)
+{
+    m_expanded = expanded;
+    update();
+}
+
+bool AnimatedButton::isExpanded() const
+{
+    return m_expanded;
+}
+
+bool AnimatedButton::showsChevron() const
+{
+    return m_expandable && !m_iconOnly && !m_themeManager->minimalistUi() && !text().isEmpty();
+}
+
+QRect AnimatedButton::chevronRect() const
+{
+    return QRect(width() - 34, 0, 34, height());
+}
+
+void AnimatedButton::mousePressEvent(QMouseEvent *event)
+{
+    m_chevronPressed = showsChevron() && event->button() == Qt::LeftButton &&
+                       chevronRect().contains(event->position().toPoint());
+    if (m_chevronPressed) {
+        event->accept();
+        return;
+    }
+    QPushButton::mousePressEvent(event);
+}
+
+void AnimatedButton::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_chevronPressed) {
+        m_chevronPressed = false;
+        if (chevronRect().contains(event->position().toPoint())) {
+            setExpanded(!m_expanded);
+            emit expandToggled(m_expanded);
+        }
+        event->accept();
+        return;
+    }
+    QPushButton::mouseReleaseEvent(event);
+}
+
 void AnimatedButton::enterEvent(QEnterEvent *event)
 {
     animateTo(1.0);
@@ -104,7 +157,16 @@ void AnimatedButton::paintEvent(QPaintEvent *)
     const bool minimal = m_themeManager->minimalistUi() || m_iconOnly || text().isEmpty();
     painter.drawPixmap(QRect(minimal ? (width() - 19) / 2 : 15, (height() - 19) / 2, 19, 19), icon);
     if (!minimal)
-        painter.drawText(rect().adjusted(46, 0, -10, 0), Qt::AlignVCenter | Qt::AlignLeft, text());
+        painter.drawText(rect().adjusted(46, 0, showsChevron() ? -34 : -10, 0),
+                         Qt::AlignVCenter | Qt::AlignLeft, text());
+    if (showsChevron()) {
+        const QPixmap chevron = renderSvgIcon(
+            m_expanded ? QStringLiteral(":/icons/chevron-down.svg")
+                       : QStringLiteral(":/icons/chevron-right.svg"),
+            iconColor, QSize(14, 14), devicePixelRatioF());
+        const QRect area = chevronRect();
+        painter.drawPixmap(QRect(area.center().x() - 7, area.center().y() - 7, 14, 14), chevron);
+    }
 }
 
 void AnimatedButton::animateTo(qreal endValue)

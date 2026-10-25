@@ -46,8 +46,10 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     m_nextButton = makeButton({}, QStringLiteral(":/icons/chevron-right.svg"));
     m_copyButton = makeButton(tr("Copy"), QStringLiteral(":/icons/copy.svg"));
     auto *downloadButton = makeButton(tr("Download"), QStringLiteral(":/icons/download.svg"));
-    auto *shareButton = makeButton(tr("Share link"), QStringLiteral(":/icons/external-link.svg"));
-    auto *trashButton = makeButton(tr("Move to trash"), QStringLiteral(":/icons/trash.svg"));
+    m_shareButton = makeButton(tr("Share link"), QStringLiteral(":/icons/external-link.svg"));
+    m_trashButton = makeButton(tr("Move to trash"), QStringLiteral(":/icons/trash.svg"));
+    m_restoreButton = makeButton(tr("Restore"), QStringLiteral(":/icons/rotate-ccw.svg"));
+    m_restoreButton->hide();
     auto *deleteButton =
         makeButton(tr("Delete permanently"), QStringLiteral(":/icons/circle-x.svg"));
     m_infoButton = makeButton(tr("Info"), QStringLiteral(":/icons/info.svg"));
@@ -63,8 +65,9 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     controls->addStretch(1);
     controls->addWidget(m_copyButton);
     controls->addWidget(downloadButton);
-    controls->addWidget(shareButton);
-    controls->addWidget(trashButton);
+    controls->addWidget(m_shareButton);
+    controls->addWidget(m_trashButton);
+    controls->addWidget(m_restoreButton);
     controls->addWidget(deleteButton);
     controls->addWidget(m_infoButton);
     controls->addWidget(closeButton);
@@ -83,9 +86,11 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     connect(m_copyButton, &QPushButton::clicked, this, [this] { emit copyRequested(m_asset); });
     connect(downloadButton, &QPushButton::clicked, this,
             [this] { emit downloadRequested(m_asset); });
-    connect(shareButton, &QPushButton::clicked, this,
+    connect(m_shareButton, &QPushButton::clicked, this,
             [this] { (new ShareLinkDialog(m_client, m_asset, this))->show(); });
-    connect(trashButton, &QPushButton::clicked, this, [this] { emit trashRequested(m_asset); });
+    connect(m_trashButton, &QPushButton::clicked, this, [this] { emit trashRequested(m_asset); });
+    connect(m_restoreButton, &QPushButton::clicked, this,
+            [this] { emit restoreRequested(m_asset); });
     connect(deleteButton, &QPushButton::clicked, this,
             [this] { emit deleteRequested(m_asset); });
     connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
@@ -103,6 +108,12 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
             &MediaViewerDialog::placeRequested);
     connect(m_infoPanel, &AssetInfoPanel::dateRequested, this,
             &MediaViewerDialog::dateRequested);
+    connect(m_infoPanel, &AssetInfoPanel::albumRequested, this,
+            &MediaViewerDialog::albumRequested);
+    connect(m_infoPanel, &AssetInfoPanel::tagRequested, this,
+            &MediaViewerDialog::tagRequested);
+    connect(m_infoPanel, &AssetInfoPanel::folderRequested, this,
+            &MediaViewerDialog::folderRequested);
     connect(m_client, &ImmichClient::assetDetailsLoaded, this,
             [this](const ImmichAssetDetails &details) {
                 if (details.asset.id == m_asset.id && !details.asset.fileName.isEmpty())
@@ -132,6 +143,11 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
             });
     connect(m_client, &ImmichClient::assetsDeleted, this,
             [this](const QStringList &assetIds, bool) { handleAssetsDeleted(assetIds); });
+    connect(m_client, &ImmichClient::assetsRestored, this, [this](const QStringList &assetIds) {
+        // A restored photo leaves the trash, so step on like after a delete.
+        if (m_trashMode && !assetIds.isEmpty())
+            handleAssetsDeleted(assetIds);
+    });
     connect(m_client, &ImmichClient::timelineBucketLoaded, this,
             &MediaViewerDialog::updateNavigation);
     connect(m_client, &ImmichClient::assetsLoaded, this, &MediaViewerDialog::updateNavigation);
@@ -159,7 +175,7 @@ void MediaViewerDialog::setAsset(const ImmichAsset &asset, bool autoplay)
 {
     m_asset = asset;
     setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
-    m_copyButton->setVisible(!asset.isVideo());
+    m_copyButton->setVisible(!asset.isVideo() && !m_trashMode);
     if (asset.isVideo()) {
         m_videoPlayer->setAsset(asset, autoplay);
         m_stack->setCurrentWidget(m_videoPlayer);
@@ -172,6 +188,15 @@ void MediaViewerDialog::setAsset(const ImmichAsset &asset, bool autoplay)
     m_client->loadPreview(asset.id);
     m_infoPanel->setAsset(asset);
     updateNavigation();
+}
+
+void MediaViewerDialog::setTrashMode(bool trashMode)
+{
+    m_trashMode = trashMode;
+    m_copyButton->setVisible(!m_asset.isVideo() && !trashMode);
+    m_shareButton->setVisible(!trashMode);
+    m_trashButton->setVisible(!trashMode);
+    m_restoreButton->setVisible(trashMode);
 }
 
 void MediaViewerDialog::setInfoPanelVisible(bool visible)

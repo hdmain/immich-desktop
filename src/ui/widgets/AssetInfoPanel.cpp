@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShowEvent>
@@ -16,6 +17,7 @@ namespace Aurora {
 namespace {
 
 constexpr int kAvatarSize = 48;
+constexpr int kLinkWidth = 220; // What fits beside the section icon in the 300 px panel.
 
 QString cameraName(const ImmichAssetDetails &details)
 {
@@ -96,10 +98,10 @@ AssetInfoPanel::AssetInfoPanel(ImmichClient *client, QWidget *parent)
                     m_status->setText(tr("Details unavailable\n%1").arg(message));
             });
     connect(m_client, &ImmichClient::assetAlbumsLoaded, this,
-            [this](const QString &assetId, const QStringList &albumNames) {
-                m_albumsByAsset.insert(assetId, albumNames);
+            [this](const QString &assetId, const QList<ImmichAlbum> &albums) {
+                m_albumsByAsset.insert(assetId, albums);
                 if (assetId == m_assetId)
-                    showAlbums(albumNames);
+                    showAlbums(albums);
             });
     connect(m_client, &ImmichClient::assetAlbumsFailed, this,
             [this](const QString &assetId, bool permissionDenied) {
@@ -155,6 +157,7 @@ void AssetInfoPanel::clearContent()
             widget->deleteLater();
         delete item;
     }
+    m_albumsBox = nullptr;
     m_albumsLabel = nullptr;
     m_avatars.clear();
 }
@@ -287,32 +290,76 @@ void AssetInfoPanel::showDetails(const ImmichAssetDetails &details)
 
     // Albums arrive from a separate request; reserve their place in the order.
     m_albumsLabel = makeLabel(tr("Loading albums…"), true);
-    addSection(QStringLiteral(":/icons/book-image.svg"), tr("Albums"), {m_albumsLabel});
+    m_albumsBox = new QWidget;
+    auto *albumsLayout = new QVBoxLayout(m_albumsBox);
+    albumsLayout->setContentsMargins(0, 0, 0, 0);
+    albumsLayout->setSpacing(2);
+    albumsLayout->addWidget(m_albumsLabel);
+    addSection(QStringLiteral(":/icons/book-image.svg"), tr("Albums"), {m_albumsBox});
     if (m_albumsByAsset.contains(details.asset.id))
         showAlbums(m_albumsByAsset.value(details.asset.id));
     else if (m_albumErrors.contains(details.asset.id))
         m_albumsLabel->setText(m_albumErrors.value(details.asset.id));
 
-    addSection(QStringLiteral(":/icons/tag.svg"), tr("Tags"),
-               {details.tags.isEmpty() ? makeLabel(tr("No tags"), true)
-                                       : makeLabel(details.tags.join(QStringLiteral(", ")))});
+    QList<QWidget *> tagLines;
+    for (const ImmichTag &tag : details.tags) {
+        auto *link = makeLink(elided(tag.path));
+        link->setToolTip(tr("Show photos tagged %1").arg(tag.path));
+        connect(link, &QPushButton::clicked, this, [this, tag] { emit tagRequested(tag); });
+        tagLines << link;
+    }
+    if (tagLines.isEmpty())
+        tagLines << makeLabel(tr("No tags"), true);
+    addSection(QStringLiteral(":/icons/tag.svg"), tr("Tags"), tagLines);
 
     if (!details.folder.isEmpty()) {
-        auto *folder = makeLabel(details.folder, true);
-        folder->setWordWrap(true);
+        // Keep the start and the end of a long path; the tooltip has all of it.
+        // A label rather than a link button so long paths wrap.
+        auto *folder = makeLabel(details.folder);
+        folder->setProperty("linkLabel", true);
+        folder->setTextInteractionFlags(Qt::NoTextInteraction);
+        folder->setCursor(Qt::PointingHandCursor);
+        folder->setToolTip(tr("Show the photos in this folder"));
+        folder->setProperty("folderPath", details.folderPath);
+        folder->installEventFilter(this);
         addSection(QStringLiteral(":/icons/folder.svg"), tr("Folder"), {folder});
     }
 }
 
-void AssetInfoPanel::showAlbums(const QStringList &albumNames)
+bool AssetInfoPanel::eventFilter(QObject *watched, QEvent *event)
 {
-    if (!m_albumsLabel)
+    auto *label = qobject_cast<QLabel *>(watched);
+    if (label && label->property("folderPath").isValid()) {
+        if (event->type() == QEvent::Enter || event->type() == QEvent::Leave) {
+            QFont font = label->font();
+            font.setUnderline(event->type() == QEvent::Enter);
+            label->setFont(font);
+        } else if (event->type() == QEvent::MouseButtonRelease &&
+                   static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton &&
+                   label->rect().contains(static_cast<QMouseEvent *>(event)->position().toPoint())) {
+            emit folderRequested(label->property("folderPath").toString(),
+                                 label->text().section(u'/', -1));
+            return true;
+        }
+    }
+    return QFrame::eventFilter(watched, event);
+}
+
+void AssetInfoPanel::showAlbums(const QList<ImmichAlbum> &albums)
+{
+    if (!m_albumsBox)
         return;
-    m_albumsLabel->setText(albumNames.isEmpty() ? tr("Not in any album")
-                                                : albumNames.join(QStringLiteral(", ")));
-    m_albumsLabel->setProperty("subheading", albumNames.isEmpty());
-    m_albumsLabel->style()->unpolish(m_albumsLabel);
-    m_albumsLabel->style()->polish(m_albumsLabel);
+    if (albums.isEmpty()) {
+        m_albumsLabel->setText(tr("Not in any album"));
+        return;
+    }
+    m_albumsLabel->hide();
+    for (const ImmichAlbum &album : albums) {
+        auto *link = makeLink(elided(album.name));
+        link->setToolTip(tr("Show the album %1").arg(album.name));
+        connect(link, &QPushButton::clicked, this, [this, album] { emit albumRequested(album); });
+        m_albumsBox->layout()->addWidget(link);
+    }
 }
 
 QWidget *AssetInfoPanel::addSection(const QString &iconResource, const QString &title,
@@ -350,6 +397,11 @@ QLabel *AssetInfoPanel::makeLabel(const QString &text, bool muted)
     if (muted)
         label->setProperty("subheading", true);
     return label;
+}
+
+QString AssetInfoPanel::elided(const QString &text, Qt::TextElideMode mode) const
+{
+    return fontMetrics().elidedText(text, mode, kLinkWidth);
 }
 
 QPushButton *AssetInfoPanel::makeLink(const QString &text)

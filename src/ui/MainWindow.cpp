@@ -11,12 +11,14 @@
 #include "ui/pages/LibraryPage.h"
 #include "ui/pages/SettingsPage.h"
 #include "ui/widgets/AnimatedStackedWidget.h"
+#include "ui/widgets/BrowseTree.h"
 #include "ui/widgets/Sidebar.h"
 #include "ui/widgets/TopBar.h"
 
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QHideEvent>
@@ -36,6 +38,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
+
+#include <memory>
 
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
@@ -130,15 +134,33 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     connect(explorePage, &ExplorePage::trashRequested, libraryPage, &LibraryPage::trashAsset);
     connect(explorePage, &ExplorePage::deleteRequested, libraryPage,
             &LibraryPage::deleteAssetPermanently);
+    // Explore hosts the people, album, tag, folder and trash pages; it reports
+    // which one is showing so the sidebar highlights the right entry.
+    auto showBrowsePage = [this] { m_pages->setCurrentIndexAnimated(1); };
+    connect(explorePage, &ExplorePage::sectionShown, this,
+            [this](BrowseSection section, const QString &itemValue, const QString &title) {
+                m_topBar->setPageTitle(title);
+                m_sidebar->setActiveSection(section, itemValue);
+            });
+    connect(explorePage, &ExplorePage::overviewShown, this, [this] {
+        m_topBar->setPageTitle(tr("Explore"));
+        m_sidebar->setCurrentPage(1);
+    });
+    connect(m_sidebar, &Sidebar::sectionRequested, this,
+            [explorePage, showBrowsePage](BrowseSection section) {
+                explorePage->showSection(section);
+                showBrowsePage();
+            });
+
     // Links in the viewer's info panel lead back into the main window.
-    auto showPerson = [this, explorePage](const ImmichPerson &person) {
+    auto showPerson = [this, explorePage, showBrowsePage](const ImmichPerson &person) {
         explorePage->showPerson(person);
-        selectPage(1);
+        showBrowsePage();
         raiseToFront();
     };
-    auto showPlace = [this, explorePage](const QString &city) {
+    auto showPlace = [this, explorePage, showBrowsePage](const QString &city) {
         explorePage->showPlace(city);
-        selectPage(1);
+        showBrowsePage();
         raiseToFront();
     };
     auto showDay = [this, libraryPage](const QDate &day) {
@@ -154,6 +176,100 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     connect(explorePage, &ExplorePage::dateRequested, this, showDay);
     m_pages->addWidget(libraryPage);
     m_pages->addWidget(explorePage);
+
+    BrowseTree *albumTree = m_sidebar->browseTree(BrowseSection::Albums);
+    BrowseTree *tagTree = m_sidebar->browseTree(BrowseSection::Tags);
+    BrowseTree *folderTree = m_sidebar->browseTree(BrowseSection::Folders);
+    connect(albumTree, &BrowseTree::albumRequested, this,
+            [explorePage, showBrowsePage](const ImmichAlbum &album) {
+                explorePage->showAlbum(album);
+                showBrowsePage();
+            });
+    connect(tagTree, &BrowseTree::tagRequested, this,
+            [explorePage, showBrowsePage](const ImmichTag &tag) {
+                explorePage->showTag(tag);
+                showBrowsePage();
+            });
+    connect(folderTree, &BrowseTree::folderRequested, this,
+            [explorePage, showBrowsePage](const QString &path, const QString &title) {
+                explorePage->showFolder(path, title);
+                showBrowsePage();
+            });
+    connect(immichClient, &ImmichClient::albumsLoaded, albumTree, &BrowseTree::setAlbums);
+    connect(immichClient, &ImmichClient::tagsLoaded, tagTree, &BrowseTree::setTags);
+    connect(immichClient, &ImmichClient::folderPathsLoaded, folderTree,
+            &BrowseTree::setFolderPaths);
+    connect(immichClient, &ImmichClient::browseListFailed, this,
+            [albumTree, tagTree, folderTree](const QString &kind, bool permissionDenied) {
+                if (kind == QStringLiteral("albums"))
+                    albumTree->setUnavailable(permissionDenied);
+                else if (kind == QStringLiteral("tags"))
+                    tagTree->setUnavailable(permissionDenied);
+                else if (kind == QStringLiteral("folders"))
+                    folderTree->setUnavailable(permissionDenied);
+            });
+    // Lists load the first time their section is expanded or opened, then again on
+    // each visit; a list fetched in the last 30 seconds is reused.
+    auto listLoaded = std::make_shared<QHash<BrowseSection, QElapsedTimer>>();
+    auto loadList = [immichClient, listLoaded](BrowseSection section, bool force) {
+        if (!immichClient->isConfigured())
+            return;
+        QElapsedTimer &loaded = (*listLoaded)[section];
+        if (!force && loaded.isValid() && loaded.elapsed() < 30 * 1000)
+            return;
+        loaded.start();
+        if (section == BrowseSection::Albums)
+            immichClient->loadAlbums();
+        else if (section == BrowseSection::Tags)
+            immichClient->loadTags();
+        else if (section == BrowseSection::Folders)
+            immichClient->loadFolderPaths();
+    };
+    connect(m_sidebar, &Sidebar::sectionExpanded, this,
+            [loadList](BrowseSection section) { loadList(section, false); });
+    for (BrowseTree *tree : {albumTree, tagTree, folderTree}) {
+        connect(tree, &BrowseTree::reloadRequested, this,
+                [loadList, tree] { loadList(tree->section(), true); });
+    }
+    connect(m_sidebar, &Sidebar::sectionRequested, this,
+            [loadList](BrowseSection section) { loadList(section, false); });
+    connect(explorePage, &ExplorePage::listRefreshRequested, this,
+            [loadList](BrowseSection section) { loadList(section, true); });
+    connect(immichClient, &ImmichClient::configurationChanged, this,
+            [this, listLoaded, loadList] {
+                listLoaded->clear();
+                for (BrowseSection section :
+                     {BrowseSection::Albums, BrowseSection::Tags, BrowseSection::Folders}) {
+                    m_sidebar->browseTree(section)->showLoading();
+                    if (m_sidebar->isSectionExpanded(section))
+                        loadList(section, true);
+                }
+            });
+    // Tag and folder pages build their breadcrumbs from the lists.
+    auto showAlbum = [this, explorePage, showBrowsePage](const ImmichAlbum &album) {
+        explorePage->showAlbum(album);
+        showBrowsePage();
+        raiseToFront();
+    };
+    auto showTag = [this, explorePage, showBrowsePage, loadList](const ImmichTag &tag) {
+        loadList(BrowseSection::Tags, false);
+        explorePage->showTag(tag);
+        showBrowsePage();
+        raiseToFront();
+    };
+    auto showFolder = [this, explorePage, showBrowsePage, loadList](const QString &path,
+                                                                    const QString &title) {
+        loadList(BrowseSection::Folders, false);
+        explorePage->showFolder(path, title);
+        showBrowsePage();
+        raiseToFront();
+    };
+    connect(libraryPage, &LibraryPage::albumRequested, this, showAlbum);
+    connect(explorePage, &ExplorePage::albumRequested, this, showAlbum);
+    connect(libraryPage, &LibraryPage::tagRequested, this, showTag);
+    connect(explorePage, &ExplorePage::tagRequested, this, showTag);
+    connect(libraryPage, &LibraryPage::folderRequested, this, showFolder);
+    connect(explorePage, &ExplorePage::folderRequested, this, showFolder);
     m_pages->addWidget(m_settingsPage);
     workspaceLayout->addWidget(m_pages, 1);
     bodyLayout->addWidget(workspace, 1);
@@ -162,6 +278,10 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     connect(m_sidebar, &Sidebar::pageRequested, this, &MainWindow::selectPage);
     connect(m_settingsPage, &SettingsPage::languageChangeRequested,
             this, &MainWindow::languageChangeRequested);
+    connect(m_sidebar, &Sidebar::pageRequested, explorePage, [explorePage](int index) {
+        if (index == 1)
+            explorePage->showOverview();
+    });
     connect(m_topBar, &TopBar::updatesRequested, this, [this] {
         selectPage(5);
     });
@@ -251,10 +371,10 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::raiseToFront()
 {
+    // Only lift minimization; a fullscreen or maximized window keeps its state.
     if (isMinimized() || !isVisible())
         setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
     show();
-    showNormal();
     raise();
     activateWindow();
 

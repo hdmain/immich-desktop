@@ -541,6 +541,14 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     connect(m_client, &ImmichClient::assetOriginalFetched,
             this, &LibraryPage::handleAssetOriginalFetched);
     connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
+    // Restored photos rejoin the timeline; reload on the next visit rather than
+    // immediately, since a full Library reload can take a while.
+    connect(m_client, &ImmichClient::assetsRestored, this, [this] {
+        if (isVisible())
+            refresh();
+        else
+            m_reloadOnShow = true;
+    });
     connect(m_client, &ImmichClient::activeEndpointChanged,
             this, &LibraryPage::handleActiveEndpointChanged);
     connect(m_client, &ImmichClient::onlineChanged, this, &LibraryPage::handleOnlineChanged);
@@ -2072,6 +2080,9 @@ MediaViewerDialog *LibraryPage::openAsset(const ImmichAsset &asset)
     connect(viewer, &MediaViewerDialog::personRequested, this, &LibraryPage::personRequested);
     connect(viewer, &MediaViewerDialog::placeRequested, this, &LibraryPage::placeRequested);
     connect(viewer, &MediaViewerDialog::dateRequested, this, &LibraryPage::dateRequested);
+    connect(viewer, &MediaViewerDialog::albumRequested, this, &LibraryPage::albumRequested);
+    connect(viewer, &MediaViewerDialog::tagRequested, this, &LibraryPage::tagRequested);
+    connect(viewer, &MediaViewerDialog::folderRequested, this, &LibraryPage::folderRequested);
     viewer->show();
     return viewer;
 }
@@ -2679,6 +2690,8 @@ void LibraryPage::hideEvent(QHideEvent *event)
 void LibraryPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    if (std::exchange(m_reloadOnShow, false))
+        refresh();
     syncPendingLocalAssets();
     scheduleVisibleMediaUpdate();
     updateAutoCheckTimer();
