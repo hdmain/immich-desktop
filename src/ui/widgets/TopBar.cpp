@@ -6,6 +6,7 @@
 
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImage>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPixmap>
@@ -127,6 +128,23 @@ void TopBar::refreshLogo()
     QPixmap logoPixmap(path);
     if (logoPixmap.isNull())
         logoPixmap = QPixmap(QStringLiteral(":/branding/immich-logo-inline-light.png"));
+    // In a custom theme the grey word mark and outline follow the text color;
+    // the blue mountains keep theirs.
+    if (m_themeManager->preset() == ThemePreset::Custom && !logoPixmap.isNull()) {
+        const QColor text = m_themeManager->palette().text;
+        QImage image = logoPixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+        for (int y = 0; y < image.height(); ++y) {
+            auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+            for (int x = 0; x < image.width(); ++x) {
+                const QRgb pixel = line[x];
+                const int spread = qMax(qRed(pixel), qMax(qGreen(pixel), qBlue(pixel))) -
+                                   qMin(qRed(pixel), qMin(qGreen(pixel), qBlue(pixel)));
+                if (qAlpha(pixel) > 0 && spread < 25)
+                    line[x] = qRgba(text.red(), text.green(), text.blue(), qAlpha(pixel));
+            }
+        }
+        logoPixmap = QPixmap::fromImage(image);
+    }
 
     const int logoWidth = logoPixmap.isNull()
         ? qRound(kLogoHeight * 3.5)
