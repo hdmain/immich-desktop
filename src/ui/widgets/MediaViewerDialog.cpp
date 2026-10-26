@@ -4,6 +4,7 @@
 #include "ui/widgets/AnimatedButton.h"
 #include "ui/widgets/AssetInfoPanel.h"
 #include "ui/widgets/ShareLinkDialog.h"
+#include "ui/widgets/Toast.h"
 #include "ui/widgets/VideoPlayerWidget.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
@@ -44,6 +45,7 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     };
     m_previousButton = makeButton({}, QStringLiteral(":/icons/chevron-left.svg"));
     m_nextButton = makeButton({}, QStringLiteral(":/icons/chevron-right.svg"));
+    m_favoriteButton = makeButton(tr("Favorite"), QStringLiteral(":/icons/heart.svg"));
     m_copyButton = makeButton(tr("Copy"), QStringLiteral(":/icons/copy.svg"));
     auto *downloadButton = makeButton(tr("Download"), QStringLiteral(":/icons/download.svg"));
     m_shareButton = makeButton(tr("Share link"), QStringLiteral(":/icons/external-link.svg"));
@@ -63,6 +65,7 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     controls->addWidget(m_previousButton);
     controls->addWidget(m_nextButton);
     controls->addStretch(1);
+    controls->addWidget(m_favoriteButton);
     controls->addWidget(m_copyButton);
     controls->addWidget(downloadButton);
     controls->addWidget(m_shareButton);
@@ -83,6 +86,22 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
 
     connect(m_previousButton, &QPushButton::clicked, this, [this] { step(-1); });
     connect(m_nextButton, &QPushButton::clicked, this, [this] { step(1); });
+    connect(m_favoriteButton, &QPushButton::clicked, this,
+            [this] { m_client->setFavorite({m_asset.id}, !m_asset.favorite); });
+    connect(m_client, &ImmichClient::favoritesChanged, this,
+            [this](const QStringList &assetIds, bool favorite) {
+                for (const QString &id : assetIds)
+                    m_favoriteChanges.insert(id, favorite);
+                if (assetIds.contains(m_asset.id)) {
+                    m_asset.favorite = favorite;
+                    updateFavoriteButton();
+                }
+            });
+    connect(m_client, &ImmichClient::favoriteFailed, this,
+            [this](const QStringList &assetIds, const QString &message) {
+                if (assetIds.contains(m_asset.id))
+                    Toast::showMessage(this, message);
+            });
     connect(m_copyButton, &QPushButton::clicked, this, [this] { emit copyRequested(m_asset); });
     connect(downloadButton, &QPushButton::clicked, this,
             [this] { emit downloadRequested(m_asset); });
@@ -124,6 +143,11 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     connect(previousShortcut, &QShortcut::activated, this, [this] { step(-1); });
     auto *nextShortcut = new QShortcut(QKeySequence(Qt::Key_Right), this);
     connect(nextShortcut, &QShortcut::activated, this, [this] { step(1); });
+    auto *favoriteShortcut = new QShortcut(QKeySequence(Qt::Key_F), this);
+    connect(favoriteShortcut, &QShortcut::activated, m_favoriteButton, [this] {
+        if (m_favoriteButton->isVisible())
+            m_favoriteButton->click();
+    });
     auto *infoShortcut = new QShortcut(QKeySequence(Qt::Key_I), this);
     connect(infoShortcut, &QShortcut::activated, m_infoButton, &QPushButton::toggle);
 
@@ -174,8 +198,10 @@ void MediaViewerDialog::updateNavigation()
 void MediaViewerDialog::setAsset(const ImmichAsset &asset, bool autoplay)
 {
     m_asset = asset;
+    m_asset.favorite = m_favoriteChanges.value(asset.id, asset.favorite);
     setWindowTitle(asset.fileName.isEmpty() ? tr("Media preview") : asset.fileName);
     m_copyButton->setVisible(!asset.isVideo() && !m_trashMode);
+    updateFavoriteButton();
     if (asset.isVideo()) {
         m_videoPlayer->setAsset(asset, autoplay);
         m_stack->setCurrentWidget(m_videoPlayer);
@@ -197,6 +223,16 @@ void MediaViewerDialog::setTrashMode(bool trashMode)
     m_shareButton->setVisible(!trashMode);
     m_trashButton->setVisible(!trashMode);
     m_restoreButton->setVisible(trashMode);
+    updateFavoriteButton();
+}
+
+void MediaViewerDialog::updateFavoriteButton()
+{
+    m_favoriteButton->setVisible(!m_trashMode && !m_asset.isLocalPending());
+    m_favoriteButton->setIconResource(m_asset.favorite ? QStringLiteral(":/icons/heart-filled.svg")
+                                                       : QStringLiteral(":/icons/heart.svg"));
+    m_favoriteButton->setToolTip(m_asset.favorite ? tr("Remove from favorites (F)")
+                                                  : tr("Add to favorites (F)"));
 }
 
 void MediaViewerDialog::setInfoPanelVisible(bool visible)

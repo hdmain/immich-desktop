@@ -122,6 +122,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/SummaryTile.h
     src/ui/widgets/Sidebar.cpp
     src/ui/widgets/Sidebar.h
+    src/ui/widgets/Toast.cpp
+    src/ui/widgets/Toast.h
     src/ui/widgets/TopBar.cpp
     src/ui/widgets/TopBar.h
     src/ui/widgets/SoftwareVideoWidget.cpp

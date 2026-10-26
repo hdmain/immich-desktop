@@ -3,6 +3,7 @@
 #include "core/ImmichClient.h"
 
 #include <QDialog>
+#include <QHash>
 
 #include <functional>
 
@@ -11,6 +12,7 @@ class QStackedWidget;
 
 namespace Aurora {
 
+class AnimatedButton;
 class AssetInfoPanel;
 class ThemeManager;
 class VideoPlayerWidget;
@@ -48,6 +50,7 @@ private:
     void setAsset(const ImmichAsset &asset, bool autoplay = false);
     void step(int direction);
     void handleAssetsDeleted(const QStringList &assetIds);
+    void updateFavoriteButton();
 
     ImmichClient *m_client;
     NeighborProvider m_neighbors;
@@ -64,6 +67,9 @@ private:
     QPushButton *m_shareButton;
     QPushButton *m_trashButton;
     QPushButton *m_restoreButton;
+    AnimatedButton *m_favoriteButton;
+    // Favorites changed while the viewer is open, so stepping back shows them.
+    QHash<QString, bool> m_favoriteChanges;
     bool m_trashMode = false;
     QPushButton *m_infoButton;
     AssetInfoPanel *m_infoPanel;

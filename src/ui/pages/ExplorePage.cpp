@@ -8,6 +8,7 @@
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ShareLinkDialog.h"
+#include "ui/widgets/Toast.h"
 #include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/ZoomSlider.h"
 
@@ -491,6 +492,35 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     });
     connect(m_client, &ImmichClient::assetsDeleted, this,
             [this](const QStringList &assetIds, bool) { handleAssetsDeleted(assetIds); });
+    connect(m_client, &ImmichClient::favoriteFailed, this,
+            [this](const QStringList &assetIds, const QString &message) {
+                // The viewer reports failures of its own requests.
+                bool ours = false;
+                for (const QString &id : assetIds)
+                    ours = m_favoriteRequests.remove(id) || ours;
+                if (ours)
+                    Toast::showMessage(this, message);
+            });
+    connect(m_client, &ImmichClient::favoritesChanged, this,
+            [this](const QStringList &assetIds, bool favorite) {
+                for (const QString &id : assetIds)
+                    m_favoriteRequests.remove(id);
+                for (ImmichAsset &asset : m_recentAssets) {
+                    if (assetIds.contains(asset.id))
+                        asset.favorite = favorite;
+                }
+                if (!favorite && m_collectionFilterKind == QStringLiteral("favorites")) {
+                    removeCollectionTiles(assetIds);
+                    return;
+                }
+                for (const QString &id : assetIds) {
+                    if (MediaTile *tile = m_collectionTiles.value(id)) {
+                        ImmichAsset asset = tile->asset();
+                        asset.favorite = favorite;
+                        tile->updateAsset(asset);
+                    }
+                }
+            });
     connect(m_client, &ImmichClient::configurationChanged, this, [this](bool configured) {
         m_loadedLists.clear();
         m_refreshButton->setEnabled(configured);
@@ -724,8 +754,15 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         recentLayout->insertWidget(recentLayout->count() - 1, card);
         m_recentSection.cards.append(card);
         m_browseAssetCards.insert(asset.id, card);
-        connect(card, &ExploreCard::activated, this,
-                [this, asset] { openAsset(asset, false); });
+        // Look the asset up on click so favorite changes since loading are included.
+        connect(card, &ExploreCard::activated, this, [this, id = asset.id] {
+            for (const ImmichAsset &recent : m_recentAssets) {
+                if (recent.id == id) {
+                    openAsset(recent, false);
+                    return;
+                }
+            }
+        });
         m_client->loadThumbnail(asset.id);
     }
     populateSection(&m_recentSection, !data.recentAssets.isEmpty());
@@ -1207,9 +1244,6 @@ void ExplorePage::clearTrashView()
 
 void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
 {
-    if (m_collectionHoverPreview)
-        m_collectionHoverPreview->stop();
-
     for (const QString &assetId : assetIds) {
         const QList<ExploreCard *> cards = m_browseAssetCards.values(assetId);
         for (ExploreCard *card : cards) {
@@ -1222,7 +1256,16 @@ void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
 
         m_recentAssets.removeIf(
             [&assetId](const ImmichAsset &asset) { return asset.id == assetId; });
+    }
+    populateSection(&m_recentSection, !m_recentSection.cards.isEmpty());
+    removeCollectionTiles(assetIds);
+}
 
+void ExplorePage::removeCollectionTiles(const QStringList &assetIds)
+{
+    if (m_collectionHoverPreview)
+        m_collectionHoverPreview->stop();
+    for (const QString &assetId : assetIds) {
         const QPointer<MediaTile> tile = m_collectionTiles.take(assetId);
         if (!tile)
             continue;
@@ -1239,7 +1282,6 @@ void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
             section.header->deleteLater();
         return true;
     });
-    populateSection(&m_recentSection, !m_recentSection.cards.isEmpty());
     if (!m_collectionFilterKind.isEmpty())
         updateCollectionSubtitle();
     scheduleCollectionLayout();
@@ -1346,10 +1388,15 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         section->tiles.append(tile);
         m_collectionTiles.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this,
-                [this, asset] { openAsset(asset, true); });
-        connect(tile, &MediaTile::infoRequested, this, [this, asset] {
+                [this](const ImmichAsset &asset) { openAsset(asset, true); });
+        connect(tile, &MediaTile::infoRequested, this, [this](const ImmichAsset &asset) {
             openAsset(asset, true)->setInfoPanelVisible(true);
         });
+        connect(tile, &MediaTile::favoriteRequested, this,
+                [this](const ImmichAsset &asset, bool favorite) {
+                    m_favoriteRequests.insert(asset.id);
+                    m_client->setFavorite({asset.id}, favorite);
+                });
         connect(tile, &MediaTile::shareRequested, this, [this](const ImmichAsset &asset) {
             (new ShareLinkDialog(m_client, asset, this))->show();
         });

@@ -112,7 +112,8 @@ void MediaTile::clearThumbnail()
 
 void MediaTile::updateAsset(const ImmichAsset &asset)
 {
-    const bool badgeChanged = m_asset.localSyncState != asset.localSyncState;
+    const bool badgeChanged = m_asset.localSyncState != asset.localSyncState ||
+                              m_asset.favorite != asset.favorite;
     m_asset = asset;
     setToolTip(asset.fileName);
     if (badgeChanged)
@@ -190,6 +191,19 @@ void MediaTile::paintEvent(QPaintEvent *)
             painter.drawRoundedRect(textRect, 4, 4);
             painter.setPen(Qt::white);
             painter.drawText(textRect, Qt::AlignCenter, duration);
+        }
+    }
+
+    if (m_asset.favorite && !m_trashed) {
+        const QPixmap heart = renderSvgIcon(QStringLiteral(":/icons/heart-filled.svg"), Qt::white,
+                                            QSize(16, 16), devicePixelRatioF());
+        if (!heart.isNull()) {
+            constexpr int pad = 6;
+            const QRect bg(pad, height() - pad - 22, 22, 22);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 110));
+            painter.drawEllipse(bg);
+            painter.drawPixmap(bg.x() + 3, bg.y() + 3, heart);
         }
     }
 
@@ -317,6 +331,8 @@ void MediaTile::contextMenuEvent(QContextMenuEvent *event)
             menu.addAction(tr("Copy"), this, [this] { emit copyRequested(m_asset); });
         menu.addAction(tr("Download"), this, [this] { emit downloadRequested(m_asset); });
         menu.addAction(tr("Share link…"), this, [this] { emit shareRequested(m_asset); });
+        menu.addAction(m_asset.favorite ? tr("Remove from favorites") : tr("Add to favorites"),
+                       this, [this] { emit favoriteRequested(m_asset, !m_asset.favorite); });
         menu.addSeparator();
         menu.addAction(tr("Move to trash"), this, [this] { emit trashRequested(m_asset); });
         menu.addAction(tr("Delete permanently"), this,

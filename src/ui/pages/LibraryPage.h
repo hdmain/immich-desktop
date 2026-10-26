@@ -234,6 +234,7 @@ private:
     QTimer *m_searchDebounce;
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
+    QSet<QString> m_favoriteRequests; // Sent from tile menus, awaiting a reply.
     QSet<QString> m_localAssetIds;
     QSet<QString> m_requestedThumbnails;
     QHash<QString, int> m_thumbnailRetries;

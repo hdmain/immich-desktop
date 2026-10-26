@@ -2039,6 +2039,44 @@ void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
     });
 }
 
+void ImmichClient::setFavorite(const QStringList &assetIds, bool favorite)
+{
+    if (!ensureConfigured(tr("Favorite")))
+        return;
+
+    QStringList ids;
+    QJsonArray idArray;
+    for (const QString &id : assetIds) {
+        const QString trimmed = id.trimmed();
+        if (isValidImmichId(trimmed)) {
+            ids.append(trimmed);
+            idArray.append(trimmed);
+        }
+    }
+    if (ids.isEmpty())
+        return;
+
+    QJsonObject body;
+    body.insert(QStringLiteral("ids"), idArray);
+    body.insert(QStringLiteral("isFavorite"), favorite);
+
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/assets")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->put(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ids, favorite] {
+        const QByteArray body = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status == 403)
+            emit favoriteFailed(ids, tr("Favorites need the asset.update permission on your API key."));
+        else if (reply->error() != QNetworkReply::NoError)
+            emit favoriteFailed(ids, errorMessage(reply, body));
+        else
+            emit favoritesChanged(ids, favorite);
+        reply->deleteLater();
+    });
+}
+
 QUrl ImmichClient::sharedLinkUrl(const QString &key) const
 {
     static const QRegularExpression validKey(QStringLiteral("^[A-Za-z0-9_-]+$"));

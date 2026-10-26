@@ -8,6 +8,7 @@
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ShareLinkDialog.h"
 #include "ui/widgets/SummaryTile.h"
+#include "ui/widgets/Toast.h"
 #include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/ZoomSlider.h"
 #include "ui/widgets/ZoomPanWidget.h"
@@ -541,6 +542,32 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     connect(m_client, &ImmichClient::assetOriginalFetched,
             this, &LibraryPage::handleAssetOriginalFetched);
     connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
+    connect(m_client, &ImmichClient::favoriteFailed, this,
+            [this](const QStringList &assetIds, const QString &message) {
+                // The viewer reports failures of its own requests.
+                bool ours = false;
+                for (const QString &id : assetIds)
+                    ours = m_favoriteRequests.remove(id) || ours;
+                if (ours)
+                    Toast::showMessage(this, message);
+            });
+    connect(m_client, &ImmichClient::favoritesChanged, this,
+            [this](const QStringList &assetIds, bool favorite) {
+                for (const QString &id : assetIds)
+                    m_favoriteRequests.remove(id);
+                const QSet<QString> ids(assetIds.begin(), assetIds.end());
+                for (ImmichAsset &asset : m_assets) {
+                    if (ids.contains(asset.id))
+                        asset.favorite = favorite;
+                }
+                for (const QString &id : assetIds) {
+                    if (MediaTile *tile = m_tilesById.value(id)) {
+                        ImmichAsset asset = tile->asset();
+                        asset.favorite = favorite;
+                        tile->updateAsset(asset);
+                    }
+                }
+            });
     // Restored photos rejoin the timeline; reload on the next visit rather than
     // immediately, since a full Library reload can take a while.
     connect(m_client, &ImmichClient::assetsRestored, this, [this] {
@@ -1115,6 +1142,11 @@ void LibraryPage::appendAssetsToTimeline(const QList<ImmichAsset> &assets)
         });
         connect(tile, &MediaTile::trashRequested, this, &LibraryPage::trashAsset);
         connect(tile, &MediaTile::deleteRequested, this, &LibraryPage::deleteAssetPermanently);
+        connect(tile, &MediaTile::favoriteRequested, this,
+                [this](const ImmichAsset &asset, bool favorite) {
+                    m_favoriteRequests.insert(asset.id);
+                    m_client->setFavorite({asset.id}, favorite);
+                });
     }
 
     if (!m_assets.isEmpty())

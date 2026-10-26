@@ -112,6 +112,7 @@ private slots:
     void showAssetThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showRequestError(const QString &operation, const QString &message);
     void handleAssetsDeleted(const QStringList &assetIds);
+    void removeCollectionTiles(const QStringList &assetIds);
     void openPerson(const Aurora::ImmichPerson &person);
     void openPlace(const Aurora::ImmichPlace &place);
     void backToBrowse();
@@ -229,6 +230,7 @@ private:
     QTimer *m_collectionVisibilityTimer = nullptr;
     QList<DaySection> m_collectionSections;
     QHash<QString, QPointer<MediaTile>> m_collectionTiles;
+    QSet<QString> m_favoriteRequests; // Sent from tile menus, awaiting a reply.
     QSet<QString> m_collectionRequestedThumbs;
     QHash<QString, int> m_collectionRequestedTileImages;
     QString m_collectionFilterKind;

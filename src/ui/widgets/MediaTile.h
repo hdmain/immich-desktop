@@ -48,6 +48,7 @@ signals:
     void restoreRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
+    void favoriteRequested(const Aurora::ImmichAsset &asset, bool favorite);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

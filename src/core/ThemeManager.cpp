@@ -226,6 +226,8 @@ QString ThemeManager::buildStyleSheet() const
             border-radius: 10px;
         }
         QFrame#assetInfoPanel { border-left: 1px solid %4; }
+        QFrame#toast { background: %6; border: 1px solid #E5484D; border-radius: 10px; }
+        QFrame#toast QLabel { font-weight: 600; }
         QTreeWidget#browseTree {
             background: transparent;
             border: none;

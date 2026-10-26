@@ -83,6 +83,7 @@ public:
     void fetchAssetInfo(const QString &assetId);
     void fetchAssetDetails(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
+    void setFavorite(const QStringList &assetIds, bool favorite);
     void restoreFromTrash(const QStringList &assetIds);
     void restoreAllFromTrash();
     void emptyTrash();
@@ -139,6 +140,8 @@ signals:
     void assetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                               const QString &contentType);
     void assetsDeleted(const QStringList &assetIds, bool permanent);
+    void favoritesChanged(const QStringList &assetIds, bool favorite);
+    void favoriteFailed(const QStringList &assetIds, const QString &message);
     // assetIds is empty when everything in the trash was restored.
     void assetsRestored(const QStringList &assetIds);
     void trashEmptied();
