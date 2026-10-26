@@ -33,6 +33,7 @@
 - **Explore** - people, places, and recent media; open a person or place as an in-app Library-style gallery
 - **Library sections** - People, Favorites, Archive, Albums, Tags, Folders, and Trash in the sidebar; albums, tags, and folders expand into lists, and the trash can restore or permanently delete
 - **Viewer** - step through photos and videos with on-screen controls or arrow keys; optional info panel (date, camera, location, people, albums, tags, folder) that links to those pages
+- **Favorites** - add or remove favorites with the viewer's heart button (or F) or the right-click menu; favorites show a heart on their thumbnail
 - **Search** - find photos and videos across your library
 - **Folder Sync** - watch multiple local folders and auto-upload new photos/videos to Immich (Windows, macOS, Linux); add another folder with **+**
   - Optional **local-network only** mode: upload only when your Immich Local URL is reachable
@@ -78,7 +79,7 @@ Snap Store ships `amd64` and `arm64`.
 
 1. Install Immich Desktop from Snap, the Arch Linux AUR, or a [GitHub release](https://github.com/hdmain/immich-desktop/releases/latest).
 2. Open the app and go to **Settings → Immich Server**.
-3. Enter your Immich server URL and an API key with permissions such as `user.read`, `asset.read`, `asset.view`, `asset.upload`, `asset.download`, `asset.delete`, and `person.read`, plus optionally `album.read`, `tag.read` and `folder.read` for the Albums, Tags and Folders sections in the sidebar (`album.read` also lists a photo's albums in the info panel). Optionally set a **Local URL** for LAN use.
+3. Enter your Immich server URL and an API key with permissions such as `user.read`, `asset.read`, `asset.view`, `asset.upload`, `asset.download`, `asset.delete`, and `person.read`, plus optionally `album.read`, `tag.read` and `folder.read` for the Albums, Tags and Folders sections in the sidebar (`album.read` also lists a photo's albums in the info panel), and `asset.update` to add or remove favorites. Optionally set a **Local URL** for LAN use.
 4. Test the connection, save, then browse **Library** or **Explore**.
 5. (Optional) Open **Settings → Folder Sync**, choose folders with the system file picker (use **+** to add more), enable watching, and turn on **Upload only when Immich is available on the local network** if you only want uploads over LAN. Drop photos or videos into those folders; they appear in Library with sync status badges and upload when allowed. Each folder has its own Browse, Open folder, and Remove controls.
 
@@ -113,6 +114,7 @@ Plans can shift, track progress and ideas in
 - Library timeline with search, Years view, zoomable grids, progressive month loading, preview, trash, upload & download
 - Shared viewer with photo/video navigation and an info panel (people, places, albums, tags, folder, EXIF)
 - Sidebar sections for people, favorites, archive, albums, tags, folders, and trash (view-only for now)
+- Favorites: add or remove from the viewer or the right-click menu
 - Explore: people and places as in-page galleries (Library-style person/place views)
 - Folder Sync: multiple watched local folders, LAN-only upload option, unsaved/saving/error badges in Library
 - Share links with optional password; mTLS client certificates for reverse proxies
