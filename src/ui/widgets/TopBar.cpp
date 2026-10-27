@@ -103,7 +103,7 @@ void TopBar::refreshProfiles()
     for (const auto &profile : AppSettings::profiles()) {
         if (profile.id == AppSettings::activeProfileId()) {
             m_profileButton->setText(profile.name);
-            window()->setWindowTitle(tr("immich — %1").arg(profile.name));
+            window()->setWindowTitle(tr("immich - %1").arg(profile.name));
             break;
         }
     }

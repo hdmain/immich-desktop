@@ -21,10 +21,23 @@ QSettings globalSettings()
                      QStringLiteral("Immich"), QStringLiteral("immich"));
 }
 
+bool isSafeProfileId(const QString &id)
+{
+    // UUIDs / "legacy" only - reject path separators so account files stay under profiles/.
+    if (id.isEmpty() || id.contains(u'/') || id.contains(u'\\') || id.contains(u'..'))
+        return false;
+    for (const QChar ch : id) {
+        if (!(ch.isLetterOrNumber() || ch == u'-' || ch == u'_'))
+            return false;
+    }
+    return true;
+}
+
 QString accountFile(const QString &id)
 {
+    const QString safe = isSafeProfileId(id) ? id : QStringLiteral("legacy");
     return QFileInfo(globalSettings().fileName()).absolutePath() +
-           QStringLiteral("/profiles/") + id + QStringLiteral(".ini");
+           QStringLiteral("/profiles/") + safe + QStringLiteral(".ini");
 }
 
 void ensureProfiles()
@@ -58,6 +71,8 @@ void ensureProfiles()
 
 bool hasProfile(const QString &id)
 {
+    if (!isSafeProfileId(id))
+        return false;
     for (const auto &profile : AppSettings::profiles())
         if (profile.id == id)
             return true;
@@ -133,21 +148,27 @@ QList<AppSettings::Profile> AppSettings::profiles()
     auto settings = globalSettings();
     settings.beginGroup(QStringLiteral("profiles/names"));
     QList<Profile> result;
-    for (const auto &id : settings.childKeys())
+    for (const auto &id : settings.childKeys()) {
+        if (!isSafeProfileId(id))
+            continue;
         result.append({id, settings.value(id).toString()});
+    }
     return result;
 }
 
 QString AppSettings::activeProfileId()
 {
     ensureProfiles();
-    return globalSettings().value(QStringLiteral("profiles/active"), QStringLiteral("legacy")).toString();
+    const QString id =
+        globalSettings().value(QStringLiteral("profiles/active"), QStringLiteral("legacy")).toString();
+    return isSafeProfileId(id) && hasProfile(id) ? id : QStringLiteral("legacy");
 }
 
 QString AppSettings::defaultProfileId()
 {
     ensureProfiles();
-    return globalSettings().value(QStringLiteral("profiles/default")).toString();
+    const QString id = globalSettings().value(QStringLiteral("profiles/default")).toString();
+    return isSafeProfileId(id) && hasProfile(id) ? id : activeProfileId();
 }
 
 QString AppSettings::createProfile(const QString &name)
