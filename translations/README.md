@@ -44,11 +44,11 @@ GitHub's caches refresh. Embedded catalogs are still rebuilt for offline backups
 
 | Language | Code | Progress | Strings |
 | --- | --- | --- | ---: |
-| English | `en` | `██████████` 100% | 597 / 597 |
-| German (Deutsch) | `de` | `███░░░░░░░` 27% | 160 / 597 |
-| French (Français) | `fr` | `███░░░░░░░` 27% | 160 / 597 |
-| Polish (Polski) | `pl` | `█████████░` 91% | 543 / 597 |
-| Chinese (简体) | `zh_CN` | `█████████░` 91% | 543 / 597 |
+| English | `en` | `██████████` 100% | 626 / 626 |
+| German (Deutsch) | `de` | `██░░░░░░░░` 25% | 159 / 626 |
+| French (Français) | `fr` | `██░░░░░░░░` 25% | 159 / 626 |
+| Polish (Polski) | `pl` | `█████████░` 87% | 542 / 626 |
+| Chinese (简体) | `zh_CN` | `█████████░` 87% | 542 / 626 |
 
 _Auto-generated from `translations/immich_*.ts`. Run `python tools/update_translation_status.py` or `cmake --build build --target update_translations`._
 

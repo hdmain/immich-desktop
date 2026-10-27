@@ -174,11 +174,11 @@ or add a language.
 
 | Language | Code | Progress | Strings |
 | --- | --- | --- | ---: |
-| English | `en` | `██████████` 100% | 597 / 597 |
-| German (Deutsch) | `de` | `███░░░░░░░` 27% | 160 / 597 |
-| French (Français) | `fr` | `███░░░░░░░` 27% | 160 / 597 |
-| Polish (Polski) | `pl` | `█████████░` 91% | 543 / 597 |
-| Chinese (简体) | `zh_CN` | `█████████░` 91% | 543 / 597 |
+| English | `en` | `██████████` 100% | 626 / 626 |
+| German (Deutsch) | `de` | `██░░░░░░░░` 25% | 159 / 626 |
+| French (Français) | `fr` | `██░░░░░░░░` 25% | 159 / 626 |
+| Polish (Polski) | `pl` | `█████████░` 87% | 542 / 626 |
+| Chinese (简体) | `zh_CN` | `█████████░` 87% | 542 / 626 |
 
 _Auto-generated from `translations/immich_*.ts`. Run `python tools/update_translation_status.py` or `cmake --build build --target update_translations`._
 
@@ -237,6 +237,12 @@ for day-to-day use. Beta builds can break.
 See [CONTRIBUTING.md](CONTRIBUTING.md). Please follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Security reports go through
 [SECURITY.md](SECURITY.md), not public issues.
+
+## User profiles
+
+Switch accounts using the profile menu in the top bar, or manage them under **Settings → Immich Server → User profiles**. Create an empty profile with **New profile**, or fill out the connection form and use **Save as new profile…**. Rename applies to the active profile; **Delete profile…** lets you delete an inactive profile. Choose **Use this profile on launch** to set the startup account independently of the account currently open.
+
+Each profile keeps its own server/local URLs, API key, HTTP headers, client certificate settings, library and image caches, upload queue, download directory, playback/timeline preferences, and folder sync settings/state. Switching stops the previous account's requests and folder watching; its queued uploads resume when you return. Appearance, language, window behavior, and app updates are shared. Existing settings and caches migrate into a **Personal** profile. Deleting a profile removes its saved connection settings; cached files are never assigned to a new profile.
 
 ## License
 

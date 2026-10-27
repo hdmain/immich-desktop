@@ -8,6 +8,7 @@
 #include <QSettings>
 #include <QString>
 #include <QStringList>
+#include <memory>
 
 namespace Aurora {
 
@@ -80,7 +81,23 @@ struct SupportSettings {
 
 class AppSettings final {
 public:
-    AppSettings();
+    explicit AppSettings(const QString &profileId = {});
+
+    struct Profile { QString id; QString name; };
+    static QList<Profile> profiles();
+    static QString activeProfileId();
+    static QString defaultProfileId();
+    static QString createProfile(const QString &name);
+    static bool renameProfile(const QString &id, const QString &name);
+    static bool deleteProfile(const QString &id);
+    static bool setActiveProfile(const QString &id);
+    static bool setDefaultProfile(const QString &id);
+    static void activateDefaultProfile();
+    static QString profileDataDirectory();
+    static QString profileCacheDirectory();
+    // Switching is completed by main only after the old account's services stop.
+    static void requestProfileSwitch(const QString &id);
+    static constexpr int ProfileSwitchExitCode = 42;
 
     QString loadLanguage() const;
     void saveLanguage(const QString &language);
@@ -114,6 +131,7 @@ public:
 
 private:
     mutable QSettings m_settings;
+    std::unique_ptr<QSettings> m_accountSettings;
 };
 
 } // namespace Aurora

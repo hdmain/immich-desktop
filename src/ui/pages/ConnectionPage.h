@@ -21,6 +21,9 @@ class ConnectionPage final : public QWidget {
 public:
     explicit ConnectionPage(ImmichClient *client, QWidget *parent = nullptr);
 
+signals:
+    void profilesChanged();
+
 private slots:
     void saveAndTest();
     void showConnectionResult(bool success, const QString &message);
@@ -32,6 +35,7 @@ private:
     void addHeaderRow(const QString &name = {}, const QString &value = {});
     QList<QPair<QString, QString>> headerRows() const;
 
+    QString m_newProfileName;
     ImmichClient *m_client;
     QLineEdit *m_serverUrl;
     QLineEdit *m_localServerUrl;

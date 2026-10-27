@@ -84,3 +84,8 @@ if(IMMICH_PYTHON)
     add_test(NAME ChineseCatalogTest COMMAND "${IMMICH_PYTHON}" -X utf8
         "${CMAKE_CURRENT_SOURCE_DIR}/ChineseCatalogTest.py")
 endif()
+
+qt_add_executable(ProfileTest ProfileTest.cpp ${CMAKE_SOURCE_DIR}/resources/resources.qrc)
+target_link_libraries(ProfileTest PRIVATE immich_app Qt6::Test)
+add_test(NAME ProfileTest COMMAND ProfileTest)
+set_tests_properties(ProfileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

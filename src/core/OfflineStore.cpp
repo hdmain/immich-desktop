@@ -1,3 +1,4 @@
+#include "core/AppSettings.h"
 #include "core/OfflineStore.h"
 
 #include <QCryptographicHash>
@@ -70,7 +71,7 @@ QJsonObject readJsonFile(const QString &path)
 } // namespace
 
 OfflineStore::OfflineStore()
-    : m_directory(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+    : m_directory(AppSettings::profileCacheDirectory() +
                   QStringLiteral("/offline"))
 {
     QDir().mkpath(m_directory);

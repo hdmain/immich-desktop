@@ -15,6 +15,7 @@ class TopBar final : public QWidget {
 
 public:
     explicit TopBar(ThemeManager *themeManager, QWidget *parent = nullptr);
+    void refreshProfiles();
     void setPageTitle(const QString &title);
     void setUpdateAvailable(bool available, const QString &version = {});
 
@@ -33,6 +34,7 @@ private:
     ThemeManager *m_themeManager;
     QLabel *m_logo;
     QLabel *m_title;
+    QPushButton *m_profileButton = nullptr;
     QPushButton *m_updateButton;
     QPushButton *m_minimizeButton;
     QPushButton *m_maximizeButton;

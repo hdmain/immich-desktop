@@ -100,7 +100,8 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
                    Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint |
                    Qt::WindowSystemMenuHint);
-    setWindowTitle(QStringLiteral("immich"));
+    m_topBar->refreshProfiles();
+    connect(m_settingsPage, &SettingsPage::profilesChanged, m_topBar, &TopBar::refreshProfiles);
     setWindowIcon(applicationIconForPalette(m_themeManager->palette()));
     setMinimumSize(900, 620);
     resize(1180, 760);

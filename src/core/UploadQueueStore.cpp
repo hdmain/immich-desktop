@@ -1,3 +1,4 @@
+#include "core/AppSettings.h"
 #include "core/UploadQueueStore.h"
 
 #include <QDir>
@@ -12,7 +13,7 @@
 namespace Aurora {
 
 UploadQueueStore::UploadQueueStore()
-    : m_filePath(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
+    : m_filePath(AppSettings::profileDataDirectory() +
                  QStringLiteral("/upload-queue.json"))
 {
     QDir().mkpath(QFileInfo(m_filePath).absolutePath());

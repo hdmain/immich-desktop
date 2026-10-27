@@ -1,3 +1,4 @@
+#include "core/AppSettings.h"
 #include "core/ThumbnailCache.h"
 
 #include <QCryptographicHash>
@@ -14,7 +15,7 @@ namespace Aurora {
 
 ThumbnailCache::ThumbnailCache(const QString &subdirectory, int memoryBudgetKb,
                                qint64 maxDiskBytes)
-    : m_directory(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+    : m_directory(AppSettings::profileCacheDirectory() +
                   u'/' + subdirectory)
     , m_maxDiskBytes(maxDiskBytes)
 {

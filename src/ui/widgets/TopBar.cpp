@@ -1,6 +1,8 @@
 #include "ui/widgets/TopBar.h"
 
 #include "core/Theme.h"
+#include "core/AppSettings.h"
+#include <QMenu>
 #include "core/ThemeManager.h"
 #include "ui/IconUtils.h"
 
@@ -45,6 +47,27 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     layout->addWidget(m_title);
     layout->addStretch();
 
+    m_profileButton = new QPushButton(this);
+    m_profileButton->setObjectName(QStringLiteral("profileMenuButton"));
+    m_profileButton->setAccessibleName(tr("Switch profile"));
+    m_profileButton->setToolTip(tr("Switch profile"));
+    m_profileButton->setMaximumWidth(220);
+    auto *profiles = new QMenu(m_profileButton);
+    connect(profiles, &QMenu::aboutToShow, this, [this, profiles] {
+        profiles->clear();
+        for (const auto &profile : AppSettings::profiles()) {
+            auto *action = profiles->addAction(profile.name);
+            action->setCheckable(true);
+            action->setChecked(profile.id == AppSettings::activeProfileId());
+            connect(action, &QAction::triggered, this, [id = profile.id] {
+                AppSettings::requestProfileSwitch(id);
+            });
+        }
+    });
+    m_profileButton->setMenu(profiles);
+    refreshProfiles();
+    layout->addWidget(m_profileButton);
+
     m_updateButton->setObjectName(QStringLiteral("updateButton"));
     m_updateButton->setProperty("windowControl", true);
     m_updateButton->setCursor(Qt::PointingHandCursor);
@@ -73,6 +96,17 @@ TopBar::TopBar(ThemeManager *themeManager, QWidget *parent)
     connect(m_closeButton, &QPushButton::clicked, this, [this] { window()->close(); });
     connect(m_themeManager, &ThemeManager::appearanceChanged, this, &TopBar::refreshIcons);
     refreshIcons();
+}
+
+void TopBar::refreshProfiles()
+{
+    for (const auto &profile : AppSettings::profiles()) {
+        if (profile.id == AppSettings::activeProfileId()) {
+            m_profileButton->setText(profile.name);
+            window()->setWindowTitle(tr("immich — %1").arg(profile.name));
+            break;
+        }
+    }
 }
 
 void TopBar::setPageTitle(const QString &title)

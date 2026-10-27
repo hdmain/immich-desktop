@@ -6,6 +6,8 @@
 #include "core/TlsConfig.h"
 
 #include <QCheckBox>
+#include <QInputDialog>
+#include <QMessageBox>
 #include "ui/widgets/NoWheelComboBox.h"
 #include <QFileDialog>
 #include <QFileInfo>
@@ -240,6 +242,17 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
 
     auto *actions = new QHBoxLayout;
     actions->addWidget(m_status, 1);
+    auto *saveAs = new QPushButton(tr("Save as new profile…"), card);
+    connect(saveAs, &QPushButton::clicked, this, [this] {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("New profile"), tr("Profile name"), QLineEdit::Normal, {}, &ok);
+        if (!ok || name.trimmed().isEmpty())
+            return;
+        m_newProfileName = name.trimmed();
+        saveAndTest();
+        m_newProfileName.clear();
+    });
+    actions->addWidget(saveAs);
     actions->addWidget(m_saveButton);
 
     cardLayout->addWidget(title);
@@ -247,6 +260,99 @@ ConnectionPage::ConnectionPage(ImmichClient *client, QWidget *parent)
     cardLayout->addLayout(form);
     cardLayout->addWidget(privacy);
     cardLayout->addLayout(actions);
+    auto *profilesCard = new QFrame(scrollContent);
+    profilesCard->setProperty("card", true);
+    auto *profileLayout = new QVBoxLayout(profilesCard);
+    profileLayout->setContentsMargins(22, 20, 22, 22);
+    auto *profileTitle = new QLabel(tr("User profiles"), profilesCard);
+    profileTitle->setProperty("section", true);
+    profileLayout->addWidget(profileTitle);
+    auto *profileHint = new QLabel(tr("Each profile has its own connection, library cache, upload queue and folder sync settings. Switching pauses the previous profile's uploads."), profilesCard);
+    profileHint->setWordWrap(true);
+    profileLayout->addWidget(profileHint);
+    auto *profileRow = new QHBoxLayout;
+    auto *selector = new NoWheelComboBox(profilesCard);
+    selector->setObjectName(QStringLiteral("connectionProfileCombo"));
+    selector->setAccessibleName(tr("Active profile"));
+    const auto refresh = [this, selector] {
+        const QSignalBlocker blocker(selector);
+        selector->clear();
+        for (const auto &profile : AppSettings::profiles())
+            selector->addItem(profile.name, profile.id);
+        selector->setCurrentIndex(selector->findData(AppSettings::activeProfileId()));
+        emit profilesChanged();
+    };
+    refresh();
+    connect(selector, &QComboBox::activated, this, [selector](int index) {
+        AppSettings::requestProfileSwitch(selector->itemData(index).toString());
+    });
+    profileRow->addWidget(selector, 1);
+    auto *create = new QPushButton(tr("New profile"), profilesCard);
+    create->setObjectName(QStringLiteral("newProfileButton"));
+    connect(create, &QPushButton::clicked, this, [this] {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("New profile"), tr("Profile name"), QLineEdit::Normal, {}, &ok);
+        if (!ok || name.trimmed().isEmpty())
+            return;
+        const QString id = AppSettings::createProfile(name);
+        if (id.isEmpty()) {
+            QMessageBox::warning(this, tr("User profiles"), tr("Could not save the profile."));
+            return;
+        }
+        AppSettings::requestProfileSwitch(id);
+    });
+    profileRow->addWidget(create);
+    auto *rename = new QPushButton(tr("Rename"), profilesCard);
+    connect(rename, &QPushButton::clicked, this, [this, selector, refresh] {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("Rename profile"), tr("Profile name"), QLineEdit::Normal, selector->currentText(), &ok);
+        if (ok && AppSettings::renameProfile(AppSettings::activeProfileId(), name))
+            refresh();
+    });
+    profileRow->addWidget(rename);
+    auto *remove = new QPushButton(tr("Delete profile…"), profilesCard);
+    connect(remove, &QPushButton::clicked, this, [this, refresh] {
+        QStringList names;
+        QStringList ids;
+        for (const auto &profile : AppSettings::profiles()) {
+            if (profile.id == AppSettings::activeProfileId())
+                continue;
+            names.append(QString::number(names.size() + 1) + QStringLiteral(". ") + profile.name);
+            ids.append(profile.id);
+        }
+        if (ids.isEmpty()) {
+            QMessageBox::information(this, tr("Delete profile"), tr("Switch to another profile before deleting this one."));
+            return;
+        }
+        bool ok = false;
+        const QString choice = QInputDialog::getItem(this, tr("Delete profile"), tr("Choose an inactive profile"), names, 0, false, &ok);
+        if (!ok)
+            return;
+        if (QMessageBox::question(this, tr("Delete profile"), tr("Delete %1 and its saved connection settings?").arg(choice)) != QMessageBox::Yes)
+            return;
+        if (!AppSettings::deleteProfile(ids.at(names.indexOf(choice))))
+            QMessageBox::warning(this, tr("Delete profile"), tr("Could not delete the profile."));
+        refresh();
+    });
+    profileRow->addWidget(remove);
+    profileLayout->addLayout(profileRow);
+    auto *defaultProfile = new QCheckBox(tr("Use this profile on launch"), profilesCard);
+    defaultProfile->setChecked(AppSettings::activeProfileId() == AppSettings::defaultProfileId());
+    // A launch profile is always selected; choose a different one after switching.
+    defaultProfile->setEnabled(!defaultProfile->isChecked());
+    connect(defaultProfile, &QCheckBox::clicked, this, [defaultProfile] {
+        if (AppSettings::setDefaultProfile(AppSettings::activeProfileId())) {
+            defaultProfile->setChecked(true);
+            defaultProfile->setEnabled(false);
+        }
+    });
+    connect(this, &ConnectionPage::profilesChanged, this, [defaultProfile] {
+        const bool isDefault = AppSettings::activeProfileId() == AppSettings::defaultProfileId();
+        defaultProfile->setChecked(isDefault);
+        defaultProfile->setEnabled(!isDefault);
+    });
+    profileLayout->addWidget(defaultProfile);
+    scrollLayout->addWidget(profilesCard);
     scrollLayout->addWidget(card);
     scrollLayout->addStretch();
     scroll->setWidget(scrollContent);
@@ -378,6 +484,16 @@ void ConnectionPage::saveAndTest()
     }
 
     m_serverUrl->setText(settings.serverUrl);
+    if (!m_newProfileName.isEmpty()) {
+        const QString id = AppSettings::createProfile(m_newProfileName);
+        if (id.isEmpty()) {
+            m_status->setText(tr("Could not save the profile."));
+            return;
+        }
+        AppSettings(id).saveImmichConnection(settings);
+        AppSettings::requestProfileSwitch(id);
+        return;
+    }
     m_client->setConnection(settings);
     m_saveButton->setEnabled(false);
     m_status->setText(tr("Testing connection…"));

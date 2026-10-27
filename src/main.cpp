@@ -100,25 +100,43 @@ int main(int argc, char *argv[])
     Aurora::ThemeManager themeManager;
     themeManager.initialize();
 
+    Aurora::AppSettings::activateDefaultProfile();
     Aurora::UpdateManager updateManager;
-    Aurora::ImmichClient immichClient;
-    Aurora::FolderSyncService folderSync(&immichClient);
+    int exitCode = 0;
+    bool firstSession = true;
+    QByteArray windowGeometry;
+    do {
+        Aurora::ImmichClient immichClient;
+        Aurora::FolderSyncService folderSync(&immichClient);
 
-    Aurora::MainWindowHost windows(&localization, &themeManager, &updateManager,
-                                   &immichClient, &folderSync, &translationUpdater);
-    QObject::connect(&singleInstance, &Aurora::SingleInstance::activationRequested,
-                     &windows, [&windows] { windows.window()->raiseToFront(); });
+        Aurora::MainWindowHost windows(&localization, &themeManager, &updateManager,
+                                       &immichClient, &folderSync, &translationUpdater);
+        QObject::connect(&singleInstance, &Aurora::SingleInstance::activationRequested,
+                         &windows, [&windows] { windows.window()->raiseToFront(); });
 
-    const bool startHidden =
-        launchedFromAutoStart && Aurora::AppSettings().loadWindow().closeToTray &&
-        QSystemTrayIcon::isSystemTrayAvailable();
-    if (startHidden)
-        windows.window()->hide();
-    else
-        windows.window()->show();
+        const bool startHidden =
+            firstSession && launchedFromAutoStart && Aurora::AppSettings().loadWindow().closeToTray &&
+            QSystemTrayIcon::isSystemTrayAvailable();
+        if (!windowGeometry.isEmpty())
+            windows.window()->restoreGeometry(windowGeometry);
+        if (startHidden)
+            windows.window()->hide();
+        else
+            windows.window()->show();
 
-    windows.window()->scheduleStartupUpdateCheck();
-    windows.window()->scheduleGitHubStarPrompt();
+        if (firstSession) {
+            windows.window()->scheduleStartupUpdateCheck();
+            windows.window()->scheduleGitHubStarPrompt();
+        }
 
-    return application.exec();
+        exitCode = application.exec();
+        windowGeometry = windows.window()->saveGeometry();
+        firstSession = false;
+    } while ([&] {
+        if (exitCode != Aurora::AppSettings::ProfileSwitchExitCode)
+            return false;
+        return Aurora::AppSettings::setActiveProfile(
+            application.property("nextProfile").toString());
+    }());
+    return exitCode == Aurora::AppSettings::ProfileSwitchExitCode ? 0 : exitCode;
 }

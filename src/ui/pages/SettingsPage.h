@@ -21,6 +21,7 @@ public:
     bool isShowingUpdates() const;
 
 signals:
+    void profilesChanged();
     void languageChangeRequested(const QString &language);
     void backRequested();
 

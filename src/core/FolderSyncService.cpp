@@ -1,3 +1,4 @@
+#include "core/AppSettings.h"
 #include "core/FolderSyncService.h"
 
 #include "core/ImmichClient.h"
@@ -26,17 +27,12 @@ namespace {
 constexpr qint64 kStabilityMs = 1500;
 constexpr int kScanIntervalMs = 8000;
 
-QString stateFilePath()
-{
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
-           QStringLiteral("/folder-sync-state.json");
-}
-
 } // namespace
 
 FolderSyncService::FolderSyncService(ImmichClient *client, QObject *parent)
     : QObject(parent)
     , m_client(client)
+    , m_stateFilePath(AppSettings::profileDataDirectory() + QStringLiteral("/folder-sync-state.json"))
     , m_settings(m_store.loadFolderSync())
     , m_watcher(new QFileSystemWatcher(this))
     , m_scanTimer(new QTimer(this))
@@ -427,7 +423,7 @@ void FolderSyncService::markError(const QString &path, const QString &message)
 void FolderSyncService::loadSyncedState()
 {
     m_syncedFingerprints.clear();
-    QFile file(stateFilePath());
+    QFile file(m_stateFilePath);
     if (!file.open(QIODevice::ReadOnly))
         return;
     const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
@@ -448,7 +444,7 @@ void FolderSyncService::saveSyncedState() const
     root.insert(QStringLiteral("folders"), QJsonArray::fromStringList(m_settings.folderPaths));
     root.insert(QStringLiteral("files"), files);
 
-    const QString path = stateFilePath();
+    const QString path = m_stateFilePath;
     QDir().mkpath(QFileInfo(path).absolutePath());
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))

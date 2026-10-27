@@ -84,6 +84,7 @@ private:
     QStringList collectMediaFiles() const;
 
     ImmichClient *m_client = nullptr;
+    QString m_stateFilePath;
     AppSettings m_store;
     FolderSyncSettings m_settings;
     QFileSystemWatcher *m_watcher = nullptr;

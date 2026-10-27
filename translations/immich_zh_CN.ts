@@ -608,8 +608,8 @@
 <context>
     <name>Aurora::BrowseTree</name>
     <message>
-        <location filename="../src/ui/widgets/BrowseTree.cpp" line="+39"/>
-        <location line="+112"/>
+        <location filename="../src/ui/widgets/BrowseTree.cpp" line="+50"/>
+        <location line="+125"/>
         <source>Loading…</source>
         <translation type="unfinished">正在加载…</translation>
     </message>
@@ -657,7 +657,7 @@
 <context>
     <name>Aurora::ConnectionPage</name>
     <message>
-        <location filename="../src/ui/pages/ConnectionPage.cpp" line="+32"/>
+        <location filename="../src/ui/pages/ConnectionPage.cpp" line="+34"/>
         <source>Enable custom HTTP headers</source>
         <translation>启用自定义 HTTP 标头</translation>
     </message>
@@ -802,6 +802,95 @@
         <translation>输入服务器信息以加载媒体库。</translation>
     </message>
     <message>
+        <location line="+5"/>
+        <source>Save as new profile…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+68"/>
+        <source>Delete profile…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-65"/>
+        <location line="+42"/>
+        <location line="+4"/>
+        <source>New profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-46"/>
+        <location line="+46"/>
+        <location line="+14"/>
+        <source>Profile name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-41"/>
+        <location line="+32"/>
+        <source>User profiles</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-29"/>
+        <source>Each profile has its own connection, library cache, upload queue and folder sync settings. Switching pauses the previous profile&apos;s uploads.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Active profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <location line="+186"/>
+        <source>Could not save the profile.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-180"/>
+        <source>Rename</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rename profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <location line="+4"/>
+        <location line="+3"/>
+        <location line="+3"/>
+        <source>Delete profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-10"/>
+        <source>Switch to another profile before deleting this one.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Choose an inactive profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Delete %1 and its saved connection settings?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Could not delete the profile.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Use this profile on launch</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location line="+36"/>
         <source>Header name</source>
         <translation>标头名称</translation>
@@ -838,7 +927,7 @@
         <translation>本地地址必须为 HTTP(S) 且不得包含内嵌凭据。</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+31"/>
         <source>Testing connection…</source>
         <translation>正在测试连接…</translation>
     </message>
@@ -926,13 +1015,13 @@
 <context>
     <name>Aurora::ExplorePage</name>
     <message>
-        <location filename="../src/ui/pages/ExplorePage.cpp" line="+187"/>
-        <location line="+691"/>
+        <location filename="../src/ui/pages/ExplorePage.cpp" line="+189"/>
+        <location line="+730"/>
         <source>Explore</source>
         <translation>探索</translation>
     </message>
     <message>
-        <location line="-689"/>
+        <location line="-728"/>
         <source>People, places, and recent media</source>
         <translation>人物、地点和最近添加的媒体</translation>
     </message>
@@ -940,19 +1029,19 @@
         <location line="+5"/>
         <location line="+3"/>
         <location line="+1"/>
-        <location line="+175"/>
+        <location line="+177"/>
         <source>Refresh</source>
         <translation>刷新</translation>
     </message>
     <message>
-        <location line="-139"/>
-        <location line="+620"/>
+        <location line="-141"/>
+        <location line="+659"/>
         <location line="+182"/>
         <source>People</source>
         <translation>人物</translation>
     </message>
     <message>
-        <location line="-801"/>
+        <location line="-840"/>
         <source>Places</source>
         <translation>地点</translation>
     </message>
@@ -985,17 +1074,17 @@
     </message>
     <message>
         <location line="+32"/>
-        <location line="+1199"/>
+        <location line="+1230"/>
         <source>Load more</source>
         <translation>加载更多</translation>
     </message>
     <message>
-        <location line="-1045"/>
+        <location line="-1074"/>
         <source>This folder couldn&apos;t be loaded.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+153"/>
+        <location line="+182"/>
         <source>Loading explore…</source>
         <translation>正在加载探索…</translation>
     </message>
@@ -1010,7 +1099,7 @@
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+46"/>
         <source>%1 people · %2 places · %3 recent · offline</source>
         <translation>%1 位人物 · %2 个地点 · %3 项最近添加 · 离线</translation>
     </message>
@@ -1020,7 +1109,7 @@
         <translation>%1 位人物 · %2 个地点 · %3 项最近添加</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+74"/>
         <source>Load explore</source>
         <translation>加载探索</translation>
     </message>
@@ -1198,7 +1287,7 @@ to explore people, places, and recent media.</source>
         </translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+92"/>
         <source>Unknown date</source>
         <translation>未知日期</translation>
     </message>
@@ -1218,13 +1307,13 @@ to explore people, places, and recent media.</source>
         <translation>照片</translation>
     </message>
     <message>
-        <location line="-117"/>
-        <location line="+131"/>
+        <location line="-122"/>
+        <location line="+136"/>
         <source>Nothing here yet</source>
         <translation>这里还没有内容</translation>
     </message>
     <message numerus="yes">
-        <location line="-128"/>
+        <location line="-133"/>
         <source>%n item(s)</source>
         <translation>
             <numerusform>%n 项</numerusform>
@@ -1232,7 +1321,7 @@ to explore people, places, and recent media.</source>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+461"/>
+        <location line="+453"/>
         <source>Loading…</source>
         <translation>正在加载…</translation>
     </message>
@@ -1240,7 +1329,7 @@ to explore people, places, and recent media.</source>
 <context>
     <name>Aurora::FolderSyncService</name>
     <message>
-        <location filename="../src/core/FolderSyncService.cpp" line="+509"/>
+        <location filename="../src/core/FolderSyncService.cpp" line="+505"/>
         <source>Folder sync is turned off.</source>
         <translation>文件夹同步已关闭。</translation>
     </message>
@@ -1302,7 +1391,7 @@ to explore people, places, and recent media.</source>
 <context>
     <name>Aurora::ImmichClient</name>
     <message>
-        <location filename="../src/core/ImmichClient.cpp" line="+440"/>
+        <location filename="../src/core/ImmichClient.cpp" line="+441"/>
         <source>Connection</source>
         <translation>连接</translation>
     </message>
@@ -1324,16 +1413,16 @@ to explore people, places, and recent media.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1067"/>
+        <location line="+1069"/>
         <location line="+85"/>
         <location line="+24"/>
         <location line="+76"/>
-        <location line="+252"/>
+        <location line="+291"/>
         <source>The asset identifier is invalid.</source>
         <translation>媒体项标识符无效。</translation>
     </message>
     <message>
-        <location line="-1473"/>
+        <location line="-1514"/>
         <source>Set the Immich server URL and API key in Settings first.</source>
         <translation>请先在设置中填写 Immich 服务器地址和 API 密钥。</translation>
     </message>
@@ -1432,14 +1521,14 @@ to explore people, places, and recent media.</source>
     </message>
     <message>
         <location line="+348"/>
-        <location line="+89"/>
-        <location line="+747"/>
-        <location line="+32"/>
+        <location line="+90"/>
+        <location line="+787"/>
+        <location line="+52"/>
         <source>Load image</source>
         <translation>加载图片</translation>
     </message>
     <message>
-        <location line="-864"/>
+        <location line="-925"/>
         <source>The person identifier is invalid.</source>
         <translation>人物标识符无效。</translation>
     </message>
@@ -1450,12 +1539,12 @@ to explore people, places, and recent media.</source>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+846"/>
+        <location line="+907"/>
         <source>Unsupported image format.</source>
         <translation>不支持的图片格式。</translation>
     </message>
     <message>
-        <location line="-747"/>
+        <location line="-806"/>
         <location line="+99"/>
         <location line="+9"/>
         <location line="+16"/>
@@ -1546,7 +1635,17 @@ to explore people, places, and recent media.</source>
         <translation>未提供有效的媒体项标识符。</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+31"/>
+        <source>Favorite</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+27"/>
+        <source>Favorites need the asset.update permission on your API key.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+36"/>
         <source>Connect to Immich and choose an uploaded photo or video.</source>
         <translation>连接到 Immich 并选择一张已上传的照片或视频。</translation>
     </message>
@@ -1569,19 +1668,19 @@ to explore people, places, and recent media.</source>
 <context>
     <name>Aurora::LibraryPage</name>
     <message>
-        <location filename="../src/ui/pages/LibraryPage.cpp" line="+112"/>
-        <location line="+1603"/>
+        <location filename="../src/ui/pages/LibraryPage.cpp" line="+114"/>
+        <location line="+1637"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
     <message>
-        <location line="-1602"/>
+        <location line="-1636"/>
         <source>Refresh</source>
         <translation>刷新</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+149"/>
+        <location line="+150"/>
         <location line="+29"/>
         <source>Years</source>
         <translation>年份</translation>
@@ -1754,24 +1853,24 @@ to explore people, places, and recent media.</source>
         <translation>未命名人物</translation>
     </message>
     <message>
-        <location line="+165"/>
-        <location line="+1317"/>
+        <location line="+191"/>
+        <location line="+1316"/>
         <source>Loading library…</source>
         <translation>正在加载媒体库…</translation>
     </message>
     <message numerus="yes">
-        <location line="-1235"/>
+        <location line="-1234"/>
         <location line="+42"/>
         <location line="+283"/>
-        <location line="+158"/>
-        <location line="+785"/>
+        <location line="+163"/>
+        <location line="+779"/>
         <source>%n item(s)</source>
         <translation>
             <numerusform>%n 项</numerusform>
         </translation>
     </message>
     <message>
-        <location line="-1265"/>
+        <location line="-1264"/>
         <source>Loading library… %1/%2 months</source>
         <translation>正在加载媒体库… %1/%2 个月</translation>
     </message>
@@ -1886,7 +1985,7 @@ to explore people, places, and recent media.</source>
         </translation>
     </message>
     <message>
-        <location line="+224"/>
+        <location line="+229"/>
         <source>Couldn&apos;t load library: %1. Refresh to retry.</source>
         <translation>无法加载媒体库：%1。请刷新以重试。</translation>
     </message>
@@ -1916,7 +2015,7 @@ to explore people, places, and recent media.</source>
         <translation>%1：正在加载…</translation>
     </message>
     <message>
-        <location line="+244"/>
+        <location line="+246"/>
         <source>Load image</source>
         <translation>加载图片</translation>
     </message>
@@ -1932,12 +2031,12 @@ to explore people, places, and recent media.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+762"/>
+        <location line="+755"/>
         <source>Upload finished: %1 ok, %2 failed</source>
         <translation>上传完成：%1 成功，%2 失败</translation>
     </message>
     <message>
-        <location line="-754"/>
+        <location line="-747"/>
         <source>%1 (%2 left)</source>
         <translation>%1（剩余 %2）</translation>
     </message>
@@ -1952,7 +2051,7 @@ to explore people, places, and recent media.</source>
         <translation>%1 失败：%2</translation>
     </message>
     <message>
-        <location line="+242"/>
+        <location line="+234"/>
         <source>Connect to your Immich server in Settings → Immich Server
 to browse photos and videos.</source>
         <translation>在设置 → Immich 服务器中连接到你的 Immich 服务器
@@ -2051,12 +2150,12 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
     </message>
     <message>
         <location line="-107"/>
-        <location line="+206"/>
+        <location line="+207"/>
         <source>Connect to Immich in Settings before uploading.</source>
         <translation>上传前请先在设置中连接到 Immich。</translation>
     </message>
     <message>
-        <location line="-197"/>
+        <location line="-198"/>
         <source>Clipboard has no image or media files to upload.</source>
         <translation>剪贴板中没有可上传的图片或媒体文件。</translation>
     </message>
@@ -2127,7 +2226,7 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
         </translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+59"/>
         <source>Upload media</source>
         <translation>上传媒体</translation>
     </message>
@@ -2196,7 +2295,7 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
 <context>
     <name>Aurora::MainWindow</name>
     <message>
-        <location filename="../src/ui/MainWindow.cpp" line="+356"/>
+        <location filename="../src/ui/MainWindow.cpp" line="+357"/>
         <location line="+224"/>
         <source>immich</source>
         <translation>immich</translation>
@@ -2328,12 +2427,12 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
 <context>
     <name>Aurora::MediaTile</name>
     <message>
-        <location filename="../src/ui/widgets/MediaTile.cpp" line="+164"/>
+        <location filename="../src/ui/widgets/MediaTile.cpp" line="+165"/>
         <source>…</source>
         <translation>…</translation>
     </message>
     <message>
-        <location line="+142"/>
+        <location line="+155"/>
         <source>Open</source>
         <translation>打开</translation>
     </message>
@@ -2365,13 +2464,23 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
         <translation>分享链接…</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
+        <source>Remove from favorites</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Add to favorites</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Move to trash</source>
         <translation>移至回收站</translation>
     </message>
     <message>
-        <location line="-9"/>
-        <location line="+10"/>
+        <location line="-11"/>
+        <location line="+12"/>
         <source>Delete permanently</source>
         <translation>永久删除</translation>
     </message>
@@ -2379,7 +2488,12 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
 <context>
     <name>Aurora::MediaViewerDialog</name>
     <message>
-        <location filename="../src/ui/widgets/MediaViewerDialog.cpp" line="+47"/>
+        <location filename="../src/ui/widgets/MediaViewerDialog.cpp" line="+48"/>
+        <source>Favorite</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Copy</source>
         <translation>复制</translation>
     </message>
@@ -2434,21 +2548,31 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
         <translation>下一个（右方向键）</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+104"/>
         <source>Preview unavailable
 %1</source>
         <translation>预览不可用
 %1</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+36"/>
         <source>Media preview</source>
         <translation>媒体预览</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
         <source>Loading preview…</source>
         <translation>正在加载预览…</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Remove from favorites (F)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add to favorites (F)</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -2566,19 +2690,19 @@ Drop files here, paste with Ctrl+V, or use Upload to add media.</source>
     <name>Aurora::Sidebar</name>
     <message>
         <location filename="../src/ui/widgets/Sidebar.cpp" line="+37"/>
-        <location line="+122"/>
+        <location line="+133"/>
         <source>Collapse</source>
         <translation>折叠</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-77"/>
         <source>fan-made
 immich desktop  ·  %1</source>
         <translation>爱好者制作
 immich desktop  ·  %1</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+77"/>
         <source>Expand</source>
         <translation>展开</translation>
     </message>
@@ -2593,12 +2717,12 @@ immich desktop  ·  %1</translation>
         <translation>折叠侧边栏（F9）</translation>
     </message>
     <message>
-        <location line="+122"/>
-        <source>NAVIGATION</source>
-        <translation>导航</translation>
+        <location line="+138"/>
+        <source>Main</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>Library</source>
         <translation>媒体库</translation>
     </message>
@@ -2618,7 +2742,12 @@ immich desktop  ·  %1</translation>
         <translation type="unfinished">收藏</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>Collections</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Archive</source>
         <translation type="unfinished">归档</translation>
     </message>
@@ -2638,7 +2767,12 @@ immich desktop  ·  %1</translation>
         <translation type="unfinished">文件夹</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>Tools</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Trash</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2648,12 +2782,12 @@ immich desktop  ·  %1</translation>
         <translation>设置</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>SETTINGS</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Immich Server</source>
         <translation>Immich 服务器</translation>
     </message>
@@ -2794,14 +2928,33 @@ immich desktop  ·  %1</translation>
     </message>
 </context>
 <context>
+    <name>Aurora::Toast</name>
+    <message>
+        <location filename="../src/ui/widgets/Toast.cpp" line="+34"/>
+        <source>Click to dismiss</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Aurora::TopBar</name>
     <message>
-        <location filename="../src/ui/widgets/TopBar.cpp" line="+23"/>
+        <location filename="../src/ui/widgets/TopBar.cpp" line="+25"/>
         <source>Overview</source>
         <translation>概览</translation>
     </message>
     <message>
-        <location line="+65"/>
+        <location line="+27"/>
+        <location line="+1"/>
+        <source>Switch profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+53"/>
+        <source>immich — %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>  Update available</source>
         <translation>  有可用更新</translation>
     </message>
@@ -3146,6 +3299,14 @@ immich desktop  ·  %1</translation>
     </message>
 </context>
 <context>
+    <name>Profiles</name>
+    <message>
+        <location filename="../src/core/AppSettings.cpp" line="+48"/>
+        <source>Personal</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>QObject</name>
     <message>
         <location filename="../src/core/CustomHeaders.cpp" line="+45"/>
@@ -3168,7 +3329,7 @@ immich desktop  ·  %1</translation>
         <translation>第 %1 行：标头值不能包含换行符。</translation>
     </message>
     <message>
-        <location filename="../src/core/ImmichClient.cpp" line="+168"/>
+        <location filename="../src/core/ImmichClient.cpp" line="+197"/>
         <source>The server returned an image larger than 32 MB.</source>
         <translation>服务器返回了大于 32 MB 的图片。</translation>
     </message>
@@ -3188,7 +3349,7 @@ immich desktop  ·  %1</translation>
         <translation>已复制！</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LibraryPage.cpp" line="-2435"/>
+        <location filename="../src/ui/pages/LibraryPage.cpp" line="-2462"/>
         <source>Media files (*.jpg *.jpeg *.png *.gif *.webp *.heic *.heif *.tif *.tiff *.bmp *.raw *.dng *.cr2 *.nef *.arw *.mp4 *.mov *.m4v *.avi *.mkv *.webm *.3gp);;All files (*.*)</source>
         <translation>媒体文件 (*.jpg *.jpeg *.png *.gif *.webp *.heic *.heif *.tif *.tiff *.bmp *.raw *.dng *.cr2 *.nef *.arw *.mp4 *.mov *.m4v *.avi *.mkv *.webm *.3gp);;所有文件 (*.*)</translation>
     </message>

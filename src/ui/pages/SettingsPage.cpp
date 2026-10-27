@@ -52,7 +52,9 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     headerRow->addLayout(titles, 1);
     root->addLayout(headerRow);
 
-    m_sections->addWidget(new ConnectionPage(immichClient, m_sections));
+    auto *connection = new ConnectionPage(immichClient, m_sections);
+    connect(connection, &ConnectionPage::profilesChanged, this, &SettingsPage::profilesChanged);
+    m_sections->addWidget(connection);
     m_sections->addWidget(new SyncFolderPage(folderSync, themeManager, m_sections));
     auto *appearance = new AppearancePage(themeManager, m_sections);
     connect(appearance, &AppearancePage::languageChangeRequested,

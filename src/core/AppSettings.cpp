@@ -1,5 +1,12 @@
 #include "core/AppSettings.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
+#include <QUuid>
+
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dpapi.h>
@@ -7,6 +14,55 @@
 
 namespace Aurora {
 namespace {
+
+QSettings globalSettings()
+{
+    return QSettings(QSettings::IniFormat, QSettings::UserScope,
+                     QStringLiteral("Immich"), QStringLiteral("immich"));
+}
+
+QString accountFile(const QString &id)
+{
+    return QFileInfo(globalSettings().fileName()).absolutePath() +
+           QStringLiteral("/profiles/") + id + QStringLiteral(".ini");
+}
+
+void ensureProfiles()
+{
+    auto settings = globalSettings();
+    if (settings.contains(QStringLiteral("profiles/default")))
+        return;
+    // Keep the original cache locations for the migrated account only.
+    const QString id = QStringLiteral("legacy");
+    QDir().mkpath(QFileInfo(accountFile(id)).absolutePath());
+    QSettings account(accountFile(id), QSettings::IniFormat);
+    for (const auto &key : settings.allKeys()) {
+        const QString group = key.section(u'/', 0, 0);
+        if (group == u"immich" || group == u"folderSync" || group == u"download" ||
+            group == u"timeline" || group == u"playback")
+            account.setValue(key, settings.value(key));
+    }
+    account.sync();
+    if (account.status() != QSettings::NoError)
+        return;
+    settings.setValue(QStringLiteral("profiles/names/legacy"), QCoreApplication::translate("Profiles", "Personal"));
+    settings.setValue(QStringLiteral("profiles/default"), id);
+    settings.setValue(QStringLiteral("profiles/active"), id);
+    settings.sync();
+    if (settings.status() == QSettings::NoError) {
+        for (const auto &group : {"immich", "folderSync", "download", "timeline", "playback"})
+            settings.remove(QString::fromLatin1(group));
+        settings.sync();
+    }
+}
+
+bool hasProfile(const QString &id)
+{
+    for (const auto &profile : AppSettings::profiles())
+        if (profile.id == id)
+            return true;
+    return false;
+}
 
 QColor readColor(const QSettings &settings, const QString &key, const QColor &fallback)
 {
@@ -63,10 +119,120 @@ QString unprotectSecret(const QString &storedValue)
 
 } // namespace
 
-AppSettings::AppSettings()
+AppSettings::AppSettings(const QString &profileId)
     : m_settings(QSettings::IniFormat, QSettings::UserScope,
                  QStringLiteral("Immich"), QStringLiteral("immich"))
 {
+    ensureProfiles();
+    m_accountSettings = std::make_unique<QSettings>(accountFile(hasProfile(profileId) ? profileId : activeProfileId()), QSettings::IniFormat);
+}
+
+QList<AppSettings::Profile> AppSettings::profiles()
+{
+    ensureProfiles();
+    auto settings = globalSettings();
+    settings.beginGroup(QStringLiteral("profiles/names"));
+    QList<Profile> result;
+    for (const auto &id : settings.childKeys())
+        result.append({id, settings.value(id).toString()});
+    return result;
+}
+
+QString AppSettings::activeProfileId()
+{
+    ensureProfiles();
+    return globalSettings().value(QStringLiteral("profiles/active"), QStringLiteral("legacy")).toString();
+}
+
+QString AppSettings::defaultProfileId()
+{
+    ensureProfiles();
+    return globalSettings().value(QStringLiteral("profiles/default")).toString();
+}
+
+QString AppSettings::createProfile(const QString &name)
+{
+    if (name.trimmed().isEmpty())
+        return {};
+    ensureProfiles();
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QDir().mkpath(QFileInfo(accountFile(id)).absolutePath());
+    auto settings = globalSettings();
+    settings.setValue(QStringLiteral("profiles/names/") + id, name.trimmed());
+    settings.sync();
+    return settings.status() == QSettings::NoError ? id : QString();
+}
+
+bool AppSettings::renameProfile(const QString &id, const QString &name)
+{
+    if (!hasProfile(id) || name.trimmed().isEmpty())
+        return false;
+    auto settings = globalSettings();
+    settings.setValue(QStringLiteral("profiles/names/") + id, name.trimmed());
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+bool AppSettings::deleteProfile(const QString &id)
+{
+    if (!hasProfile(id) || id == activeProfileId() || profiles().size() <= 1)
+        return false;
+    // Delete credentials; caches can be pruned normally and never get reused by a new ID.
+    if (QFile::exists(accountFile(id)) && !QFile::remove(accountFile(id)))
+        return false;
+    auto settings = globalSettings();
+    if (id == defaultProfileId())
+        settings.setValue(QStringLiteral("profiles/default"), activeProfileId());
+    settings.remove(QStringLiteral("profiles/names/") + id);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+bool AppSettings::setActiveProfile(const QString &id)
+{
+    if (!hasProfile(id))
+        return false;
+    auto settings = globalSettings();
+    settings.setValue(QStringLiteral("profiles/active"), id);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+bool AppSettings::setDefaultProfile(const QString &id)
+{
+    if (!hasProfile(id))
+        return false;
+    auto settings = globalSettings();
+    settings.setValue(QStringLiteral("profiles/default"), id);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+void AppSettings::activateDefaultProfile()
+{
+    setActiveProfile(defaultProfileId());
+}
+
+QString AppSettings::profileDataDirectory()
+{
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString id = activeProfileId();
+    return id == u"legacy" ? root : root + QStringLiteral("/profiles/") + id;
+}
+
+QString AppSettings::profileCacheDirectory()
+{
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString id = activeProfileId();
+    return id == u"legacy" ? root : root + QStringLiteral("/profiles/") + id;
+}
+
+void AppSettings::requestProfileSwitch(const QString &id)
+{
+    if (!hasProfile(id) || id == activeProfileId())
+        return;
+    QCoreApplication::instance()->setProperty("nextProfile", id);
+    QCoreApplication::exit(ProfileSwitchExitCode);
 }
 
 QString AppSettings::loadLanguage() const
@@ -146,13 +312,13 @@ void AppSettings::saveUpdate(const UpdateSettings &update)
 ImmichConnectionSettings AppSettings::loadImmichConnection() const
 {
     ImmichConnectionSettings result;
-    result.serverUrl = m_settings.value(QStringLiteral("immich/serverUrl")).toString();
+    result.serverUrl = m_accountSettings->value(QStringLiteral("immich/serverUrl")).toString();
     result.localServerUrl =
-        m_settings.value(QStringLiteral("immich/localServerUrl")).toString();
+        m_accountSettings->value(QStringLiteral("immich/localServerUrl")).toString();
     result.customHeaders = CustomHeaders::deserialize(
-        m_settings.value(QStringLiteral("immich/customHeaders")).toString());
+        m_accountSettings->value(QStringLiteral("immich/customHeaders")).toString());
     const QString storedKey =
-        m_settings.value(QStringLiteral("immich/apiKey")).toString();
+        m_accountSettings->value(QStringLiteral("immich/apiKey")).toString();
     result.apiKey = unprotectSecret(storedKey);
 #ifdef Q_OS_WIN
     // Transparently migrate legacy plaintext settings to per-user DPAPI storage.
@@ -160,50 +326,50 @@ ImmichConnectionSettings AppSettings::loadImmichConnection() const
         !result.apiKey.isEmpty()) {
         const QString encrypted = protectSecret(result.apiKey);
         if (!encrypted.isEmpty()) {
-            m_settings.setValue(QStringLiteral("immich/apiKey"), encrypted);
-            m_settings.sync();
+            m_accountSettings->setValue(QStringLiteral("immich/apiKey"), encrypted);
+            m_accountSettings->sync();
         }
     }
 #endif
 
     result.certFormat = static_cast<TlsCertFormat>(
-        m_settings.value(QStringLiteral("immich/certFormat"), 0).toInt());
-    result.clientCertPath = m_settings.value(QStringLiteral("immich/clientCertPath")).toString();
-    result.clientKeyPath = m_settings.value(QStringLiteral("immich/clientKeyPath")).toString();
-    result.caCertPath = m_settings.value(QStringLiteral("immich/caCertPath")).toString();
-    result.rememberKeyPassword = m_settings.value(QStringLiteral("immich/rememberKeyPassword"), false).toBool();
+        m_accountSettings->value(QStringLiteral("immich/certFormat"), 0).toInt());
+    result.clientCertPath = m_accountSettings->value(QStringLiteral("immich/clientCertPath")).toString();
+    result.clientKeyPath = m_accountSettings->value(QStringLiteral("immich/clientKeyPath")).toString();
+    result.caCertPath = m_accountSettings->value(QStringLiteral("immich/caCertPath")).toString();
+    result.rememberKeyPassword = m_accountSettings->value(QStringLiteral("immich/rememberKeyPassword"), false).toBool();
     result.keyPassword = unprotectSecret(
-        m_settings.value(QStringLiteral("immich/keyPassword")).toString());
+        m_accountSettings->value(QStringLiteral("immich/keyPassword")).toString());
 
     return result;
 }
 
 void AppSettings::saveImmichConnection(const ImmichConnectionSettings &connection)
 {
-    m_settings.setValue(QStringLiteral("immich/serverUrl"), connection.serverUrl.trimmed());
-    m_settings.setValue(QStringLiteral("immich/localServerUrl"),
+    m_accountSettings->setValue(QStringLiteral("immich/serverUrl"), connection.serverUrl.trimmed());
+    m_accountSettings->setValue(QStringLiteral("immich/localServerUrl"),
                         connection.localServerUrl.trimmed());
     const QString apiKey = connection.apiKey.trimmed();
     const QString protectedKey = protectSecret(apiKey);
-    m_settings.setValue(QStringLiteral("immich/apiKey"), protectedKey);
-    m_settings.setValue(
+    m_accountSettings->setValue(QStringLiteral("immich/apiKey"), protectedKey);
+    m_accountSettings->setValue(
         QStringLiteral("immich/customHeaders"),
         CustomHeaders::serialize(CustomHeaders::normalize(connection.customHeaders)));
 
-    m_settings.setValue(QStringLiteral("immich/certFormat"), static_cast<int>(connection.certFormat));
-    m_settings.setValue(QStringLiteral("immich/clientCertPath"), connection.clientCertPath.trimmed());
-    m_settings.setValue(QStringLiteral("immich/clientKeyPath"), connection.clientKeyPath.trimmed());
-    m_settings.setValue(QStringLiteral("immich/caCertPath"), connection.caCertPath.trimmed());
-    m_settings.setValue(QStringLiteral("immich/rememberKeyPassword"), connection.rememberKeyPassword);
+    m_accountSettings->setValue(QStringLiteral("immich/certFormat"), static_cast<int>(connection.certFormat));
+    m_accountSettings->setValue(QStringLiteral("immich/clientCertPath"), connection.clientCertPath.trimmed());
+    m_accountSettings->setValue(QStringLiteral("immich/clientKeyPath"), connection.clientKeyPath.trimmed());
+    m_accountSettings->setValue(QStringLiteral("immich/caCertPath"), connection.caCertPath.trimmed());
+    m_accountSettings->setValue(QStringLiteral("immich/rememberKeyPassword"), connection.rememberKeyPassword);
 
     if (connection.rememberKeyPassword) {
         const QString protectedPassword = protectSecret(connection.keyPassword);
-        m_settings.setValue(QStringLiteral("immich/keyPassword"), protectedPassword);
+        m_accountSettings->setValue(QStringLiteral("immich/keyPassword"), protectedPassword);
     } else {
-        m_settings.remove(QStringLiteral("immich/keyPassword"));
+        m_accountSettings->remove(QStringLiteral("immich/keyPassword"));
     }
 
-    m_settings.sync();
+    m_accountSettings->sync();
 }
 
 WindowSettings AppSettings::loadWindow() const
@@ -233,58 +399,58 @@ PlaybackSettings AppSettings::loadPlayback() const
 {
     PlaybackSettings result;
     result.hoverPreviewEnabled =
-        m_settings.value(QStringLiteral("playback/hoverPreviewEnabled"), true).toBool();
+        m_accountSettings->value(QStringLiteral("playback/hoverPreviewEnabled"), true).toBool();
     return result;
 }
 
 void AppSettings::savePlayback(const PlaybackSettings &playback)
 {
-    m_settings.setValue(QStringLiteral("playback/hoverPreviewEnabled"),
+    m_accountSettings->setValue(QStringLiteral("playback/hoverPreviewEnabled"),
                         playback.hoverPreviewEnabled);
-    m_settings.sync();
+    m_accountSettings->sync();
 }
 
 TimelineSettings AppSettings::loadTimeline() const
 {
     TimelineSettings result;
     result.compactGrid =
-        m_settings.value(QStringLiteral("timeline/compactGrid"), false).toBool();
+        m_accountSettings->value(QStringLiteral("timeline/compactGrid"), false).toBool();
     result.tileSize =
-        m_settings.value(QStringLiteral("timeline/tileSize"), result.tileSize).toInt();
+        m_accountSettings->value(QStringLiteral("timeline/tileSize"), result.tileSize).toInt();
     return result;
 }
 
 void AppSettings::saveTimeline(const TimelineSettings &timeline)
 {
-    m_settings.setValue(QStringLiteral("timeline/compactGrid"), timeline.compactGrid);
-    m_settings.setValue(QStringLiteral("timeline/tileSize"), timeline.tileSize);
-    m_settings.sync();
+    m_accountSettings->setValue(QStringLiteral("timeline/compactGrid"), timeline.compactGrid);
+    m_accountSettings->setValue(QStringLiteral("timeline/tileSize"), timeline.tileSize);
+    m_accountSettings->sync();
 }
 
 DownloadSettings AppSettings::loadDownload() const
 {
     DownloadSettings result;
     result.lastDirectory =
-        m_settings.value(QStringLiteral("download/lastDirectory")).toString();
+        m_accountSettings->value(QStringLiteral("download/lastDirectory")).toString();
     return result;
 }
 
 void AppSettings::saveDownload(const DownloadSettings &download)
 {
-    m_settings.setValue(QStringLiteral("download/lastDirectory"), download.lastDirectory);
-    m_settings.sync();
+    m_accountSettings->setValue(QStringLiteral("download/lastDirectory"), download.lastDirectory);
+    m_accountSettings->sync();
 }
 
 FolderSyncSettings AppSettings::loadFolderSync() const
 {
     FolderSyncSettings result;
-    result.enabled = m_settings.value(QStringLiteral("folderSync/enabled"), false).toBool();
+    result.enabled = m_accountSettings->value(QStringLiteral("folderSync/enabled"), false).toBool();
     result.localNetworkOnly =
-        m_settings.value(QStringLiteral("folderSync/localNetworkOnly"), false).toBool();
-    if (m_settings.contains(QStringLiteral("folderSync/folderPaths")))
-        result.folderPaths = m_settings.value(QStringLiteral("folderSync/folderPaths")).toStringList();
+        m_accountSettings->value(QStringLiteral("folderSync/localNetworkOnly"), false).toBool();
+    if (m_accountSettings->contains(QStringLiteral("folderSync/folderPaths")))
+        result.folderPaths = m_accountSettings->value(QStringLiteral("folderSync/folderPaths")).toStringList();
     else {
-        const QString legacyFolder = m_settings.value(QStringLiteral("folderSync/folderPath")).toString().trimmed();
+        const QString legacyFolder = m_accountSettings->value(QStringLiteral("folderSync/folderPath")).toString().trimmed();
         if (!legacyFolder.isEmpty())
             result.folderPaths.append(legacyFolder);
     }
@@ -293,12 +459,12 @@ FolderSyncSettings AppSettings::loadFolderSync() const
 
 void AppSettings::saveFolderSync(const FolderSyncSettings &folderSync)
 {
-    m_settings.setValue(QStringLiteral("folderSync/enabled"), folderSync.enabled);
-    m_settings.setValue(QStringLiteral("folderSync/localNetworkOnly"),
+    m_accountSettings->setValue(QStringLiteral("folderSync/enabled"), folderSync.enabled);
+    m_accountSettings->setValue(QStringLiteral("folderSync/localNetworkOnly"),
                         folderSync.localNetworkOnly);
-    m_settings.setValue(QStringLiteral("folderSync/folderPaths"), folderSync.folderPaths);
-    m_settings.remove(QStringLiteral("folderSync/folderPath"));
-    m_settings.sync();
+    m_accountSettings->setValue(QStringLiteral("folderSync/folderPaths"), folderSync.folderPaths);
+    m_accountSettings->remove(QStringLiteral("folderSync/folderPath"));
+    m_accountSettings->sync();
 }
 
 SupportSettings AppSettings::loadSupport() const
