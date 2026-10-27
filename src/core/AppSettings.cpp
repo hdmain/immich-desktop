@@ -24,7 +24,7 @@ QSettings globalSettings()
 bool isSafeProfileId(const QString &id)
 {
     // UUIDs / "legacy" only - reject path separators so account files stay under profiles/.
-    if (id.isEmpty() || id.contains(u'/') || id.contains(u'\\') || id.contains(u'..'))
+    if (id.isEmpty() || id.contains(u'/') || id.contains(u'\\') || id.contains(QStringLiteral("..")))
         return false;
     for (const QChar ch : id) {
         if (!(ch.isLetterOrNumber() || ch == u'-' || ch == u'_'))
