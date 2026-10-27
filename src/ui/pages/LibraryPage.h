@@ -38,6 +38,7 @@ class ThemeManager;
 class FolderSyncService;
 class MediaTile;
 class MediaViewerDialog;
+class SortButton;
 class SummaryTile;
 class TileImageScheduler;
 class VideoHoverPreview;
@@ -64,6 +65,9 @@ public slots:
     // Back to the newest photos, leaving Years if it's open.
     void scrollToTop();
     void showDay(const QDate &day);
+    void setSort(const Aurora::AssetSort &sort);
+    // The whole library, newest uploads first (Explore's "View all").
+    void showRecentlyAdded();
     void copyAsset(const Aurora::ImmichAsset &asset);
     void downloadAsset(const Aurora::ImmichAsset &asset);
     void trashAsset(const Aurora::ImmichAsset &asset);
@@ -106,10 +110,13 @@ private slots:
     void handleOnlineChanged(bool online);
     void handleUploadQueueChanged(int pendingCount);
     void syncPendingLocalAssets();
-    void handleTimelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets);
+    void handleTimelineBucketsLoaded(const QList<Aurora::TimeBucketInfo> &buckets,
+                                     const Aurora::AssetSort &sort);
     void handleTimelineBucketLoaded(const QDate &month,
-                                    const QList<Aurora::ImmichAsset> &assets);
-    void handleTimelineBucketFailed(const QDate &month, const QString &message);
+                                    const QList<Aurora::ImmichAsset> &assets,
+                                    const Aurora::AssetSort &sort);
+    void handleTimelineBucketFailed(const QDate &month, const QString &message,
+                                    const Aurora::AssetSort &sort);
     void showYearGrid();
     void backToLibrary();
     void backToYearGrid();
@@ -161,6 +168,14 @@ private:
     bool handleDragEvent(QEvent *event);
     QString formatDayHeader(const QDate &date) const;
     DaySection *sectionForDate(const QDate &date);
+    // The day an asset is grouped under: taken or added, by the current sort.
+    QDate sectionDate(const ImmichAsset &asset) const;
+    // Library and search each keep their own sort.
+    QList<AssetSort::Field> sortFields() const;
+    AssetSort activeSort() const;
+    bool smartSearchActive() const;
+    void updateSortButton();
+    void chooseSort(const AssetSort &sort);
     void appendAssetsToTimeline(const QList<ImmichAsset> &assets);
     void prependLocalAsset(const ImmichAsset &asset);
     void removeLocalAsset(const QString &assetId);
@@ -232,6 +247,9 @@ private:
     QPushButton *m_uploadButton;
     QPushButton *m_refreshButton;
     QPushButton *m_yearsButton;
+    SortButton *m_sortButton;
+    AssetSort m_sort;
+    AssetSort m_searchSort;
     QTimer *m_layoutTimer;
     QTimer *m_visibilityTimer;
     TileImageScheduler *m_tileImages;

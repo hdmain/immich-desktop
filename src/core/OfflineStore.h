@@ -20,6 +20,7 @@ public:
     void saveExplore(const QString &serverUrl, const ImmichExploreData &data);
     bool loadExplore(const QString &serverUrl, ImmichExploreData *data) const;
 
+
     QString directory() const;
 
 private:

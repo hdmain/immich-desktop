@@ -175,6 +175,10 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     connect(explorePage, &ExplorePage::placeRequested, this, showPlace);
     connect(libraryPage, &LibraryPage::dateRequested, this, showDay);
     connect(explorePage, &ExplorePage::dateRequested, this, showDay);
+    connect(explorePage, &ExplorePage::recentlyAddedRequested, this, [this, libraryPage] {
+        libraryPage->showRecentlyAdded();
+        selectPage(0);
+    });
     m_pages->addWidget(libraryPage);
     m_pages->addWidget(explorePage);
 

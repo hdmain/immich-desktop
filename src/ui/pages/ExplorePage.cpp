@@ -10,6 +10,7 @@
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ScrollToTopButton.h"
 #include "ui/widgets/ShareLinkDialog.h"
+#include "ui/widgets/SortButton.h"
 #include "ui/widgets/Toast.h"
 #include "ui/widgets/VideoHoverPreview.h"
 #include "ui/widgets/ZoomSlider.h"
@@ -211,8 +212,13 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     m_browseLayout->setSpacing(18);
 
     auto createSection = [this](SectionRow *section, const QString &title, int rowHeight) {
-        section->header = new QLabel(title, m_browseContent);
-        section->header->setProperty("section", true);
+        section->header = new QWidget(m_browseContent);
+        auto *headerLayout = new QHBoxLayout(section->header);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        auto *label = new QLabel(title, section->header);
+        label->setProperty("section", true);
+        headerLayout->addWidget(label);
+        headerLayout->addStretch();
         section->header->hide();
 
         section->scroll = new QScrollArea(m_browseContent);
@@ -237,6 +243,12 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     createSection(&m_peopleSection, tr("People"), 168);
     createSection(&m_placesSection, tr("Places"), 168);
     createSection(&m_recentSection, tr("Recently added"), 168);
+    auto *viewAllRecent = new QPushButton(tr("View all"), m_recentSection.header);
+    viewAllRecent->setProperty("linkButton", true);
+    viewAllRecent->setCursor(Qt::PointingHandCursor);
+    viewAllRecent->setToolTip(tr("Show the whole library, newest uploads first"));
+    m_recentSection.header->layout()->addWidget(viewAllRecent);
+    connect(viewAllRecent, &QPushButton::clicked, this, &ExplorePage::recentlyAddedRequested);
     m_browseLayout->addStretch();
     m_browseScroll->setWidget(m_browseContent);
 
@@ -310,6 +322,18 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
             QMessageBox::Yes)
             m_client->emptyTrash();
     });
+    m_collectionSortButton = new SortButton(collectionToolbar);
+    connect(m_collectionSortButton, &SortButton::sortChanged, this,
+            &ExplorePage::chooseCollectionSort);
+    connect(m_client, &ImmichClient::albumOrderFailed, this,
+            [this](const QString &, const QString &message) { Toast::showMessage(this, message); });
+    connect(m_client, &ImmichClient::albumOrderSaved, this, [](const QString &albumId, bool) {
+        // Immich has it now; following Immich keeps web UI changes in sync.
+        const QString key = QStringLiteral("album:") + albumId;
+        if (AppSettings().loadSort(key).field == AssetSort::Field::TakenAt)
+            AppSettings().clearSort(key);
+    });
+    collectionToolbarLayout->addWidget(m_collectionSortButton);
     collectionToolbarLayout->addWidget(m_collectionZoomSlider);
     connect(m_collectionZoomSlider, &ZoomSlider::valueChanged, this,
             &ExplorePage::setCollectionTileSize);
@@ -919,7 +943,8 @@ void ExplorePage::openPerson(const ImmichPerson &person)
     setChips({}, {});
     // Force a fresh face fetch so the hero updates even if a prior request is in flight.
     m_client->loadPersonThumbnail(person.id);
-    m_client->loadAssetsForPerson(person.id);
+    m_client->loadCollectionAssets(QStringLiteral("person"), person.id, 1,
+                                   effectiveCollectionSort());
     emit sectionShown(BrowseSection::People, person.id, title);
 }
 
@@ -944,12 +969,19 @@ void ExplorePage::openPlace(const ImmichPlace &place)
     m_collectionHeroAssetId = place.sampleAsset.id;
     if (!place.sampleAsset.id.isEmpty())
         m_client->loadThumbnail(place.sampleAsset.id);
-    m_client->loadAssetsForCity(place.city);
+    m_client->loadCollectionAssets(QStringLiteral("city"), place.city, 1,
+                                   effectiveCollectionSort());
     emit overviewShown();
 }
 
 void ExplorePage::showAlbum(const ImmichAlbum &album)
 {
+    // The sidebar's copy may predate an order change made here.
+    m_collectionAlbum = album;
+    for (const ImmichAlbum &known : std::as_const(m_albums)) {
+        if (known.id == album.id)
+            m_collectionAlbum = known;
+    }
     openCollection(QStringLiteral("album"), album.id, album.name, BrowseSection::Albums);
     setCrumbs({{tr("Albums"), [this] { showIndex(BrowseSection::Albums); }}}, album.name);
     setChips({}, {});
@@ -1054,7 +1086,7 @@ void ExplorePage::openCollection(const QString &kind, const QString &value,
     m_pendingCollectionTitle = title;
     m_pendingPersonStyle = false;
     showCollectionPage(title, tr("Loading photos…"), kind, value, {}, false);
-    m_client->loadCollectionAssets(kind, value);
+    m_client->loadCollectionAssets(kind, value, 1, effectiveCollectionSort());
     emit sectionShown(section, value, title);
 }
 
@@ -1227,6 +1259,9 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
 {
     m_collectionFilterKind = filterKind;
     m_collectionFilterValue = filterValue;
+    if (filterKind != QStringLiteral("album") || m_collectionAlbum.id != filterValue)
+        m_collectionAlbum = {};
+    loadCollectionSort();
     m_collectionHeroAssetId.clear();
     m_collectionPersonStyle = personStyle;
     m_collectionNextPage.clear();
@@ -1334,6 +1369,12 @@ void ExplorePage::clearCollectionTimeline()
 
 ExplorePage::DaySection *ExplorePage::sectionForDate(const QDate &date)
 {
+    // Orders without dates (size, rating, activity) use one plain section.
+    if (!effectiveCollectionSort().groupsByDay()) {
+        if (m_collectionSections.isEmpty())
+            m_collectionSections.append(DaySection{});
+        return &m_collectionSections.first();
+    }
     for (DaySection &section : m_collectionSections) {
         if (section.date == date)
             return &section;
@@ -1362,8 +1403,13 @@ QString ExplorePage::formatDayHeader(const QDate &date) const
 }
 
 void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &filterValue,
-                                     const QList<ImmichAsset> &assets, const QString &nextPage)
+                                     const QList<ImmichAsset> &assets, const QString &nextPage,
+                                     const AssetSort &sort)
 {
+    // A reply for this collection under a sort that has since changed.
+    if (filterKind == m_collectionFilterKind && filterValue == m_collectionFilterValue &&
+        sort != effectiveCollectionSort())
+        return;
     const bool append =
         m_collectionLoadingMore && m_collectionFilterKind == filterKind &&
         m_collectionFilterValue == filterValue &&
@@ -1409,7 +1455,15 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         if (m_collectionTiles.contains(asset.id))
             continue;
 
-        const QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
+        // Results arrive in sort order, so days only need the matching date.
+        const AssetSort::Field field = effectiveCollectionSort().field;
+        QDate date = asset.takenAt.isValid() ? asset.takenAt.date() : QDate();
+        if (field == AssetSort::Field::AddedAt && asset.addedAt.isValid())
+            date = asset.addedAt.toLocalTime().date();
+        else if (field == AssetSort::Field::Deleted && asset.updatedAt.isValid())
+            date = asset.updatedAt.toLocalTime().date();
+        else if (field == AssetSort::Field::Modified && asset.modifiedAt.isValid())
+            date = asset.modifiedAt.toLocalTime().date();
         DaySection *section = sectionForDate(date);
         auto *tile = new MediaTile(asset, m_collectionHost);
         tile->setHoverPreview(m_collectionHoverPreview);
@@ -1614,7 +1668,88 @@ void ExplorePage::requestCollectionNextPage()
     m_collectionLoadMore->setVisible(true);
     setActionButtonLabel(m_collectionLoadMore, tr("Loading…"));
 
-    m_client->loadCollectionAssets(m_collectionFilterKind, m_collectionFilterValue, page);
+    m_client->loadCollectionAssets(m_collectionFilterKind, m_collectionFilterValue, page,
+                                   effectiveCollectionSort());
+}
+
+AssetSort ExplorePage::effectiveCollectionSort() const
+{
+    const QList<AssetSort::Field> fields = collectionSortFields();
+    return fields.contains(m_collectionSort.field) ? m_collectionSort
+                                                    : AssetSort{fields.first(), false};
+}
+
+QList<AssetSort::Field> ExplorePage::collectionSortFields() const
+{
+    using Field = AssetSort::Field;
+    const QString &kind = m_collectionFilterKind;
+    // Folders arrive whole with file details, so they sort like a file manager.
+    if (kind == QStringLiteral("folder"))
+        return {Field::Name,     Field::TakenAt, Field::AddedAt, Field::Modified,
+                Field::Size,     Field::Rating,  Field::Type};
+    QList<Field> fields;
+    if (kind == QStringLiteral("trash"))
+        fields << Field::Deleted;
+    fields << Field::TakenAt;
+    if (ImmichClient::canSortByDateAdded(kind))
+        fields << Field::AddedAt;
+    if (kind == QStringLiteral("album") && m_collectionAlbum.activityEnabled)
+        fields << Field::Activity;
+    return fields;
+}
+
+QString ExplorePage::collectionSortKey() const
+{
+    return m_collectionFilterValue.isEmpty()
+               ? m_collectionFilterKind
+               : m_collectionFilterKind + u':' + m_collectionFilterValue;
+}
+
+// Each collection remembers its own sort. An album's date-taken order lives in
+// Immich (shared with the web UI); it's only kept here when saving it failed.
+void ExplorePage::loadCollectionSort()
+{
+    AssetSort fallback;
+    if (m_collectionFilterKind == QStringLiteral("trash"))
+        fallback = {AssetSort::Field::Deleted, false};
+    else if (m_collectionFilterKind == QStringLiteral("folder"))
+        fallback = {AssetSort::Field::Name, true};
+    else if (!m_collectionAlbum.id.isEmpty())
+        fallback = {AssetSort::Field::TakenAt, m_collectionAlbum.orderAscending};
+    m_collectionSort = AppSettings().loadSort(collectionSortKey(), fallback);
+    m_collectionSortButton->setFields(collectionSortFields());
+    m_collectionSortButton->setSort(effectiveCollectionSort());
+}
+
+void ExplorePage::chooseCollectionSort(const AssetSort &sort)
+{
+    m_collectionSort = sort;
+    AppSettings().saveSort(collectionSortKey(), sort);
+    if (!m_collectionAlbum.id.isEmpty() && sort.field == AssetSort::Field::TakenAt &&
+        sort.ascending != m_collectionAlbum.orderAscending) {
+        m_collectionAlbum.orderAscending = sort.ascending;
+        for (ImmichAlbum &album : m_albums) {
+            if (album.id == m_collectionAlbum.id)
+                album.orderAscending = sort.ascending;
+        }
+        m_client->setAlbumOrder(m_collectionAlbum.id, sort.ascending);
+    }
+    reloadCollection();
+}
+
+void ExplorePage::reloadCollection()
+{
+    if (m_collectionFilterKind.isEmpty() ||
+        m_stack->currentIndex() != static_cast<int>(Page::Collection))
+        return;
+    m_collectionLoadingMore = false;
+    m_collectionLoadFailed = false;
+    m_collectionNextPage.clear();
+    clearCollectionTimeline();
+    updateCollectionLoadMore({});
+    m_collectionSubtitle->setText(tr("Loading photos…"));
+    m_client->loadCollectionAssets(m_collectionFilterKind, m_collectionFilterValue, 1,
+                                   effectiveCollectionSort());
 }
 
 void ExplorePage::backToBrowse()

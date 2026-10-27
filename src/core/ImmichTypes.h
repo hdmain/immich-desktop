@@ -20,6 +20,11 @@ struct ImmichAsset {
     QString fileName;
     QString duration;
     QDateTime takenAt;
+    QDateTime addedAt; // Upload date; missing in older offline caches.
+    QDateTime updatedAt; // Any change on the server; in the trash, when it was deleted.
+    QDateTime modifiedAt; // The file's own modified time.
+    qint64 fileSize = 0;
+    int rating = 0;
     qreal aspectRatio = 1.0;
     bool favorite = false;
     // Set for Folder Sync items shown in Library before Immich has them.
@@ -42,6 +47,8 @@ struct ImmichAlbum {
     QString name;
     int assetCount = 0;
     QString thumbnailAssetId;
+    bool orderAscending = false; // The album's own order in Immich (by date taken).
+    bool activityEnabled = false; // Shared with likes and comments turned on.
 };
 
 struct ImmichTag {
@@ -90,6 +97,33 @@ struct ImmichExploreData {
     QList<ImmichPerson> people;
     QList<ImmichPlace> places;
     QList<ImmichAsset> recentAssets;
+};
+
+// How a photo grid is ordered. Which fields a view offers depends on the view
+// and the server: date added needs Immich 3.0.
+struct AssetSort {
+    enum class Field {
+        TakenAt,
+        AddedAt,
+        Size,
+        Rating,
+        Relevance,
+        Activity,
+        Deleted,
+        Name, // Folders only, like the next two: they arrive whole with file details.
+        Modified,
+        Type,
+    };
+    Field field = Field::TakenAt;
+    bool ascending = false;
+
+    // Date orders group photos into days; the rest show one plain grid.
+    bool groupsByDay() const
+    {
+        return field == Field::TakenAt || field == Field::AddedAt || field == Field::Deleted ||
+               field == Field::Modified;
+    }
+    bool operator==(const AssetSort &) const = default;
 };
 
 struct TimeBucketInfo {

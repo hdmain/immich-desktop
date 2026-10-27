@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QUuid>
 
 #ifdef Q_OS_WIN
@@ -446,6 +447,59 @@ void AppSettings::saveTimeline(const TimelineSettings &timeline)
     m_accountSettings->setValue(QStringLiteral("timeline/compactGrid"), timeline.compactGrid);
     m_accountSettings->setValue(QStringLiteral("timeline/tileSize"), timeline.tileSize);
     m_accountSettings->sync();
+}
+
+namespace {
+
+const QList<QPair<AssetSort::Field, QString>> kSortFieldNames = {
+    {AssetSort::Field::TakenAt, QStringLiteral("taken")},
+    {AssetSort::Field::AddedAt, QStringLiteral("added")},
+    {AssetSort::Field::Size, QStringLiteral("size")},
+    {AssetSort::Field::Rating, QStringLiteral("rating")},
+    {AssetSort::Field::Relevance, QStringLiteral("relevance")},
+    {AssetSort::Field::Activity, QStringLiteral("activity")},
+    {AssetSort::Field::Deleted, QStringLiteral("deleted")},
+    {AssetSort::Field::Name, QStringLiteral("name")},
+    {AssetSort::Field::Modified, QStringLiteral("modified")},
+    {AssetSort::Field::Type, QStringLiteral("type")},
+};
+
+// Views are keyed like "album:<id>"; encoding keeps paths and names out of the
+// settings file's own key syntax.
+QString sortKey(const QString &view)
+{
+    return QStringLiteral("sorting/") + QString::fromLatin1(QUrl::toPercentEncoding(view));
+}
+
+} // namespace
+
+void AppSettings::clearSort(const QString &view)
+{
+    m_accountSettings->remove(sortKey(view));
+    m_accountSettings->sync();
+}
+
+AssetSort AppSettings::loadSort(const QString &view, const AssetSort &fallback) const
+{
+    const QStringList parts = m_accountSettings->value(sortKey(view)).toString().split(u',');
+    for (const auto &[field, name] : kSortFieldNames) {
+        if (parts.value(0) == name)
+            return {field, parts.value(1) == QStringLiteral("asc")};
+    }
+    return fallback;
+}
+
+void AppSettings::saveSort(const QString &view, const AssetSort &sort)
+{
+    for (const auto &[field, name] : kSortFieldNames) {
+        if (field == sort.field) {
+            m_accountSettings->setValue(sortKey(view),
+                                name + (sort.ascending ? QStringLiteral(",asc")
+                                                       : QStringLiteral(",desc")));
+            m_accountSettings->sync();
+            return;
+        }
+    }
 }
 
 DownloadSettings AppSettings::loadDownload() const

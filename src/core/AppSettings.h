@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/CustomHeaders.h"
+#include "core/ImmichTypes.h"
 #include "core/Theme.h"
 #include "core/TlsConfig.h"
 
@@ -119,6 +120,10 @@ public:
 
     TimelineSettings loadTimeline() const;
     void saveTimeline(const TimelineSettings &timeline);
+    // The sort chosen for one view, e.g. "library", "search" or "album:<id>".
+    AssetSort loadSort(const QString &view, const AssetSort &fallback = {}) const;
+    void saveSort(const QString &view, const AssetSort &sort);
+    void clearSort(const QString &view);
 
     DownloadSettings loadDownload() const;
     void saveDownload(const DownloadSettings &download);

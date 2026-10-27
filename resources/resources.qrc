@@ -60,6 +60,7 @@
         <file alias="icons/tabler/tag.svg">icons/tabler/tag.svg</file>
         <file alias="icons/tabler/heart.svg">icons/tabler/heart.svg</file>
         <file alias="icons/tabler/arrow-up.svg">icons/tabler/arrow-up.svg</file>
+        <file alias="icons/tabler/arrow-up-down.svg">icons/tabler/arrow-up-down.svg</file>
         <file alias="icons/tabler/heart-filled.svg">icons/tabler/heart-filled.svg</file>
         <file alias="icons/tabler/users.svg">icons/tabler/users.svg</file>
         <file alias="icons/tabler/chevron-down.svg">icons/tabler/chevron-down.svg</file>
@@ -111,6 +112,7 @@
         <file alias="icons/bootstrap/tag.svg">icons/bootstrap/tag.svg</file>
         <file alias="icons/bootstrap/heart.svg">icons/bootstrap/heart.svg</file>
         <file alias="icons/bootstrap/arrow-up.svg">icons/bootstrap/arrow-up.svg</file>
+        <file alias="icons/bootstrap/arrow-up-down.svg">icons/bootstrap/arrow-up-down.svg</file>
         <file alias="icons/bootstrap/heart-filled.svg">icons/bootstrap/heart-filled.svg</file>
         <file alias="icons/bootstrap/users.svg">icons/bootstrap/users.svg</file>
         <file alias="icons/bootstrap/chevron-down.svg">icons/bootstrap/chevron-down.svg</file>
@@ -160,6 +162,7 @@
         <file alias="icons/tag.svg">icons/tag.svg</file>
         <file alias="icons/heart.svg">icons/heart.svg</file>
         <file alias="icons/arrow-up.svg">icons/arrow-up.svg</file>
+        <file alias="icons/arrow-up-down.svg">icons/arrow-up-down.svg</file>
         <file alias="icons/heart-filled.svg">icons/heart-filled.svg</file>
         <file alias="icons/users.svg">icons/users.svg</file>
         <file alias="icons/folder.svg">icons/folder.svg</file>

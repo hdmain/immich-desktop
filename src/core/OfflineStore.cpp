@@ -28,6 +28,8 @@ QJsonObject assetToJson(const ImmichAsset &asset)
     object.insert(QStringLiteral("aspectRatio"), asset.aspectRatio);
     if (asset.takenAt.isValid())
         object.insert(QStringLiteral("takenAt"), asset.takenAt.toString(Qt::ISODate));
+    if (asset.addedAt.isValid())
+        object.insert(QStringLiteral("addedAt"), asset.addedAt.toString(Qt::ISODate));
     return object;
 }
 
@@ -42,6 +44,8 @@ ImmichAsset assetFromJson(const QJsonObject &object)
     asset.aspectRatio = object.value(QStringLiteral("aspectRatio")).toDouble(1.0);
     asset.takenAt = QDateTime::fromString(
         object.value(QStringLiteral("takenAt")).toString(), Qt::ISODate);
+    asset.addedAt = QDateTime::fromString(
+        object.value(QStringLiteral("addedAt")).toString(), Qt::ISODate);
     return asset;
 }
 

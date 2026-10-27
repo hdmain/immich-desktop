@@ -130,6 +130,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/Toast.h
     src/ui/widgets/TopBar.cpp
     src/ui/widgets/TopBar.h
+    src/ui/widgets/SortButton.cpp
+    src/ui/widgets/SortButton.h
     src/ui/widgets/SoftwareVideoWidget.cpp
     src/ui/widgets/SoftwareVideoWidget.h
     src/ui/widgets/VideoHoverPreview.cpp
