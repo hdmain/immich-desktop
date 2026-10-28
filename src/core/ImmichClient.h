@@ -17,6 +17,7 @@
 #include <QSslConfiguration>
 #include <QStringList>
 #include <QThreadPool>
+#include <QVersionNumber>
 #include <QUrl>
 #include <QUuid>
 
@@ -46,6 +47,8 @@ public:
     QString activeServerUrl() const;
     bool usingLocalEndpoint() const;
     bool isOnline() const;
+    // False until the server's version is known.
+    bool serverAtLeast(int major, int minor) const;
     bool isOffline() const { return !isOnline(); }
 
     void testConnection();
@@ -61,7 +64,8 @@ public:
     // Pages are opaque: pass back the nextPage that filteredAssetsLoaded reported.
     void loadCollectionAssets(const QString &kind, const QString &value, int page = 1,
                               const AssetSort &sort = {});
-    // The order field for a /search/metadata body.
+    // The order fields for a /search/metadata body. Size and rating use Immich
+    // 3.2's orderBy; dates use the older order field every server understands.
     static QJsonObject searchOrder(const AssetSort &sort);
     // Collections that can be ordered by date added (via the timeline).
     static bool canSortByDateAdded(const QString &kind);
@@ -117,6 +121,7 @@ public slots:
 
 signals:
     void configurationChanged(bool configured);
+    void serverVersionChanged();
     void albumOrderSaved(const QString &albumId, bool ascending);
     void albumOrderFailed(const QString &albumId, const QString &message);
     void activeEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -179,6 +184,7 @@ signals:
     void sslPasswordNeeded();
 
 private:
+    void loadServerVersion();
     static QString normalizeServerUrl(QString url);
     static QUrl apiUrlForBase(const QString &serverUrl, const QString &path);
     static bool isTransientNetworkError(QNetworkReply *reply);
@@ -266,7 +272,11 @@ private:
     bool m_online = false;
     bool m_pollInFlight = false;
     quint64 m_searchGeneration = 0;
+    QVersionNumber m_serverVersion;
     quint64 m_collectionGeneration = 0; // Bumped when a collection starts loading.
+    // Next-page cursors for size/rating searches ("library", "collection"); both
+    // views request pages one after another, so the latest cursor is the next.
+    QHash<QString, QString> m_searchCursors;
     // The collection being loaded month by month for a date-added sort.
     struct CollectionTimeline {
         QString kind;

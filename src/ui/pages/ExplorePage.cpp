@@ -325,6 +325,15 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     m_collectionSortButton = new SortButton(collectionToolbar);
     connect(m_collectionSortButton, &SortButton::sortChanged, this,
             &ExplorePage::chooseCollectionSort);
+    connect(m_client, &ImmichClient::serverVersionChanged, this, [this] {
+        if (m_collectionFilterKind.isEmpty())
+            return;
+        const AssetSort before = m_collectionSortButton->sort();
+        m_collectionSortButton->setFields(collectionSortFields());
+        m_collectionSortButton->setSort(effectiveCollectionSort());
+        if (effectiveCollectionSort() != before)
+            reloadCollection();
+    });
     connect(m_client, &ImmichClient::albumOrderFailed, this,
             [this](const QString &, const QString &message) { Toast::showMessage(this, message); });
     connect(m_client, &ImmichClient::albumOrderSaved, this, [](const QString &albumId, bool) {
@@ -1693,6 +1702,9 @@ QList<AssetSort::Field> ExplorePage::collectionSortFields() const
     fields << Field::TakenAt;
     if (ImmichClient::canSortByDateAdded(kind))
         fields << Field::AddedAt;
+    // Size and rating come from search, which folders don't use.
+    if (kind != QStringLiteral("folder") && m_client->serverAtLeast(3, 2))
+        fields << Field::Size << Field::Rating;
     if (kind == QStringLiteral("album") && m_collectionAlbum.activityEnabled)
         fields << Field::Activity;
     return fields;

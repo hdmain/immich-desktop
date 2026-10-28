@@ -100,7 +100,7 @@ struct ImmichExploreData {
 };
 
 // How a photo grid is ordered. Which fields a view offers depends on the view
-// and the server: date added needs Immich 3.0.
+// and the server: date added needs Immich 3.0, size and rating 3.2.
 struct AssetSort {
     enum class Field {
         TakenAt,

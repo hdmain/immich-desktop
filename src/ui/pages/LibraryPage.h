@@ -174,6 +174,8 @@ private:
     QList<AssetSort::Field> sortFields() const;
     AssetSort activeSort() const;
     bool smartSearchActive() const;
+    // Size and rating show the library as a paged list instead of the timeline.
+    bool listSortActive() const;
     void updateSortButton();
     void chooseSort(const AssetSort &sort);
     void appendAssetsToTimeline(const QList<ImmichAsset> &assets);

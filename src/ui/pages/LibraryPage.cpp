@@ -210,6 +210,15 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     actionsLayout->addWidget(m_zoomSlider);
     updateSortButton();
     connect(m_sortButton, &SortButton::sortChanged, this, &LibraryPage::chooseSort);
+    connect(m_client, &ImmichClient::serverVersionChanged, this, [this] {
+        const AssetSort before = m_sortButton->sort();
+        updateSortButton();
+        // A remembered size or rating sort becomes available once the version is known.
+        if (activeSort() != before) {
+            m_loading = false;
+            m_searchActive ? requestPage(1, false) : refresh();
+        }
+    });
     toolbarLayout->addWidget(actions);
     connect(m_zoomSlider, &ZoomSlider::valueChanged, this, &LibraryPage::setTileSize);
     connect(m_zoomSlider, &ZoomSlider::stepRequested, this,
@@ -708,6 +717,13 @@ void LibraryPage::refresh()
     m_flushedBucketCount = 0;
     m_pendingScrollToDate = QDate();
 
+    if (listSortActive()) {
+        clearTimeline();
+        syncPendingLocalAssets();
+        requestPage(1, false);
+        return;
+    }
+
     if (!m_client->isOnline()) {
         // Falls back to the flat cached snapshot via the existing page path.
         requestPage(1, false);
@@ -726,8 +742,8 @@ void LibraryPage::refresh()
 
 bool LibraryPage::hasMoreToLoad() const
 {
-    // The library publishes a complete index; only search is paginated.
-    return m_searchActive && !m_nextPage.isEmpty();
+    // The timeline publishes a complete index; search and size/rating lists are paged.
+    return (m_searchActive || listSortActive()) && !m_nextPage.isEmpty();
 }
 
 void LibraryPage::loadMore()
@@ -735,14 +751,12 @@ void LibraryPage::loadMore()
     if (m_loading)
         return;
 
-    if (m_searchActive) {
+    if (m_searchActive || listSortActive()) {
         bool ok = false;
         const int page = m_nextPage.toInt(&ok);
         if (ok && page > 0)
             requestPage(page, true);
-        return;
     }
-
 }
 
 void LibraryPage::maybeLoadMore()
@@ -852,8 +866,9 @@ void LibraryPage::finishTimelineBucket(const QDate &month, const QList<ImmichAss
 
 void LibraryPage::checkForNewPhotos()
 {
+    // A paged size/rating list never holds everything, so it can't spot new photos.
     if (!isVisible() || m_loading || m_autoRefreshPending || !m_client->isConfigured() ||
-        m_searchActive)
+        m_searchActive || listSortActive())
         return;
     m_client->pollNewestAssets(24);
 }
@@ -1092,7 +1107,9 @@ void LibraryPage::requestPage(int page, bool append)
     }
     QJsonObject options = m_searchActive ? m_searchOptions : QJsonObject{};
     // Smart search only returns relevance order; dates are grouped here instead.
-    if (m_searchActive && !smartSearchActive()) {
+    if (listSortActive())
+        options.insert(QStringLiteral("visibility"), QStringLiteral("timeline"));
+    if ((m_searchActive && !smartSearchActive()) || listSortActive()) {
         const QJsonObject order = ImmichClient::searchOrder(activeSort());
         for (auto it = order.begin(); it != order.end(); ++it)
             options.insert(it.key(), it.value());
@@ -1144,13 +1161,19 @@ QDate LibraryPage::sectionDate(const ImmichAsset &asset) const
 QList<AssetSort::Field> LibraryPage::sortFields() const
 {
     using Field = AssetSort::Field;
+    const bool sizeAndRating = m_client->serverAtLeast(3, 2);
+    QList<Field> fields;
     if (m_searchActive) {
         // Smart search ranks by relevance and can't order by anything else.
         if (smartSearchActive())
             return {Field::Relevance, Field::TakenAt};
-        return {Field::TakenAt};
+        fields = {Field::TakenAt};
+    } else {
+        fields = {Field::TakenAt, Field::AddedAt};
     }
-    return {Field::TakenAt, Field::AddedAt};
+    if (sizeAndRating)
+        fields << Field::Size << Field::Rating;
+    return fields;
 }
 
 AssetSort LibraryPage::activeSort() const
@@ -1164,6 +1187,11 @@ bool LibraryPage::smartSearchActive() const
 {
     return m_searchActive && !m_searchQuery.isEmpty() &&
            m_searchOptions.value(QStringLiteral("mode")).toString().isEmpty();
+}
+
+bool LibraryPage::listSortActive() const
+{
+    return !m_searchActive && !activeSort().groupsByDay();
 }
 
 void LibraryPage::updateSortButton()
@@ -1538,7 +1566,9 @@ void LibraryPage::showYearGrid()
 void LibraryPage::backToLibrary()
 {
     m_contentStack->setCurrentIndex(0);
-    if (!m_searchActive && m_flushedBucketCount < m_monthBuckets.size()) {
+    // Years loads the month list; only the timeline itself should stream it in.
+    if (!m_searchActive && !listSortActive() &&
+        m_flushedBucketCount < m_monthBuckets.size()) {
         m_loading = true;
         m_refreshButton->setEnabled(false);
         updateTimelineLoadingStatus();
@@ -1776,6 +1806,13 @@ void LibraryPage::layoutYearDetail()
 
 void LibraryPage::jumpToDate(const QDate &day)
 {
+    // From Years: a size/rating list has no days, so go to the timeline.
+    if (listSortActive()) {
+        m_pendingDay = day;
+        setSort({AssetSort::Field::TakenAt, m_sort.ascending});
+        m_contentStack->setCurrentIndex(0);
+        return;
+    }
     m_contentStack->setCurrentIndex(0);
     if (!day.isValid() || m_monthBuckets.isEmpty())
         return;

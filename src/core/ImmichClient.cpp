@@ -151,12 +151,15 @@ ImmichAssetDetails assetDetailsFromObject(const QJsonObject &object)
     return details;
 }
 
-QList<ImmichAsset> assetsFromSearchBody(const QByteArray &body, QString *nextPage)
+QList<ImmichAsset> assetsFromSearchBody(const QByteArray &body, QString *nextPage,
+                                        QString *nextCursor = nullptr)
 {
     const QJsonObject assetsObject =
         QJsonDocument::fromJson(body).object().value(QStringLiteral("assets")).toObject();
     if (nextPage)
         *nextPage = assetsObject.value(QStringLiteral("nextPage")).toVariant().toString();
+    if (nextCursor)
+        *nextCursor = assetsObject.value(QStringLiteral("nextCursor")).toString();
 
     QList<ImmichAsset> assets;
     const QJsonArray items = assetsObject.value(QStringLiteral("items")).toArray();
@@ -324,6 +327,47 @@ void addSortQuery(QUrlQuery *query, const AssetSort &sort)
         query->addQueryItem(QStringLiteral("orderBy"), QStringLiteral("createdAt"));
 }
 
+// Immich 3.2's search shape: orderBy (size, rating) only works with a structured
+// filter, and the server rejects mixing it with the older flat fields, so the
+// flat fields this app sends are converted. Pages become a cursor (see
+// m_searchCursors). Unlike the old shape it includes trashed photos unless told.
+QJsonObject toFilterShape(const QJsonObject &flat)
+{
+    QJsonObject body;
+    QJsonObject filter;
+    QJsonObject takenAt;
+    for (auto it = flat.begin(); it != flat.end(); ++it) {
+        const QString &key = it.key();
+        const QJsonValue value = it.value();
+        if (key == QStringLiteral("size") || key == QStringLiteral("withExif") ||
+            key == QStringLiteral("withStacked") || key == QStringLiteral("orderBy"))
+            body.insert(key, value);
+        else if (key == QStringLiteral("visibility") || key == QStringLiteral("city") ||
+                 key == QStringLiteral("type") || key == QStringLiteral("isFavorite"))
+            filter.insert(key, QJsonObject{{QStringLiteral("eq"), value}});
+        else if (key == QStringLiteral("personIds")) // Photos with all of these people.
+            filter.insert(key, QJsonObject{{QStringLiteral("all"), value}});
+        else if (key == QStringLiteral("albumIds") || key == QStringLiteral("tagIds"))
+            filter.insert(key, QJsonObject{{QStringLiteral("any"), value}});
+        else if (key == QStringLiteral("originalFileName") || key == QStringLiteral("description") ||
+                 key == QStringLiteral("originalPath"))
+            filter.insert(key, QJsonObject{{QStringLiteral("like"), value}});
+        else if (key == QStringLiteral("ocr"))
+            filter.insert(key, QJsonObject{{QStringLiteral("matches"), value}});
+        else if (key == QStringLiteral("takenAfter"))
+            takenAt.insert(QStringLiteral("gte"), value);
+        else if (key == QStringLiteral("takenBefore"))
+            takenAt.insert(QStringLiteral("lte"), value);
+    }
+    if (!takenAt.isEmpty())
+        filter.insert(QStringLiteral("takenAt"), takenAt);
+    const bool trash = flat.value(QStringLiteral("withDeleted")).toBool();
+    filter.insert(QStringLiteral("trashedAt"),
+                  QJsonObject{{trash ? QStringLiteral("ne") : QStringLiteral("eq"), QJsonValue::Null}});
+    body.insert(QStringLiteral("filter"), filter);
+    return body;
+}
+
 // The search filter for a collection, or an empty object for unknown kinds.
 QJsonObject collectionSearchFilter(const QString &kind, const QString &value)
 {
@@ -378,7 +422,36 @@ ImmichClient::ImmichClient(QObject *parent)
         QTimer::singleShot(0, this, &ImmichClient::probeEndpoints);
         QTimer::singleShot(0, this, &ImmichClient::probeReachability);
         QTimer::singleShot(2000, this, &ImmichClient::processUploadQueue);
+        QTimer::singleShot(0, this, &ImmichClient::loadServerVersion);
     }
+}
+
+bool ImmichClient::serverAtLeast(int major, int minor) const
+{
+    return !m_serverVersion.isNull() &&
+           QVersionNumber::compare(m_serverVersion, QVersionNumber(major, minor)) >= 0;
+}
+
+void ImmichClient::loadServerVersion()
+{
+    if (!isConfigured())
+        return;
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/server/version")));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        const QJsonObject object = QJsonDocument::fromJson(reply->readAll()).object();
+        const QVersionNumber version(object.value(QStringLiteral("major")).toInt(),
+                                     object.value(QStringLiteral("minor")).toInt(),
+                                     object.value(QStringLiteral("patch")).toInt());
+        if (version != m_serverVersion) {
+            m_serverVersion = version;
+            emit serverVersionChanged();
+        }
+    });
 }
 
 ImmichClient::~ImmichClient()
@@ -477,8 +550,11 @@ void ImmichClient::setOnline(bool online)
         return;
     m_online = online;
     emit onlineChanged(m_online);
-    if (m_online)
+    if (m_online) {
         processUploadQueue();
+        if (m_serverVersion.isNull())
+            loadServerVersion();
+    }
 }
 
 bool ImmichClient::isTransientNetworkError(QNetworkReply *reply)
@@ -554,10 +630,12 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
     if (changed) {
         cancelThumbnailPrefetch();
         m_currentUserId.clear();
+        m_serverVersion = {};
             releaseMemoryCaches();
         if (m_streamServer)
             ensureStreamServer();
         emit configurationChanged(isConfigured());
+        loadServerVersion();
     }
 }
 
@@ -974,9 +1052,15 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
         if (!pollOnly && !trimmedQuery.isEmpty() && !mode.isEmpty())
             body.insert(mode, trimmedQuery);
         // Callers may pick an order (see searchOrder); newest first otherwise.
-        if (!body.contains(QStringLiteral("order")))
+        if (!body.contains(QStringLiteral("order")) && !body.contains(QStringLiteral("orderBy")))
             body.insert(QStringLiteral("order"), QStringLiteral("desc"));
         body.insert(QStringLiteral("withStacked"), true);
+    }
+    const bool filterShape = body.contains(QStringLiteral("orderBy"));
+    if (filterShape) {
+        body = toFilterShape(body);
+        if (page > 1)
+            body.insert(QStringLiteral("cursor"), m_searchCursors.value(QStringLiteral("library")));
     }
 
     const QString endpoint = smartSearch ? QStringLiteral("/search/smart")
@@ -987,7 +1071,7 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
     searchRequest.setTransferTimeout(20000);
     auto *reply = m_network->post(searchRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, pollOnly, filteredSearch, trimmedQuery, page, generation] {
+            [this, reply, pollOnly, filteredSearch, trimmedQuery, page, generation, filterShape] {
         const QByteArray body = reply->readAll();
         if (!pollOnly && generation != m_searchGeneration) {
             reply->deleteLater();
@@ -1013,7 +1097,12 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
 
         setOnline(true);
         QString nextPage;
-        QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage);
+        QString nextCursor;
+        QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage, &nextCursor);
+        if (filterShape) {
+            m_searchCursors.insert(QStringLiteral("library"), nextCursor);
+            nextPage = nextCursor.isEmpty() ? QString() : QString::number(page + 1);
+        }
 
         if (pollOnly) {
             emit newestAssetsPolled(assets);
@@ -1215,7 +1304,13 @@ void ImmichClient::loadAssetsForFolder(const QString &path, const AssetSort &sor
 
 QJsonObject ImmichClient::searchOrder(const AssetSort &sort)
 {
-    return {{QStringLiteral("order"), sort.ascending ? QStringLiteral("asc") : QStringLiteral("desc")}};
+    const QString direction = sort.ascending ? QStringLiteral("asc") : QStringLiteral("desc");
+    if (sort.field != AssetSort::Field::Size && sort.field != AssetSort::Field::Rating)
+        return {{QStringLiteral("order"), direction}};
+    const QString field = sort.field == AssetSort::Field::Size ? QStringLiteral("fileSizeInBytes")
+                                                               : QStringLiteral("rating");
+    return {{QStringLiteral("orderBy"),
+             QJsonObject{{QStringLiteral("field"), field}, {QStringLiteral("direction"), direction}}}};
 }
 
 bool ImmichClient::canSortByDateAdded(const QString &kind)
@@ -1607,13 +1702,19 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
     const QJsonObject order = searchOrder(sort);
     for (auto it = order.begin(); it != order.end(); ++it)
         body.insert(it.key(), it.value());
+    const bool filterShape = body.contains(QStringLiteral("orderBy"));
+    if (filterShape) {
+        body = toFilterShape(body);
+        if (page > 1)
+            body.insert(QStringLiteral("cursor"), m_searchCursors.value(QStringLiteral("collection")));
+    }
 
     QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/search/metadata")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     request.setRawHeader("Accept", "application/json");
     auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, filterKind, filterValue, sort] {
+            [this, reply, filterKind, filterValue, sort, filterShape, page] {
                 const QByteArray body = reply->readAll();
                 if (reply->error() != QNetworkReply::NoError) {
                     emit requestFailed(tr("Load explore"), errorMessage(reply, body));
@@ -1621,7 +1722,12 @@ void ImmichClient::searchFilteredAssets(const QString &filterKind, const QString
                     return;
                 }
                 QString nextPage;
-                const QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage);
+                QString nextCursor;
+                const QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage, &nextCursor);
+                if (filterShape) {
+                    m_searchCursors.insert(QStringLiteral("collection"), nextCursor);
+                    nextPage = nextCursor.isEmpty() ? QString() : QString::number(page + 1);
+                }
                 emit filteredAssetsLoaded(filterKind, filterValue, assets, nextPage, sort);
                 reply->deleteLater();
             });
