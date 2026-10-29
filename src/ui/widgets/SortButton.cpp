@@ -68,11 +68,18 @@ void SortButton::setSort(const AssetSort &sort)
     rebuildMenu();
 }
 
+void SortButton::setShuffled(bool shuffled)
+{
+    m_shuffled = shuffled;
+    rebuildMenu();
+}
+
 void SortButton::choose(const AssetSort &sort)
 {
-    if (sort == m_sort)
+    if (sort == m_sort && !m_shuffled)
         return;
     m_sort = sort;
+    m_shuffled = false;
     rebuildMenu();
     emit sortChanged(m_sort);
 }
@@ -114,7 +121,8 @@ void SortButton::rebuildMenu()
 
     const QString field = fieldName(m_sort.field).toLower();
     const QString tip =
-        m_sort.field == AssetSort::Field::Relevance
+        m_shuffled ? tr("Shuffled; pick an order to sort again")
+        : m_sort.field == AssetSort::Field::Relevance
             ? tr("Sorted by relevance")
             : tr("Sorted by %1, %2")
                   .arg(field, (m_sort.ascending ? ascending : descending).toLower());

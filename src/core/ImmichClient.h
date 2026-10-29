@@ -69,6 +69,10 @@ public:
     static QJsonObject searchOrder(const AssetSort &sort);
     // Collections that can be ordered by date added (via the timeline).
     static bool canSortByDateAdded(const QString &kind);
+    // A random batch from a collection ("library" for the whole timeline), for
+    // Shuffle. Replies with randomAssetsLoaded; folders and the view history come
+    // whole, so they have no more to give.
+    void loadRandomAssets(const QString &kind, const QString &value);
     // Photos opened in the viewer, kept on this computer only (Immich doesn't
     // record views). Most recent first; also the "viewed" collection.
     void recordViewed(const ImmichAsset &asset);
@@ -135,6 +139,8 @@ signals:
     void configurationChanged(bool configured);
     void serverVersionChanged();
     void recentlyViewedChanged();
+    void randomAssetsLoaded(const QString &kind, const QString &value,
+                            const QList<Aurora::ImmichAsset> &assets, bool more);
     void albumOrderSaved(const QString &albumId, bool ascending);
     void albumOrderFailed(const QString &albumId, const QString &message);
     void activeEndpointChanged(bool usingLocal, const QString &activeUrl);

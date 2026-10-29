@@ -22,6 +22,7 @@
 #include <QNetworkInformation>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRandomGenerator>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QTimer>
@@ -1487,6 +1488,63 @@ void ImmichClient::loadTrashByDeletion(const AssetSort &sort)
                                         });
                        emit filteredAssetsLoaded(QStringLiteral("trash"), {}, assets, {}, sort);
                    });
+}
+
+void ImmichClient::loadRandomAssets(const QString &kind, const QString &value)
+{
+    if (!ensureConfigured(tr("Load explore")))
+        return;
+    auto shuffled = [](QList<ImmichAsset> assets) {
+        std::shuffle(assets.begin(), assets.end(), *QRandomGenerator::global());
+        return assets;
+    };
+    if (kind == QStringLiteral("viewed")) {
+        QTimer::singleShot(0, this, [this, shuffled] {
+            emit randomAssetsLoaded(QStringLiteral("viewed"), {}, shuffled(recentlyViewed()), false);
+        });
+        return;
+    }
+    if (kind == QStringLiteral("folder")) {
+        QUrl url = apiUrl(QStringLiteral("/view/folder"));
+        url.setQuery(QUrlQuery{{QStringLiteral("path"), value}});
+        fetchBrowseList(QStringLiteral("folder"), url, [this, value, shuffled](const QByteArray &body) {
+            QList<ImmichAsset> assets;
+            for (const QJsonValue &item : QJsonDocument::fromJson(body).array()) {
+                const ImmichAsset asset = assetFromObject(item.toObject());
+                if (!asset.id.isEmpty())
+                    assets.append(asset);
+            }
+            emit randomAssetsLoaded(QStringLiteral("folder"), value, shuffled(assets), false);
+        });
+        return;
+    }
+
+    QJsonObject body = kind == QStringLiteral("library")
+                           ? QJsonObject{{QStringLiteral("visibility"), QStringLiteral("timeline")}}
+                           : collectionSearchFilter(kind, value);
+    if (body.isEmpty())
+        return;
+    body.insert(QStringLiteral("size"), 80);
+    body.insert(QStringLiteral("withExif"), true);
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/search/random")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, kind, value] {
+        const QByteArray body = reply->readAll();
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit requestFailed(tr("Load explore"), errorMessage(reply, body));
+            return;
+        }
+        QList<ImmichAsset> assets;
+        for (const QJsonValue &item : QJsonDocument::fromJson(body).array()) {
+            const ImmichAsset asset = assetFromObject(item.toObject());
+            if (!asset.id.isEmpty())
+                assets.append(asset);
+        }
+        emit randomAssetsLoaded(kind, value, assets, !assets.isEmpty());
+    });
 }
 
 void ImmichClient::setRememberViewed(bool remember)

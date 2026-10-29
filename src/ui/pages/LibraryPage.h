@@ -178,6 +178,9 @@ private:
     bool listSortActive() const;
     void updateSortButton();
     void chooseSort(const AssetSort &sort);
+    void shuffle();
+    void showRandomAssets(const QString &kind, const QList<Aurora::ImmichAsset> &assets,
+                          bool more);
     void appendAssetsToTimeline(const QList<ImmichAsset> &assets);
     void prependLocalAsset(const ImmichAsset &asset);
     void removeLocalAsset(const QString &assetId);
@@ -250,6 +253,8 @@ private:
     QPushButton *m_refreshButton;
     QPushButton *m_yearsButton;
     SortButton *m_sortButton;
+    QPushButton *m_shuffleButton;
+    bool m_shuffled = false;
     AssetSort m_sort;
     AssetSort m_searchSort;
     QTimer *m_layoutTimer;

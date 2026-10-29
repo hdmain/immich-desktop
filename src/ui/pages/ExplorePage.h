@@ -160,6 +160,9 @@ private:
     QString collectionSortKey() const;
     void loadCollectionSort();
     void chooseCollectionSort(const AssetSort &sort);
+    void shuffleCollection();
+    void showRandomAssets(const QString &kind, const QString &value,
+                          const QList<Aurora::ImmichAsset> &assets, bool more);
     void reloadCollection();
     void openCollection(const QString &kind, const QString &value, const QString &title,
                         BrowseSection section);
@@ -264,6 +267,8 @@ private:
     int m_collectionTileSize = 180;
     ZoomSlider *m_collectionZoomSlider = nullptr;
     SortButton *m_collectionSortButton = nullptr;
+    QPushButton *m_collectionShuffleButton = nullptr;
+    bool m_collectionShuffled = false;
     AssetSort m_collectionSort;
     ImmichAlbum m_collectionAlbum; // The open album, for its order and activity.
     QPushButton *m_restoreAllButton = nullptr;

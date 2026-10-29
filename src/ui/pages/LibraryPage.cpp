@@ -117,6 +117,7 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     , m_refreshButton(new QPushButton(tr("Refresh"), this))
     , m_yearsButton(new QPushButton(tr("Years"), this))
     , m_sortButton(new SortButton(this))
+    , m_shuffleButton(new QPushButton(this))
     , m_sort(AppSettings().loadSort(QStringLiteral("library")))
     , m_searchSort(AppSettings().loadSort(QStringLiteral("search"),
                                           {AssetSort::Field::Relevance, false}))
@@ -207,6 +208,15 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     actionsLayout->addWidget(m_refreshButton);
     actionsLayout->addWidget(m_yearsButton);
     actionsLayout->addWidget(m_sortButton);
+    configureActionButton(m_shuffleButton, QStringLiteral(":/icons/shuffle.svg"));
+    m_shuffleButton->setToolTip(tr("Shuffle (again for a new mix)"));
+    m_shuffleButton->setAccessibleName(tr("Shuffle"));
+    m_shuffleButton->setCursor(Qt::PointingHandCursor);
+    actionsLayout->addWidget(m_shuffleButton);
+    connect(m_shuffleButton, &QPushButton::clicked, this, &LibraryPage::shuffle);
+    connect(m_client, &ImmichClient::randomAssetsLoaded, this,
+            [this](const QString &kind, const QString &, const QList<ImmichAsset> &assets,
+                   bool more) { showRandomAssets(kind, assets, more); });
     actionsLayout->addWidget(m_zoomSlider);
     updateSortButton();
     connect(m_sortButton, &SortButton::sortChanged, this, &LibraryPage::chooseSort);
@@ -712,6 +722,10 @@ void LibraryPage::refresh()
 {
     if (m_loading)
         return;
+    if (m_shuffled) {
+        shuffle();
+        return;
+    }
 
     if (m_searchActive) {
         requestPage(1, false);
@@ -751,8 +765,9 @@ void LibraryPage::refresh()
 
 bool LibraryPage::hasMoreToLoad() const
 {
-    // The timeline publishes a complete index; search and size/rating lists are paged.
-    return (m_searchActive || listSortActive()) && !m_nextPage.isEmpty();
+    // The timeline publishes a complete index; search, size/rating lists and
+    // shuffled batches are paged.
+    return (m_searchActive || listSortActive() || m_shuffled) && !m_nextPage.isEmpty();
 }
 
 void LibraryPage::loadMore()
@@ -760,6 +775,11 @@ void LibraryPage::loadMore()
     if (m_loading)
         return;
 
+    if (m_shuffled && !m_nextPage.isEmpty()) {
+        m_loading = true;
+        m_client->loadRandomAssets(QStringLiteral("library"), {});
+        return;
+    }
     if (m_searchActive || listSortActive()) {
         bool ok = false;
         const int page = m_nextPage.toInt(&ok);
@@ -877,7 +897,7 @@ void LibraryPage::checkForNewPhotos()
 {
     // A paged size/rating list never holds everything, so it can't spot new photos.
     if (!isVisible() || m_loading || m_autoRefreshPending || !m_client->isConfigured() ||
-        m_searchActive || listSortActive())
+        m_searchActive || listSortActive() || m_shuffled)
         return;
     m_client->pollNewestAssets(24);
 }
@@ -897,6 +917,9 @@ void LibraryPage::applySearch()
     QJsonObject filters = options;
     filters.remove(QStringLiteral("mode"));
     m_searchActive = !query.isEmpty() || !filters.isEmpty();
+    // Immich can't shuffle search results, so search leaves the shuffled view.
+    m_shuffled = false;
+    m_shuffleButton->setVisible(!m_searchActive);
     updateSortButton();
     m_contentStack->setCurrentIndex(0);
     m_nextPage.clear();
@@ -982,7 +1005,15 @@ void LibraryPage::scrollCurrent(bool toTop)
 void LibraryPage::showDay(const QDate &day)
 {
     // Day links are dates taken, so the timeline switches to that order for them.
+    const bool wasShuffled = std::exchange(m_shuffled, false);
     const bool resort = m_sort.field != AssetSort::Field::TakenAt;
+    if (wasShuffled && !resort && !m_searchActive) {
+        updateSortButton();
+        m_pendingDay = day;
+        m_loading = false;
+        refresh();
+        return;
+    }
     if (resort) {
         m_sort = {AssetSort::Field::TakenAt, m_sort.ascending};
         AppSettings().saveSort(QStringLiteral("library"), m_sort);
@@ -1132,8 +1163,9 @@ void LibraryPage::requestPage(int page, bool append)
 
 LibraryPage::DaySection *LibraryPage::sectionForDate(const QDate &date)
 {
-    // Orders without dates (relevance, size, rating) use one plain section.
-    if (!activeSort().groupsByDay()) {
+    // Shuffled, and orders without dates (relevance, size, rating), use one
+    // plain section.
+    if (m_shuffled || !activeSort().groupsByDay()) {
         if (m_sections.isEmpty())
             m_sections.append(DaySection{});
         return &m_sections.first();
@@ -1214,10 +1246,20 @@ void LibraryPage::updateSortButton()
 {
     m_sortButton->setFields(sortFields());
     m_sortButton->setSort(activeSort());
+    m_sortButton->setShuffled(m_shuffled);
 }
 
 void LibraryPage::chooseSort(const AssetSort &sort)
 {
+    if (m_shuffled) {
+        m_shuffled = false;
+        if (sort == m_sort) {
+            updateSortButton();
+            m_loading = false;
+            refresh();
+            return;
+        }
+    }
     if (!m_searchActive) {
         setSort(sort);
         return;
@@ -1245,9 +1287,57 @@ void LibraryPage::setSort(const AssetSort &sort)
     refresh();
 }
 
+void LibraryPage::shuffle()
+{
+    if (m_searchActive || !m_client->isConfigured())
+        return;
+    m_shuffled = true;
+    updateSortButton();
+    m_monthBuckets.clear();
+    m_readyBucketAssets.clear();
+    m_inflightBuckets.clear();
+    ++m_timelineEpoch;
+    m_nextBucketToRequest = 0;
+    m_flushedBucketCount = 0;
+    m_pendingScrollToDate = QDate();
+    m_contentStack->setCurrentIndex(0);
+    clearTimeline();
+    m_nextPage.clear();
+    m_loading = true;
+    m_refreshButton->setEnabled(false);
+    m_status->setText(tr("Shuffling…"));
+    m_client->loadRandomAssets(QStringLiteral("library"), {});
+}
+
+void LibraryPage::showRandomAssets(const QString &kind, const QList<ImmichAsset> &assets,
+                                   bool more)
+{
+    if (kind != QStringLiteral("library") || !m_shuffled)
+        return;
+    // Random batches can repeat photos already shown.
+    QList<ImmichAsset> fresh;
+    for (const ImmichAsset &asset : assets) {
+        if (!m_tilesById.contains(asset.id))
+            fresh.append(asset);
+    }
+    appendAssetsToTimeline(fresh);
+    m_nextPage = more && !fresh.isEmpty() ? QStringLiteral("more") : QString();
+    m_loading = false;
+    m_refreshButton->setEnabled(true);
+    m_status->setText(tr("%n item(s), shuffled", nullptr, m_assets.size()));
+    scheduleLayout();
+    updateEmptyState();
+}
+
 void LibraryPage::showRecentlyAdded()
 {
-    setSort({AssetSort::Field::AddedAt, false});
+    const AssetSort recent{AssetSort::Field::AddedAt, false};
+    if (std::exchange(m_shuffled, false) && m_sort == recent && !m_searchActive) {
+        updateSortButton();
+        m_loading = false;
+        refresh();
+    }
+    setSort(recent);
     if (m_searchActive) {
         m_searchField->clear();
         resetSearchFilters();
@@ -1583,7 +1673,7 @@ void LibraryPage::backToLibrary()
 {
     m_contentStack->setCurrentIndex(0);
     // Years loads the month list; only the timeline itself should stream it in.
-    if (!m_searchActive && !listSortActive() &&
+    if (!m_searchActive && !m_shuffled && !listSortActive() &&
         m_flushedBucketCount < m_monthBuckets.size()) {
         m_loading = true;
         m_refreshButton->setEnabled(false);
@@ -1822,10 +1912,17 @@ void LibraryPage::layoutYearDetail()
 
 void LibraryPage::jumpToDate(const QDate &day)
 {
-    // From Years: a size/rating list has no days, so go to the timeline.
-    if (listSortActive()) {
+    // From Years: a shuffled or size/rating list has no days, so go to the timeline.
+    if (m_shuffled || listSortActive()) {
         m_pendingDay = day;
-        setSort({AssetSort::Field::TakenAt, m_sort.ascending});
+        m_shuffled = false;
+        if (listSortActive()) {
+            setSort({AssetSort::Field::TakenAt, m_sort.ascending});
+        } else {
+            updateSortButton();
+            m_loading = false;
+            refresh();
+        }
         m_contentStack->setCurrentIndex(0);
         return;
     }

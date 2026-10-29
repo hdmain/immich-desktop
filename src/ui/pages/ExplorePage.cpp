@@ -364,6 +364,15 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
             AppSettings().clearSort(key);
     });
     collectionToolbarLayout->addWidget(m_collectionSortButton);
+    m_collectionShuffleButton = new QPushButton(collectionToolbar);
+    configureActionButton(m_collectionShuffleButton, QStringLiteral(":/icons/shuffle.svg"));
+    m_collectionShuffleButton->setToolTip(tr("Shuffle (again for a new mix)"));
+    m_collectionShuffleButton->setAccessibleName(tr("Shuffle"));
+    m_collectionShuffleButton->setCursor(Qt::PointingHandCursor);
+    collectionToolbarLayout->addWidget(m_collectionShuffleButton);
+    connect(m_collectionShuffleButton, &QPushButton::clicked, this,
+            &ExplorePage::shuffleCollection);
+    connect(m_client, &ImmichClient::randomAssetsLoaded, this, &ExplorePage::showRandomAssets);
     collectionToolbarLayout->addWidget(m_collectionZoomSlider);
     connect(m_collectionZoomSlider, &ZoomSlider::valueChanged, this,
             &ExplorePage::setCollectionTileSize);
@@ -1293,6 +1302,7 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     m_collectionFilterValue = filterValue;
     if (filterKind != QStringLiteral("album") || m_collectionAlbum.id != filterValue)
         m_collectionAlbum = {};
+    m_collectionShuffled = false;
     loadCollectionSort();
     m_collectionHeroAssetId.clear();
     m_collectionPersonStyle = personStyle;
@@ -1314,6 +1324,7 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     m_restoreAllButton->setVisible(trash);
     m_emptyTrashButton->setVisible(trash);
     m_collectionSortButton->setVisible(filterKind != QStringLiteral("viewed"));
+    m_collectionShuffleButton->setVisible(!trash);
     setPage(Page::Collection);
 }
 
@@ -1402,8 +1413,8 @@ void ExplorePage::clearCollectionTimeline()
 
 ExplorePage::DaySection *ExplorePage::sectionForDate(const QDate &date)
 {
-    // Orders without dates (size, rating, activity) use one plain section.
-    if (!effectiveCollectionSort().groupsByDay()) {
+    // Shuffled, and orders without dates (size, rating, activity), use one plain section.
+    if (m_collectionShuffled || !effectiveCollectionSort().groupsByDay()) {
         if (m_collectionSections.isEmpty())
             m_collectionSections.append(DaySection{});
         return &m_collectionSections.first();
@@ -1439,9 +1450,10 @@ void ExplorePage::showFilteredAssets(const QString &filterKind, const QString &f
                                      const QList<ImmichAsset> &assets, const QString &nextPage,
                                      const AssetSort &sort)
 {
-    // A reply for this collection under a sort that has since changed.
+    // A reply for this collection under a sort that has since changed, or from
+    // before it was shuffled.
     if (filterKind == m_collectionFilterKind && filterValue == m_collectionFilterValue &&
-        sort != effectiveCollectionSort())
+        (sort != effectiveCollectionSort() || m_collectionShuffled))
         return;
     const bool append =
         m_collectionLoadingMore && m_collectionFilterKind == filterKind &&
@@ -1701,6 +1713,11 @@ void ExplorePage::requestCollectionNextPage()
     m_collectionLoadMore->setVisible(true);
     setActionButtonLabel(m_collectionLoadMore, tr("Loading…"));
 
+    // Shuffled, each batch is a fresh random pick rather than a page.
+    if (m_collectionShuffled) {
+        m_client->loadRandomAssets(m_collectionFilterKind, m_collectionFilterValue);
+        return;
+    }
     m_client->loadCollectionAssets(m_collectionFilterKind, m_collectionFilterValue, page,
                                    effectiveCollectionSort());
 }
@@ -1765,10 +1782,12 @@ void ExplorePage::loadCollectionSort()
     m_collectionSort = AppSettings().loadSort(collectionSortKey(), fallback);
     m_collectionSortButton->setFields(collectionSortFields());
     m_collectionSortButton->setSort(effectiveCollectionSort());
+    m_collectionSortButton->setShuffled(false);
 }
 
 void ExplorePage::chooseCollectionSort(const AssetSort &sort)
 {
+    m_collectionShuffled = false;
     m_collectionSort = sort;
     AppSettings().saveSort(collectionSortKey(), sort);
     if (!m_collectionAlbum.id.isEmpty() && sort.field == AssetSort::Field::TakenAt &&
@@ -1781,6 +1800,45 @@ void ExplorePage::chooseCollectionSort(const AssetSort &sort)
         m_client->setAlbumOrder(m_collectionAlbum.id, sort.ascending);
     }
     reloadCollection();
+}
+
+void ExplorePage::shuffleCollection()
+{
+    if (m_collectionFilterKind.isEmpty())
+        return;
+    m_collectionShuffled = true;
+    m_collectionSortButton->setShuffled(true);
+    m_collectionLoadingMore = false;
+    m_collectionLoadFailed = false;
+    m_collectionNextPage.clear();
+    clearCollectionTimeline();
+    updateCollectionLoadMore({});
+    m_collectionSubtitle->setText(tr("Shuffling…"));
+    m_client->loadRandomAssets(m_collectionFilterKind, m_collectionFilterValue);
+}
+
+void ExplorePage::showRandomAssets(const QString &kind, const QString &value,
+                                   const QList<ImmichAsset> &assets, bool more)
+{
+    if (!m_collectionShuffled || kind != m_collectionFilterKind ||
+        value != m_collectionFilterValue)
+        return;
+    // Random batches can repeat photos already shown.
+    QList<ImmichAsset> fresh;
+    for (const ImmichAsset &asset : assets) {
+        if (!m_collectionTiles.contains(asset.id))
+            fresh.append(asset);
+    }
+    m_collectionLoadingMore = false;
+    appendCollectionAssets(fresh);
+    if (m_collectionTiles.isEmpty())
+        m_collectionSubtitle->setText(tr("Nothing here yet"));
+    else
+        updateCollectionSubtitle();
+    // Any page number works: each shuffled batch is a fresh random pick.
+    updateCollectionLoadMore(more && !fresh.isEmpty() ? QStringLiteral("1") : QString());
+    scheduleCollectionLayout();
+    scheduleCollectionVisibility();
 }
 
 void ExplorePage::reloadCollection()

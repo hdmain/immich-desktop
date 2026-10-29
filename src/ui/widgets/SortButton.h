@@ -22,6 +22,8 @@ public:
     // to the first one.
     void setFields(const QList<AssetSort::Field> &fields);
     void setSort(const AssetSort &sort);
+    // While shuffled, any choice in the menu (even the current one) sorts again.
+    void setShuffled(bool shuffled);
 
     static QString fieldName(AssetSort::Field field);
 
@@ -34,6 +36,7 @@ private:
 
     QList<AssetSort::Field> m_fields{AssetSort::Field::TakenAt};
     AssetSort m_sort;
+    bool m_shuffled = false;
 };
 
 } // namespace Aurora
