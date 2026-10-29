@@ -8,6 +8,7 @@
 #include <functional>
 
 class QPushButton;
+class QTimer;
 class QStackedWidget;
 
 namespace Aurora {
@@ -68,6 +69,7 @@ private:
     QPushButton *m_trashButton;
     QPushButton *m_restoreButton;
     AnimatedButton *m_favoriteButton;
+    QTimer *m_viewTimer;
     // Favorites changed while the viewer is open, so stepping back shows them.
     QHash<QString, bool> m_favoriteChanges;
     bool m_trashMode = false;

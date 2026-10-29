@@ -63,6 +63,7 @@ struct PlaybackSettings {
 struct TimelineSettings {
     bool compactGrid = false;
     int tileSize = 180;
+    bool rememberViewed = true; // Recently viewed list and "Last viewed" sort.
 };
 
 struct DownloadSettings {

@@ -439,12 +439,15 @@ TimelineSettings AppSettings::loadTimeline() const
         m_accountSettings->value(QStringLiteral("timeline/compactGrid"), false).toBool();
     result.tileSize =
         m_accountSettings->value(QStringLiteral("timeline/tileSize"), result.tileSize).toInt();
+    result.rememberViewed =
+        m_accountSettings->value(QStringLiteral("timeline/rememberViewed"), true).toBool();
     return result;
 }
 
 void AppSettings::saveTimeline(const TimelineSettings &timeline)
 {
     m_accountSettings->setValue(QStringLiteral("timeline/compactGrid"), timeline.compactGrid);
+    m_accountSettings->setValue(QStringLiteral("timeline/rememberViewed"), timeline.rememberViewed);
     m_accountSettings->setValue(QStringLiteral("timeline/tileSize"), timeline.tileSize);
     m_accountSettings->sync();
 }
@@ -459,6 +462,7 @@ const QList<QPair<AssetSort::Field, QString>> kSortFieldNames = {
     {AssetSort::Field::Relevance, QStringLiteral("relevance")},
     {AssetSort::Field::Activity, QStringLiteral("activity")},
     {AssetSort::Field::Deleted, QStringLiteral("deleted")},
+    {AssetSort::Field::Viewed, QStringLiteral("viewed")},
     {AssetSort::Field::Name, QStringLiteral("name")},
     {AssetSort::Field::Modified, QStringLiteral("modified")},
     {AssetSort::Field::Type, QStringLiteral("type")},

@@ -172,9 +172,13 @@ private:
     void clearCollectionTimeline();
     void appendCollectionAssets(const QList<ImmichAsset> &assets);
     void updateCollectionLoadMore(const QString &nextPage);
-    ImmichAsset adjacentAsset(bool fromCollection, const QString &assetId, int step);
+    // Where the viewer was opened from, so it steps through the same list.
+    enum class AssetSource { Collection, RecentlyAdded, RecentlyViewed };
+    ImmichAsset adjacentAsset(AssetSource source, const QString &assetId, int step);
     void setPage(Page page);
-    MediaViewerDialog *openAsset(const Aurora::ImmichAsset &asset, bool fromCollection);
+    MediaViewerDialog *openAsset(const Aurora::ImmichAsset &asset, AssetSource source);
+    void populateViewedRow();
+    void showRecentlyViewed();
     void setCollectionTileSize(int size);
     void applyIndexZoom();
     void clearTrashView();
@@ -201,6 +205,8 @@ private:
     SectionRow m_peopleSection;
     SectionRow m_placesSection;
     SectionRow m_recentSection;
+    SectionRow m_viewedSection;
+    QList<ImmichAsset> m_viewedAssets;
     QHash<QString, ExploreCard *> m_personCards;
     QMultiHash<QString, ExploreCard *> m_browseAssetCards;
     QList<ImmichAsset> m_recentAssets;

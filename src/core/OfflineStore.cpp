@@ -81,6 +81,72 @@ OfflineStore::OfflineStore()
     QDir().mkpath(m_directory);
 }
 
+// Kept with the profile's data rather than its cache: it's history, not a copy
+// of something the server has.
+QString OfflineStore::viewHistoryPath(const QString &serverUrl) const
+{
+    return AppSettings::profileDataDirectory() + QStringLiteral("/history/") +
+           serverKey(serverUrl) + QStringLiteral("-viewed.json");
+}
+
+void OfflineStore::saveViewHistory(const QString &serverUrl, const QList<ImmichAsset> &assets)
+{
+    QJsonArray items;
+    for (const ImmichAsset &asset : assets)
+        items.append(assetToJson(asset));
+    writeJsonFile(viewHistoryPath(serverUrl), {{QStringLiteral("assets"), items}});
+}
+
+QString OfflineStore::viewStatsPath(const QString &serverUrl) const
+{
+    return AppSettings::profileDataDirectory() + QStringLiteral("/history/") +
+           serverKey(serverUrl) + QStringLiteral("-views.json");
+}
+
+void OfflineStore::saveViewStats(const QString &serverUrl,
+                                 const QHash<QString, AssetViewStats> &stats)
+{
+    QJsonArray items;
+    for (const AssetViewStats &entry : stats) {
+        QJsonArray views;
+        for (const qint64 seconds : entry.viewedAt)
+            views.append(seconds);
+        items.append(QJsonObject{{QStringLiteral("asset"), assetToJson(entry.asset)},
+                                 {QStringLiteral("views"), views}});
+    }
+    writeJsonFile(viewStatsPath(serverUrl), {{QStringLiteral("assets"), items}});
+}
+
+QHash<QString, AssetViewStats> OfflineStore::loadViewStats(const QString &serverUrl) const
+{
+    QHash<QString, AssetViewStats> stats;
+    const QJsonArray items =
+        readJsonFile(viewStatsPath(serverUrl)).value(QStringLiteral("assets")).toArray();
+    for (const QJsonValue &value : items) {
+        const QJsonObject object = value.toObject();
+        AssetViewStats entry;
+        entry.asset = assetFromJson(object.value(QStringLiteral("asset")).toObject());
+        for (const QJsonValue &seconds : object.value(QStringLiteral("views")).toArray())
+            entry.viewedAt.append(qint64(seconds.toDouble()));
+        if (!entry.asset.id.isEmpty())
+            stats.insert(entry.asset.id, entry);
+    }
+    return stats;
+}
+
+QList<ImmichAsset> OfflineStore::loadViewHistory(const QString &serverUrl) const
+{
+    QList<ImmichAsset> assets;
+    const QJsonArray items =
+        readJsonFile(viewHistoryPath(serverUrl)).value(QStringLiteral("assets")).toArray();
+    for (const QJsonValue &value : items) {
+        const ImmichAsset asset = assetFromJson(value.toObject());
+        if (!asset.id.isEmpty())
+            assets.append(asset);
+    }
+    return assets;
+}
+
 QString OfflineStore::directory() const
 {
     return m_directory;

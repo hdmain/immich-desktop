@@ -401,6 +401,7 @@ ImmichClient::ImmichClient(QObject *parent)
     , m_cacheFlushTimer(new QTimer(this))
 {
     m_imagePool.setMaxThreadCount(4);
+    m_rememberViewed = AppSettings().loadTimeline().rememberViewed;
     m_cacheFlushTimer->setSingleShot(true);
     m_cacheFlushTimer->setInterval(2000);
     connect(m_cacheFlushTimer, &QTimer::timeout, this, &ImmichClient::flushLibraryCache);
@@ -631,7 +632,8 @@ void ImmichClient::setConnection(const ImmichConnectionSettings &connection, boo
         cancelThumbnailPrefetch();
         m_currentUserId.clear();
         m_serverVersion = {};
-            releaseMemoryCaches();
+        m_rememberViewed = AppSettings().loadTimeline().rememberViewed;
+        releaseMemoryCaches();
         if (m_streamServer)
             ensureStreamServer();
         emit configurationChanged(isConfigured());
@@ -1296,8 +1298,28 @@ void ImmichClient::loadAssetsForFolder(const QString &path, const AssetSort &sor
             if (!asset.id.isEmpty())
                 assets.append(asset);
         }
-        // The folder arrives whole, with file details, so it's sorted here.
-        sortFolderAssets(&assets, sort);
+        // The folder arrives whole, with file details, so it's sorted here. After
+        // the viewed photos, "Last viewed" lists the rest newest first, like elsewhere.
+        sortFolderAssets(&assets, sort.field == AssetSort::Field::Viewed
+                                      ? AssetSort{AssetSort::Field::TakenAt, false}
+                                      : sort);
+        if (sort.field == AssetSort::Field::Viewed) {
+            // Viewed photos first in viewing order; the rest keep their date order.
+            QHash<QString, int> order;
+            const QList<ImmichAsset> history = recentlyViewed();
+            for (int i = 0; i < history.size(); ++i)
+                order.insert(history.at(i).id, i);
+            std::stable_sort(assets.begin(), assets.end(),
+                             [&order, &sort](const ImmichAsset &a, const ImmichAsset &b) {
+                                 const int first = order.value(a.id, -1);
+                                 const int second = order.value(b.id, -1);
+                                 if ((first < 0) != (second < 0))
+                                     return first >= 0;
+                                 if (first < 0)
+                                     return false;
+                                 return sort.ascending ? first > second : first < second;
+                             });
+        }
         emit filteredAssetsLoaded(QStringLiteral("folder"), path, assets, {}, sort);
     });
 }
@@ -1327,7 +1349,12 @@ void ImmichClient::loadCollectionAssets(const QString &kind, const QString &valu
 {
     if (page <= 1)
         ++m_collectionGeneration;
-    if (kind == QStringLiteral("folder"))
+    if (kind == QStringLiteral("viewed")) {
+        // Local history; queued so callers see the same async flow as a fetch.
+        QTimer::singleShot(0, this, [this, sort] {
+            emit filteredAssetsLoaded(QStringLiteral("viewed"), {}, recentlyViewed(), {}, sort);
+        });
+    } else if (kind == QStringLiteral("folder"))
         loadAssetsForFolder(value, sort);
     else if (sort.field == AssetSort::Field::AddedAt && canSortByDateAdded(kind))
         loadCollectionTimeline(kind, value, page, sort);
@@ -1335,6 +1362,15 @@ void ImmichClient::loadCollectionAssets(const QString &kind, const QString &valu
         loadAlbumByActivity(value, sort);
     else if (sort.field == AssetSort::Field::Deleted && kind == QStringLiteral("trash"))
         loadTrashByDeletion(sort);
+    else if (sort.field == AssetSort::Field::Viewed) {
+        const quint64 generation = m_collectionGeneration;
+        searchViewedFirst(collectionSearchFilter(kind, value), page, sort,
+                          [this, kind, value, sort, generation](const QList<ImmichAsset> &assets,
+                                                                const QString &nextPage) {
+                              if (generation == m_collectionGeneration)
+                                  emit filteredAssetsLoaded(kind, value, assets, nextPage, sort);
+                          });
+    }
     else
         searchFilteredAssets(kind, value, page, 80, sort);
 }
@@ -1451,6 +1487,125 @@ void ImmichClient::loadTrashByDeletion(const AssetSort &sort)
                                         });
                        emit filteredAssetsLoaded(QStringLiteral("trash"), {}, assets, {}, sort);
                    });
+}
+
+void ImmichClient::setRememberViewed(bool remember)
+{
+    TimelineSettings timeline = AppSettings().loadTimeline();
+    timeline.rememberViewed = remember;
+    AppSettings().saveTimeline(timeline);
+    m_rememberViewed = remember;
+    emit recentlyViewedChanged();
+}
+
+// Page 1 holds the viewed photos that are in this view, found with one search
+// (an OR of their ids, Immich 3.2+) and put in viewing order. Later pages are the
+// usual newest-first pages; callers skip photos they already show.
+void ImmichClient::searchViewedFirst(
+    const QJsonObject &flatFilter, int page, const AssetSort &sort,
+    std::function<void(const QList<ImmichAsset> &, const QString &)> done)
+{
+    if (!ensureConfigured(tr("Load explore")))
+        return;
+    const QList<ImmichAsset> history = recentlyViewed();
+    QJsonObject body;
+    if (page <= 1 && !history.isEmpty()) {
+        body = toFilterShape(flatFilter);
+        QJsonObject filter = body.value(QStringLiteral("filter")).toObject();
+        QJsonArray branches;
+        for (const ImmichAsset &asset : history)
+            branches.append(QJsonObject{{QStringLiteral("id"), QJsonObject{{QStringLiteral("eq"), asset.id}}}});
+        filter.insert(QStringLiteral("or"), branches);
+        body.insert(QStringLiteral("filter"), filter);
+        body.insert(QStringLiteral("size"), int(history.size()));
+        body.insert(QStringLiteral("withExif"), true);
+    } else {
+        // The rest, newest first; with no history page 1 starts here.
+        body = flatFilter;
+        body.insert(QStringLiteral("page"), history.isEmpty() ? page : page - 1);
+        body.insert(QStringLiteral("size"), 80);
+        body.insert(QStringLiteral("order"), QStringLiteral("desc"));
+        body.insert(QStringLiteral("withExif"), true);
+        body.insert(QStringLiteral("withStacked"), true);
+    }
+    const bool viewedPage = body.contains(QStringLiteral("filter"));
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/search/metadata")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, history, sort, viewedPage, done] {
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+                if (reply->error() != QNetworkReply::NoError) {
+                    emit requestFailed(tr("Load explore"), errorMessage(reply, body));
+                    return;
+                }
+                QString nextPage;
+                QList<ImmichAsset> assets = assetsFromSearchBody(body, &nextPage);
+                if (viewedPage) {
+                    QHash<QString, int> order;
+                    for (int i = 0; i < history.size(); ++i)
+                        order.insert(history.at(i).id, i);
+                    std::sort(assets.begin(), assets.end(),
+                              [&order, &sort](const ImmichAsset &a, const ImmichAsset &b) {
+                                  const int first = order.value(a.id);
+                                  const int second = order.value(b.id);
+                                  return sort.ascending ? first > second : first < second;
+                              });
+                    done(assets, QStringLiteral("2"));
+                    return;
+                }
+                // Our page numbers run one ahead of the server's while page 1 is the history.
+                const int serverNext = nextPage.toInt();
+                done(assets, serverNext > 0 ? QString::number(history.isEmpty() ? serverNext
+                                                                                 : serverNext + 1)
+                                            : QString());
+            });
+}
+
+void ImmichClient::loadLibraryViewedFirst(int page, const AssetSort &sort)
+{
+    const quint64 generation = ++m_searchGeneration;
+    searchViewedFirst({{QStringLiteral("visibility"), QStringLiteral("timeline")}}, page, sort,
+                      [this, generation](const QList<ImmichAsset> &assets, const QString &nextPage) {
+                          if (generation == m_searchGeneration)
+                              emit assetsLoaded(assets, nextPage, {}, false);
+                      });
+}
+
+void ImmichClient::recordViewed(const ImmichAsset &asset)
+{
+    if (!isConfigured() || asset.id.isEmpty() || asset.isLocalPending() || !remembersViewed())
+        return;
+    constexpr int kMaxHistory = 300;
+    QList<ImmichAsset> history = m_offlineStore.loadViewHistory(m_connection.serverUrl);
+    history.removeIf([&asset](const ImmichAsset &seen) { return seen.id == asset.id; });
+    history.prepend(asset);
+    if (history.size() > kMaxHistory)
+        history.resize(kMaxHistory);
+    m_offlineStore.saveViewHistory(m_connection.serverUrl, history);
+
+    QHash<QString, AssetViewStats> stats = m_offlineStore.loadViewStats(m_connection.serverUrl);
+    AssetViewStats &entry = stats[asset.id];
+    entry.asset = asset;
+    entry.viewedAt.append(QDateTime::currentSecsSinceEpoch());
+    m_offlineStore.saveViewStats(m_connection.serverUrl, stats);
+    emit recentlyViewedChanged();
+}
+
+QList<ImmichAsset> ImmichClient::recentlyViewed() const
+{
+    return isConfigured() && remembersViewed()
+               ? m_offlineStore.loadViewHistory(m_connection.serverUrl)
+               : QList<ImmichAsset>{};
+}
+
+void ImmichClient::clearRecentlyViewed()
+{
+    m_offlineStore.saveViewHistory(m_connection.serverUrl, {});
+    m_offlineStore.saveViewStats(m_connection.serverUrl, {});
+    emit recentlyViewedChanged();
 }
 
 void ImmichClient::setAlbumOrder(const QString &albumId, bool ascending)
@@ -2625,6 +2780,15 @@ void ImmichClient::deleteAssets(const QStringList &assetIds, bool permanent)
         if (reply->error() != QNetworkReply::NoError) {
             emit requestFailed(tr("Delete"), errorMessage(reply, body));
         } else {
+            QList<ImmichAsset> history = m_offlineStore.loadViewHistory(m_connection.serverUrl);
+            if (history.removeIf([&ids](const ImmichAsset &seen) { return ids.contains(seen.id); })) {
+                m_offlineStore.saveViewHistory(m_connection.serverUrl, history);
+                emit recentlyViewedChanged();
+            }
+            QHash<QString, AssetViewStats> stats =
+                m_offlineStore.loadViewStats(m_connection.serverUrl);
+            if (stats.removeIf([&ids](const auto &entry) { return ids.contains(entry.key()); }))
+                m_offlineStore.saveViewStats(m_connection.serverUrl, stats);
             emit assetsDeleted(ids, permanent);
         }
         reply->deleteLater();

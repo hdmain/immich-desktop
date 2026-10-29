@@ -210,6 +210,15 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     actionsLayout->addWidget(m_zoomSlider);
     updateSortButton();
     connect(m_sortButton, &SortButton::sortChanged, this, &LibraryPage::chooseSort);
+    // Turning "Remember photos I open" off removes the Last viewed sort.
+    connect(m_client, &ImmichClient::recentlyViewedChanged, this, [this] {
+        const AssetSort before = m_sortButton->sort();
+        updateSortButton();
+        if (activeSort() != before && !m_searchActive) {
+            m_loading = false;
+            refresh();
+        }
+    });
     connect(m_client, &ImmichClient::serverVersionChanged, this, [this] {
         const AssetSort before = m_sortButton->sort();
         updateSortButton();
@@ -1105,6 +1114,10 @@ void LibraryPage::requestPage(int page, bool append)
                                      : tr("Loading your library…"));
         }
     }
+    if (!m_searchActive && activeSort().field == AssetSort::Field::Viewed) {
+        m_client->loadLibraryViewedFirst(page, activeSort());
+        return;
+    }
     QJsonObject options = m_searchActive ? m_searchOptions : QJsonObject{};
     // Smart search only returns relevance order; dates are grouped here instead.
     if (listSortActive())
@@ -1173,6 +1186,9 @@ QList<AssetSort::Field> LibraryPage::sortFields() const
     }
     if (sizeAndRating)
         fields << Field::Size << Field::Rating;
+    // Finding the viewed photos in a view needs 3.2's search filters.
+    if (!m_searchActive && sizeAndRating && m_client->remembersViewed())
+        fields << Field::Viewed;
     return fields;
 }
 

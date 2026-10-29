@@ -46,6 +46,7 @@ QString SortButton::fieldName(AssetSort::Field field)
     case AssetSort::Field::Relevance: return tr("Relevance");
     case AssetSort::Field::Activity: return tr("Recent likes and comments");
     case AssetSort::Field::Deleted: return tr("Date deleted");
+    case AssetSort::Field::Viewed: return tr("Last viewed");
     case AssetSort::Field::Name: return tr("Name");
     case AssetSort::Field::Modified: return tr("Date modified");
     case AssetSort::Field::Type: return tr("Type");

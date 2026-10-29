@@ -21,6 +21,8 @@ public:
 
 signals:
     void languageChangeRequested(const QString &language);
+    void rememberViewedChanged(bool remember);
+    void clearViewedRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -44,6 +46,7 @@ private:
     QCheckBox *m_autoStart;
     QCheckBox *m_hoverPreview = nullptr;
     QCheckBox *m_compactGrid;
+    QCheckBox *m_rememberViewed;
     QLabel *m_cacheSizeLabel;
     QLabel *m_prefetchStatus = nullptr;
     QPushButton *m_prefetchButton = nullptr;

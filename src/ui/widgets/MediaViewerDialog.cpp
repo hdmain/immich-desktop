@@ -14,6 +14,7 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace Aurora {
@@ -32,6 +33,14 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     setAttribute(Qt::WA_DeleteOnClose);
     setAttribute(Qt::WA_StyledBackground, true);
     resize(960, 700);
+
+    m_viewTimer = new QTimer(this);
+    m_viewTimer->setSingleShot(true);
+    m_viewTimer->setInterval(2000);
+    connect(m_viewTimer, &QTimer::timeout, this, [this] {
+        if (!m_trashMode)
+            m_client->recordViewed(m_asset);
+    });
 
     m_preview->setMinimumSize(480, 320);
     m_stack->addWidget(m_preview);
@@ -214,6 +223,9 @@ void MediaViewerDialog::setAsset(const ImmichAsset &asset, bool autoplay)
     m_client->loadPreview(asset.id);
     m_infoPanel->setAsset(asset);
     updateNavigation();
+    // A photo counts as viewed once it has been open a moment, so skimming
+    // through doesn't count. The trash isn't history.
+    m_viewTimer->start();
 }
 
 void MediaViewerDialog::setTrashMode(bool trashMode)

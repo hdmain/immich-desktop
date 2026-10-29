@@ -249,6 +249,27 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     viewAllRecent->setToolTip(tr("Show the whole library, newest uploads first"));
     m_recentSection.header->layout()->addWidget(viewAllRecent);
     connect(viewAllRecent, &QPushButton::clicked, this, &ExplorePage::recentlyAddedRequested);
+    createSection(&m_viewedSection, tr("Recently viewed"), 168);
+    auto *viewAllViewed = new QPushButton(tr("View all"), m_viewedSection.header);
+    viewAllViewed->setProperty("linkButton", true);
+    viewAllViewed->setCursor(Qt::PointingHandCursor);
+    viewAllViewed->setToolTip(tr("Photos you opened lately, on this computer"));
+    m_viewedSection.header->layout()->addWidget(viewAllViewed);
+    connect(viewAllViewed, &QPushButton::clicked, this, &ExplorePage::showRecentlyViewed);
+    connect(m_client, &ImmichClient::recentlyViewedChanged, this, [this] {
+        if (m_loadedOnce)
+            populateViewedRow();
+        if (m_collectionFilterKind == QStringLiteral("viewed") && m_client->recentlyViewed().isEmpty())
+            reloadCollection(); // Cleared from Settings.
+        // Turning "Remember photos I open" off removes the Last viewed sort.
+        if (m_collectionFilterKind.isEmpty() || m_collectionFilterKind == QStringLiteral("viewed"))
+            return;
+        const AssetSort before = m_collectionSortButton->sort();
+        m_collectionSortButton->setFields(collectionSortFields());
+        m_collectionSortButton->setSort(effectiveCollectionSort());
+        if (effectiveCollectionSort() != before)
+            reloadCollection();
+    });
     m_browseLayout->addStretch();
     m_browseScroll->setWidget(m_browseContent);
 
@@ -752,6 +773,7 @@ void ExplorePage::clearSections()
         section->scroll->hide();
     };
     clearRow(&m_peopleSection);
+    clearRow(&m_viewedSection);
     clearRow(&m_placesSection);
     clearRow(&m_recentSection);
     m_personCards.clear();
@@ -813,7 +835,7 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         connect(card, &ExploreCard::activated, this, [this, id = asset.id] {
             for (const ImmichAsset &recent : m_recentAssets) {
                 if (recent.id == id) {
-                    openAsset(recent, false);
+                    openAsset(recent, AssetSource::RecentlyAdded);
                     return;
                 }
             }
@@ -821,6 +843,7 @@ void ExplorePage::showExplore(const ImmichExploreData &data, bool fromCache)
         m_client->loadThumbnail(asset.id);
     }
     populateSection(&m_recentSection, !data.recentAssets.isEmpty());
+    populateViewedRow();
 
     m_browseStatus->setText(
         fromCache
@@ -1290,6 +1313,7 @@ void ExplorePage::showCollectionPage(const QString &title, const QString &subtit
     const bool trash = filterKind == QStringLiteral("trash");
     m_restoreAllButton->setVisible(trash);
     m_emptyTrashButton->setVisible(trash);
+    m_collectionSortButton->setVisible(filterKind != QStringLiteral("viewed"));
     setPage(Page::Collection);
 }
 
@@ -1479,9 +1503,9 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
         section->tiles.append(tile);
         m_collectionTiles.insert(asset.id, tile);
         connect(tile, &MediaTile::activated, this,
-                [this](const ImmichAsset &asset) { openAsset(asset, true); });
+                [this](const ImmichAsset &asset) { openAsset(asset, AssetSource::Collection); });
         connect(tile, &MediaTile::infoRequested, this, [this](const ImmichAsset &asset) {
-            openAsset(asset, true)->setInfoPanelVisible(true);
+            openAsset(asset, AssetSource::Collection)->setInfoPanelVisible(true);
         });
         connect(tile, &MediaTile::favoriteRequested, this,
                 [this](const ImmichAsset &asset, bool favorite) {
@@ -1692,10 +1716,17 @@ QList<AssetSort::Field> ExplorePage::collectionSortFields() const
 {
     using Field = AssetSort::Field;
     const QString &kind = m_collectionFilterKind;
+    if (kind == QStringLiteral("viewed"))
+        return {Field::Viewed};
+    const bool viewed = m_client->remembersViewed();
     // Folders arrive whole with file details, so they sort like a file manager.
-    if (kind == QStringLiteral("folder"))
-        return {Field::Name,     Field::TakenAt, Field::AddedAt, Field::Modified,
-                Field::Size,     Field::Rating,  Field::Type};
+    if (kind == QStringLiteral("folder")) {
+        QList<Field> fields{Field::Name, Field::TakenAt, Field::AddedAt, Field::Modified,
+                            Field::Size, Field::Rating,  Field::Type};
+        if (viewed)
+            fields << Field::Viewed;
+        return fields;
+    }
     QList<Field> fields;
     if (kind == QStringLiteral("trash"))
         fields << Field::Deleted;
@@ -1707,6 +1738,9 @@ QList<AssetSort::Field> ExplorePage::collectionSortFields() const
         fields << Field::Size << Field::Rating;
     if (kind == QStringLiteral("album") && m_collectionAlbum.activityEnabled)
         fields << Field::Activity;
+    // Finding the viewed photos in a collection needs 3.2's search filters.
+    if (viewed && m_client->serverAtLeast(3, 2))
+        fields << Field::Viewed;
     return fields;
 }
 
@@ -1777,15 +1811,64 @@ void ExplorePage::backToBrowse()
     emit overviewShown();
 }
 
-MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCollection)
+void ExplorePage::populateViewedRow()
+{
+    constexpr int kRowLength = 30;
+    auto *layout = qobject_cast<QHBoxLayout *>(m_viewedSection.host->layout());
+    while (layout->count() > 1) {
+        QLayoutItem *item = layout->takeAt(0);
+        if (auto *card = qobject_cast<ExploreCard *>(item->widget())) {
+            for (auto it = m_browseAssetCards.begin(); it != m_browseAssetCards.end();) {
+                it = it.value() == card ? m_browseAssetCards.erase(it) : std::next(it);
+            }
+            card->deleteLater();
+        }
+        delete item;
+    }
+    m_viewedSection.cards.clear();
+    m_viewedAssets = m_client->recentlyViewed().mid(0, kRowLength);
+    for (const ImmichAsset &asset : std::as_const(m_viewedAssets)) {
+        auto *card = new ExploreCard(ExploreCard::Style::Media, m_viewedSection.host);
+        card->setPixmap({});
+        layout->insertWidget(layout->count() - 1, card);
+        m_viewedSection.cards.append(card);
+        m_browseAssetCards.insert(asset.id, card);
+        connect(card, &ExploreCard::activated, this,
+                [this, asset] { openAsset(asset, AssetSource::RecentlyViewed); });
+        m_client->loadThumbnail(asset.id);
+    }
+    populateSection(&m_viewedSection, !m_viewedAssets.isEmpty());
+}
+
+void ExplorePage::showRecentlyViewed()
+{
+    const QString title = tr("Recently viewed");
+    m_pendingCollectionTitle = title;
+    m_pendingPersonStyle = false;
+    showCollectionPage(title, tr("Loading photos…"), QStringLiteral("viewed"), {}, {}, false);
+    setCrumbs({{tr("Explore"), [this] { showOverview(); }}}, title);
+    setChips({}, {});
+    m_client->loadCollectionAssets(QStringLiteral("viewed"), {}, 1, effectiveCollectionSort());
+    emit overviewShown();
+}
+
+MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, AssetSource source)
 {
     if (asset.isVideo() && m_collectionHoverPreview)
         m_collectionHoverPreview->stop();
 
     auto *viewer = new MediaViewerDialog(
         m_themeManager, m_client, asset,
-        [this, fromCollection](const QString &assetId, int step) {
-            return adjacentAsset(fromCollection, assetId, step);
+        // Viewing reorders the history, so step through it as it was when opened.
+        [this, source, viewed = m_viewedAssets](const QString &assetId, int step) {
+            if (source == AssetSource::RecentlyViewed) {
+                for (qsizetype i = 0; i < viewed.size(); ++i) {
+                    if (viewed.at(i).id == assetId)
+                        return viewed.value(i + step);
+                }
+                return ImmichAsset{};
+            }
+            return adjacentAsset(source, assetId, step);
         },
         this);
     connect(viewer, &MediaViewerDialog::copyRequested, this, &ExplorePage::copyRequested);
@@ -1799,7 +1882,7 @@ MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCol
     connect(viewer, &MediaViewerDialog::albumRequested, this, &ExplorePage::albumRequested);
     connect(viewer, &MediaViewerDialog::tagRequested, this, &ExplorePage::tagRequested);
     connect(viewer, &MediaViewerDialog::folderRequested, this, &ExplorePage::folderRequested);
-    if (fromCollection && m_collectionFilterKind == QStringLiteral("trash")) {
+    if (source == AssetSource::Collection && m_collectionFilterKind == QStringLiteral("trash")) {
         viewer->setTrashMode(true);
         connect(viewer, &MediaViewerDialog::restoreRequested, this,
                 [this](const ImmichAsset &asset) { m_client->restoreFromTrash({asset.id}); });
@@ -1808,8 +1891,9 @@ MediaViewerDialog *ExplorePage::openAsset(const ImmichAsset &asset, bool fromCol
     return viewer;
 }
 
-ImmichAsset ExplorePage::adjacentAsset(bool fromCollection, const QString &assetId, int step)
+ImmichAsset ExplorePage::adjacentAsset(AssetSource source, const QString &assetId, int step)
 {
+    const bool fromCollection = source == AssetSource::Collection;
     QList<ImmichAsset> assets;
     if (fromCollection) {
         for (const DaySection &section : m_collectionSections) {

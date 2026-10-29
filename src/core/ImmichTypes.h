@@ -110,6 +110,7 @@ struct AssetSort {
         Relevance,
         Activity,
         Deleted,
+        Viewed,
         Name, // Folders only, like the next two: they arrive whole with file details.
         Modified,
         Type,

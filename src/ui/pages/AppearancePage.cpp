@@ -270,6 +270,27 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, ImmichClient *client,
     compactGridHelp->setWordWrap(true);
     timelineLayout->addWidget(m_compactGrid);
     timelineLayout->addWidget(compactGridHelp);
+    m_rememberViewed = new QCheckBox(tr("Remember photos I open"), timelineCard);
+    m_rememberViewed->setCursor(Qt::PointingHandCursor);
+    auto *rememberViewedHelp = new QLabel(
+        tr("Photos open for a couple of seconds are listed under Recently viewed in Explore, "
+           "can sort grids by last viewed, and count toward how often you view them. Kept "
+           "on this computer only. Turning it off pauses this and keeps what's stored."),
+        timelineCard);
+    rememberViewedHelp->setProperty("subheading", true);
+    rememberViewedHelp->setWordWrap(true);
+    auto *clearViewed = new QPushButton(tr("Clear viewing history"), timelineCard);
+    clearViewed->setCursor(Qt::PointingHandCursor);
+    configureActionButton(clearViewed, QStringLiteral(":/icons/circle-x.svg"));
+    connect(clearViewed, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::question(this, tr("Clear viewing history"),
+                                  tr("Forget which photos you opened and how often? This can't "
+                                     "be undone.")) == QMessageBox::Yes)
+            emit clearViewedRequested();
+    });
+    timelineLayout->addWidget(m_rememberViewed);
+    timelineLayout->addWidget(rememberViewedHelp);
+    timelineLayout->addWidget(clearViewed, 0, Qt::AlignLeft);
     contentRoot->addWidget(timelineCard);
 
     QVBoxLayout *cacheLayout = nullptr;
@@ -318,6 +339,7 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, ImmichClient *client,
     connect(m_autoStart, &QCheckBox::toggled, this, &AppearancePage::saveAutoStart);
     connect(m_hoverPreview, &QCheckBox::toggled, this, &AppearancePage::saveHoverPreview);
     connect(m_compactGrid, &QCheckBox::toggled, this, &AppearancePage::saveCompactGrid);
+    connect(m_rememberViewed, &QCheckBox::toggled, this, &AppearancePage::rememberViewedChanged);
     connect(refreshCache, &QPushButton::clicked, this, &AppearancePage::refreshCacheSize);
     connect(m_prefetchButton, &QPushButton::clicked, this, &AppearancePage::startThumbnailPrefetch);
     if (m_client) {
@@ -460,6 +482,8 @@ void AppearancePage::syncControls()
 
     const QSignalBlocker compactGridBlocker(m_compactGrid);
     m_compactGrid->setChecked(AppSettings().loadTimeline().compactGrid);
+    const QSignalBlocker rememberViewedBlocker(m_rememberViewed);
+    m_rememberViewed->setChecked(AppSettings().loadTimeline().rememberViewed);
 }
 
 void AppearancePage::saveCompactGrid(bool enabled)

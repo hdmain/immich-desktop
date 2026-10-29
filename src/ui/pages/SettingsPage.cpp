@@ -1,5 +1,6 @@
 #include "ui/pages/SettingsPage.h"
 
+#include "core/ImmichClient.h"
 #include "core/ThemeManager.h"
 #include "ui/pages/AboutPage.h"
 #include "ui/pages/AppearancePage.h"
@@ -59,6 +60,10 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     auto *appearance = new AppearancePage(themeManager, immichClient, m_sections);
     connect(appearance, &AppearancePage::languageChangeRequested,
             this, &SettingsPage::languageChangeRequested);
+    connect(appearance, &AppearancePage::rememberViewedChanged, immichClient,
+            &ImmichClient::setRememberViewed);
+    connect(appearance, &AppearancePage::clearViewedRequested, immichClient,
+            &ImmichClient::clearRecentlyViewed);
     m_sections->addWidget(appearance);
     m_sections->addWidget(new UpdatesPage(updateManager, m_sections));
     m_sections->addWidget(new AboutPage(m_sections));

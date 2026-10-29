@@ -69,6 +69,18 @@ public:
     static QJsonObject searchOrder(const AssetSort &sort);
     // Collections that can be ordered by date added (via the timeline).
     static bool canSortByDateAdded(const QString &kind);
+    // Photos opened in the viewer, kept on this computer only (Immich doesn't
+    // record views). Most recent first; also the "viewed" collection.
+    void recordViewed(const ImmichAsset &asset);
+    QList<ImmichAsset> recentlyViewed() const;
+    void clearRecentlyViewed();
+    // "Last viewed" order for the Library: viewed photos first, then the rest by
+    // date taken. Replies with assetsLoaded, like a library page.
+    void loadLibraryViewedFirst(int page, const AssetSort &sort);
+    // Off pauses recording and hides the list; what's stored stays until cleared.
+    void setRememberViewed(bool remember);
+    // Kept in memory: grids ask for every photo they add, and reading settings is slow.
+    bool remembersViewed() const { return m_rememberViewed; }
     // Saves an album's own newest/oldest-first order in Immich (album.update).
     void setAlbumOrder(const QString &albumId, bool ascending);
     void loadAlbums();
@@ -122,6 +134,7 @@ public slots:
 signals:
     void configurationChanged(bool configured);
     void serverVersionChanged();
+    void recentlyViewedChanged();
     void albumOrderSaved(const QString &albumId, bool ascending);
     void albumOrderFailed(const QString &albumId, const QString &message);
     void activeEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -201,6 +214,8 @@ private:
                         std::function<void(const QList<ImmichAsset> &)> done);
     void loadAlbumByActivity(const QString &albumId, const AssetSort &sort);
     void loadTrashByDeletion(const AssetSort &sort);
+    void searchViewedFirst(const QJsonObject &flatFilter, int page, const AssetSort &sort,
+                           std::function<void(const QList<ImmichAsset> &, const QString &)> done);
     void loadCollectionTimeline(const QString &kind, const QString &value, int page,
                                 const AssetSort &sort);
     void loadCollectionTimelinePage(int firstBucket);
@@ -273,6 +288,7 @@ private:
     bool m_pollInFlight = false;
     quint64 m_searchGeneration = 0;
     QVersionNumber m_serverVersion;
+    bool m_rememberViewed = true;
     quint64 m_collectionGeneration = 0; // Bumped when a collection starts loading.
     // Next-page cursors for size/rating searches ("library", "collection"); both
     // views request pages one after another, so the latest cursor is the next.
