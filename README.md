@@ -211,6 +211,7 @@ Options for distribution packages:
 - `src/ui` - shell, pages, and widgets
 - `resources` - icons, fonts, desktop metadata
 - `snap` - Snap packaging
+- `aur` - Arch Linux AUR PKGBUILD, published on each release
 
 ## Beta / nightly builds
 
