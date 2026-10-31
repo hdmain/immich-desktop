@@ -1,0 +1,79 @@
+name: Publish AUR package
+
+# Pushes aur/PKGBUILD, set to the released version, to the Arch Linux AUR.
+# Runs after a tagged release (from package.yml) or by hand, e.g. for a
+# PKGBUILD fix (bump pkgrel) or to republish a release.
+# Needs the AUR_SSH_PRIVATE_KEY secret; without it this skips with a notice.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      pkgrel:
+        type: string
+        default: "1"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, e.g. 0.2.5
+        required: true
+      pkgrel:
+        description: Package release; bump it to ship a PKGBUILD fix for the same version
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    name: Publish to the AUR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+          PKGREL: ${{ inputs.pkgrel || '1' }}
+          HAS_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        run: |
+          version="${VERSION#v}"
+          if [[ "$HAS_KEY" != true ]]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY isn't set, so the AUR package wasn't updated."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # pkgver can't contain hyphens, and prereleases don't belong on the AUR.
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::notice::$VERSION isn't a plain release version, so the AUR package wasn't updated."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$PKGREL" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::pkgrel must be a positive number, got '$PKGREL'."
+            exit 1
+          fi
+          sed -i -e "s/^pkgver=.*/pkgver=$version/" -e "s/^pkgrel=.*/pkgrel=$PKGREL/" aur/PKGBUILD
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=$PKGREL" >> "$GITHUB_OUTPUT"
+
+      # Updates the checksum, builds the package and runs its tests in a clean
+      # Arch container, then commits PKGBUILD and .SRCINFO to the AUR.
+      - name: Publish to the AUR
+        if: steps.version.outputs.skip != 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050 # v4.2.0
+        with:
+          pkgname: immich-desktop
+          pkgbuild: aur/PKGBUILD
+          updpkgsums: true
+          test: true
+          test_flags: --clean --cleanbuild --syncdeps --noconfirm
+          commit_username: ${{ vars.AUR_COMMIT_NAME || 'github-actions[bot]' }}
+          commit_email: ${{ vars.AUR_COMMIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
+          commit_message: "chore: bump to v${{ steps.version.outputs.version }}-${{ steps.version.outputs.pkgrel }}"
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

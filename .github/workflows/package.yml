@@ -367,3 +367,12 @@ jobs:
             dist/*.deb
             dist/*.AppImage
             dist/*.snap
+
+  aur:
+    name: Publish AUR package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    uses: ./.github/workflows/aur.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
