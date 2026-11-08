@@ -10,10 +10,16 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
 #include <QResizeEvent>
 
 namespace Aurora {
+namespace {
+
+QColor s_selectionColor(QStringLiteral("#818CF8"));
+
+} // namespace
 
 MediaTile::MediaTile(const ImmichAsset &asset, QWidget *parent)
     : QWidget(parent)
@@ -120,6 +126,45 @@ void MediaTile::updateAsset(const ImmichAsset &asset)
         update();
 }
 
+void MediaTile::setSelected(bool selected)
+{
+    if (m_selected == selected)
+        return;
+    m_selected = selected;
+    update();
+}
+
+void MediaTile::setSelecting(bool selecting)
+{
+    if (m_selecting == selecting)
+        return;
+    m_selecting = selecting;
+    // The check circle sits where a video's hover preview would cover it.
+    if (selecting)
+        endHoverPreview();
+    update();
+}
+
+void MediaTile::setSelectionColor(const QColor &color)
+{
+    s_selectionColor = color;
+}
+
+QColor MediaTile::selectionColor()
+{
+    return s_selectionColor;
+}
+
+QRect MediaTile::checkRect() const
+{
+    return QRect(8, 8, 24, 24);
+}
+
+QRect MediaTile::heartRect() const
+{
+    return QRect(6, height() - 28, 22, 22);
+}
+
 void MediaTile::setTileSize(const QSize &size)
 {
     setFixedSize(size);
@@ -194,14 +239,15 @@ void MediaTile::paintEvent(QPaintEvent *)
         }
     }
 
-    if (m_asset.favorite && !m_trashed) {
-        const QPixmap heart = renderSvgIcon(QStringLiteral(":/icons/heart-filled.svg"), Qt::white,
-                                            QSize(16, 16), devicePixelRatioF());
+    // Favorites always show a filled heart; on hover an outline one offers to add it.
+    if ((m_asset.favorite && !m_trashed) || (m_hovered && favoritable())) {
+        const QPixmap heart = renderSvgIcon(m_asset.favorite ? QStringLiteral(":/icons/heart-filled.svg")
+                                                             : QStringLiteral(":/icons/heart.svg"),
+                                            Qt::white, QSize(16, 16), devicePixelRatioF());
         if (!heart.isNull()) {
-            constexpr int pad = 6;
-            const QRect bg(pad, height() - pad - 22, 22, 22);
+            const QRect bg = heartRect();
             painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor(0, 0, 0, 110));
+            painter.setBrush(QColor(0, 0, 0, m_hovered ? 150 : 110));
             painter.drawEllipse(bg);
             painter.drawPixmap(bg.x() + 3, bg.y() + 3, heart);
         }
@@ -233,12 +279,36 @@ void MediaTile::paintEvent(QPaintEvent *)
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(rect().adjusted(1, 1, -1, -1));
     }
+
+    if (m_selected) {
+        painter.setPen(QPen(s_selectionColor, 4));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(rect().adjusted(2, 2, -2, -2));
+    }
+    // The check circle shows on hover, and on every tile while selecting.
+    if (selectable() && (m_selected || m_selecting || m_hovered)) {
+        const QRectF circle = QRectF(checkRect()).adjusted(1, 1, -1, -1);
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(m_selected ? s_selectionColor : QColor(0, 0, 0, 90));
+        painter.drawEllipse(circle);
+        if (m_selected) {
+            QPainterPath check;
+            check.moveTo(circle.left() + circle.width() * 0.28, circle.center().y());
+            check.lineTo(circle.left() + circle.width() * 0.44, circle.top() + circle.height() * 0.66);
+            check.lineTo(circle.left() + circle.width() * 0.72, circle.top() + circle.height() * 0.34);
+            painter.setPen(QPen(Qt::white, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawPath(check);
+        }
+    }
 }
 
 void MediaTile::enterEvent(QEnterEvent *event)
 {
     emit highlighted(m_asset);
-    if (m_hoverPreview && m_asset.isVideo() && !m_asset.isLocalPending()) {
+    m_hovered = true;
+    update();
+    if (m_hoverPreview && m_asset.isVideo() && !m_asset.isLocalPending() && !m_selecting) {
         m_hoverPreviewActive = true;
         m_hoverPreview->showForTile(this);
         update();
@@ -248,6 +318,8 @@ void MediaTile::enterEvent(QEnterEvent *event)
 
 void MediaTile::leaveEvent(QEvent *event)
 {
+    m_hovered = false;
+    update();
     if (m_hoverPreview && m_hoverPreviewActive) {
         m_hoverPreviewActive = false;
         m_hoverPreview->hideForTile(this);
@@ -270,11 +342,31 @@ void MediaTile::keyPressEvent(QKeyEvent *event)
         event->accept();
         return;
     }
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter ||
-        event->key() == Qt::Key_Space) {
+    switch (event->key()) {
+    case Qt::Key_Left:
+    case Qt::Key_Right:
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Home:
+    case Qt::Key_End:
+        emit navigationRequested(event->key(), event->modifiers());
+        event->accept();
+        return;
+    case Qt::Key_Space:
+        // Ctrl+Space toggles, as does Space while selecting.
+        if (selectable() && (m_selecting || (event->modifiers() & Qt::ControlModifier))) {
+            emit selectionClicked(m_asset, Qt::ControlModifier);
+            event->accept();
+            return;
+        }
+        [[fallthrough]];
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
         emit activated(m_asset);
         event->accept();
         return;
+    default:
+        break;
     }
     QWidget::keyPressEvent(event);
 }
@@ -285,6 +377,9 @@ void MediaTile::mousePressEvent(QMouseEvent *event)
         m_leftPressed = true;
         m_pressBecameDrag = false;
         m_pressPos = event->position().toPoint();
+        m_pressOnCheck = selectable() && checkRect().adjusted(-4, -4, 4, 4).contains(m_pressPos);
+        m_pressOnHeart = !m_pressOnCheck && favoritable() &&
+                         heartRect().adjusted(-4, -4, 4, 4).contains(m_pressPos);
         setFocus(Qt::MouseFocusReason);
         emit highlighted(m_asset);
     }
@@ -306,8 +401,23 @@ void MediaTile::mouseReleaseEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton) {
         // Ignore release after a drag/scroll so timeline scrolling does not open media.
         if (m_leftPressed && !m_pressBecameDrag &&
-            rect().contains(event->position().toPoint()))
-            emit activated(m_asset);
+            rect().contains(event->position().toPoint())) {
+            Qt::KeyboardModifiers modifiers = event->modifiers();
+            if (m_pressOnHeart) {
+                emit favoriteRequested(m_asset, !m_asset.favorite);
+                m_leftPressed = false;
+                QWidget::mouseReleaseEvent(event);
+                return;
+            }
+            if (m_pressOnCheck)
+                modifiers |= Qt::ControlModifier; // The circle toggles, like Ctrl-click.
+            if (selectable() &&
+                (m_pressOnCheck || m_selecting ||
+                 (modifiers & (Qt::ControlModifier | Qt::ShiftModifier))))
+                emit selectionClicked(m_asset, modifiers);
+            else
+                emit activated(m_asset);
+        }
         m_leftPressed = false;
         m_pressBecameDrag = false;
     }
@@ -316,6 +426,10 @@ void MediaTile::mouseReleaseEvent(QMouseEvent *event)
 
 void MediaTile::contextMenuEvent(QContextMenuEvent *event)
 {
+    if (m_selected && m_selecting) {
+        emit selectionMenuRequested(event->globalPos());
+        return;
+    }
     QMenu menu(this);
     menu.addAction(tr("Open"), this, [this] { emit activated(m_asset); });
     if (m_trashed) {

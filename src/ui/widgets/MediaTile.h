@@ -37,6 +37,13 @@ public:
     void setHoverPreview(VideoHoverPreview *preview);
     void endHoverPreview();
     void updateAsset(const ImmichAsset &asset);
+    // Selected tiles get a check and an accent border. While anything is selected
+    // ("selecting"), every tile shows its check circle and a click selects.
+    void setSelected(bool selected);
+    bool isSelected() const { return m_selected; }
+    void setSelecting(bool selecting);
+    static void setSelectionColor(const QColor &color);
+    static QColor selectionColor();
 
 signals:
     void activated(const Aurora::ImmichAsset &asset);
@@ -49,6 +56,13 @@ signals:
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
     void favoriteRequested(const Aurora::ImmichAsset &asset, bool favorite);
+    // A click meant for selecting: Ctrl/Shift held, the check circle, or any
+    // click while selecting.
+    void selectionClicked(const Aurora::ImmichAsset &asset, Qt::KeyboardModifiers modifiers);
+    // Right-click on a selected tile: the menu acts on the whole selection.
+    void selectionMenuRequested(const QPoint &globalPos);
+    // An arrow key, Home or End: the grid moves focus (and with Shift, the selection).
+    void navigationRequested(int key, Qt::KeyboardModifiers modifiers);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -63,6 +77,14 @@ protected:
 
 private:
     static QString formatDuration(const QString &raw);
+    QRect checkRect() const;
+    QRect heartRect() const;
+    bool selectable() const { return !m_asset.isLocalPending(); }
+    // The heart corner is free: not trashed and no sync badge in its place.
+    bool favoritable() const
+    {
+        return selectable() && !m_trashed && m_asset.localSyncState == LocalSyncState::None;
+    }
 
     VideoHoverPreview *m_hoverPreview = nullptr;
     ImmichAsset m_asset;
@@ -75,6 +97,11 @@ private:
     bool m_hoverPreviewActive = false;
     bool m_leftPressed = false;
     bool m_pressBecameDrag = false;
+    bool m_pressOnCheck = false;
+    bool m_pressOnHeart = false;
+    bool m_hovered = false;
+    bool m_selected = false;
+    bool m_selecting = false;
 };
 
 } // namespace Aurora

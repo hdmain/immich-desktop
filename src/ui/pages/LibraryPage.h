@@ -36,11 +36,15 @@ namespace Aurora {
 
 class ThemeManager;
 class FolderSyncService;
+class DayHeader;
 class MediaTile;
 class MediaViewerDialog;
+class DownloadJob;
+class SelectionBar;
 class SortButton;
 class SummaryTile;
 class TileImageScheduler;
+class TileSelection;
 class VideoHoverPreview;
 class ZoomSlider;
 
@@ -62,6 +66,10 @@ signals:
     void folderRequested(const QString &path, const QString &title);
 
 public slots:
+    // Several photos at once, each confirmed once for the lot.
+    void trashAssets(const QList<Aurora::ImmichAsset> &assets);
+    void deleteAssetsPermanently(const QList<Aurora::ImmichAsset> &assets);
+    void downloadAssets(const QList<Aurora::ImmichAsset> &assets);
     // Back to the newest photos, leaving Years if it's open.
     void scrollToTop();
     void showDay(const QDate &day);
@@ -102,8 +110,6 @@ private slots:
     void handleAssetsDeleted(const QStringList &assetIds, bool permanent);
     void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
-    void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
-    void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
     void handleAssetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                                     const QString &contentType);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -125,7 +131,7 @@ private:
     void scrollCurrent(bool toTop);
     struct DaySection {
         QDate date;
-        QLabel *header = nullptr;
+        DayHeader *header = nullptr;
         QList<MediaTile *> tiles;
     };
 
@@ -161,7 +167,14 @@ private:
     void promptDownload(const Aurora::ImmichAsset &asset);
     MediaViewerDialog *openAsset(const Aurora::ImmichAsset &asset);
     ImmichAsset adjacentAsset(const QString &assetId, int step);
-    void confirmAndDelete(const Aurora::ImmichAsset &asset, bool permanent);
+    void confirmAndDelete(const QList<Aurora::ImmichAsset> &assets, bool permanent);
+    // Selecting photos in the grid.
+    QStringList selectableOrder() const;
+    QList<ImmichAsset> selectedAssets() const;
+    void applySelection();
+    void showSelectionMenu(const QPoint &globalPos);
+    void openSelected();
+    bool archiveScope() const;
     void removeAssetsFromTimeline(const QStringList &assetIds);
     QStringList uploadableLocalPaths(const QList<QUrl> &urls) const;
     bool isUploadableFile(const QString &path) const;
@@ -265,6 +278,10 @@ private:
     QList<DaySection> m_sections;
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_favoriteRequests; // Sent from tile menus, awaiting a reply.
+    TileSelection *m_selection;
+    DownloadJob *m_downloadJob;
+    SelectionBar *m_selectionBar = nullptr;
+    QWidget *m_toolbar = nullptr;
     QSet<QString> m_localAssetIds;
     QSet<QString> m_requestedThumbnails; // Local Folder Sync files only.
     QHash<QString, int> m_thumbnailRetries;
