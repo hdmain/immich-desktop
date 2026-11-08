@@ -39,6 +39,7 @@ class FolderSyncService;
 class DayHeader;
 class MediaTile;
 class MediaViewerDialog;
+class DownloadJob;
 class SelectionBar;
 class SortButton;
 class SummaryTile;
@@ -109,8 +110,6 @@ private slots:
     void handleAssetsDeleted(const QStringList &assetIds, bool permanent);
     void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
-    void handleDownloadProgress(const QString &assetId, qint64 bytesReceived, qint64 bytesTotal);
-    void handleAssetDownloaded(const QString &assetId, const QString &destinationPath);
     void handleAssetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                                     const QString &contentType);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -280,6 +279,7 @@ private:
     QHash<QString, MediaTile *> m_tilesById;
     QSet<QString> m_favoriteRequests; // Sent from tile menus, awaiting a reply.
     TileSelection *m_selection;
+    DownloadJob *m_downloadJob;
     SelectionBar *m_selectionBar = nullptr;
     QWidget *m_toolbar = nullptr;
     QSet<QString> m_localAssetIds;

@@ -72,6 +72,8 @@ set(IMMICH_SOURCES
     src/ui/AppIcon.h
     src/ui/FontLoader.cpp
     src/ui/BrowseSection.h
+    src/ui/DownloadJob.cpp
+    src/ui/DownloadJob.h
     src/ui/FolderPaths.h
     src/ui/FontLoader.h
     src/ui/GridZoom.h

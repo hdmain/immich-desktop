@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 #include "core/FolderSyncService.h"
 #include "core/ThemeManager.h"
+#include "ui/DownloadJob.h"
 #include "ui/GridZoom.h"
 #include "ui/IconUtils.h"
 #include "ui/TileImageScheduler.h"
@@ -131,6 +132,7 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     , m_visibilityTimer(new QTimer(this))
     , m_tileImages(new TileImageScheduler(client, [this] { scheduleVisibleMediaUpdate(); }, this))
     , m_selection(new TileSelection(this))
+    , m_downloadJob(new DownloadJob(client, this, this))
     , m_autoCheckTimer(new QTimer(this))
     , m_searchDebounce(new QTimer(this))
 {
@@ -635,10 +637,6 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     connect(m_client, &ImmichClient::requestFailed, this, &LibraryPage::showRequestError);
     connect(m_client, &ImmichClient::uploadProgress, this, &LibraryPage::handleUploadProgress);
     connect(m_client, &ImmichClient::assetUploaded, this, &LibraryPage::handleAssetUploaded);
-    connect(m_client, &ImmichClient::downloadProgress,
-            this, &LibraryPage::handleDownloadProgress);
-    connect(m_client, &ImmichClient::assetDownloaded,
-            this, &LibraryPage::handleAssetDownloaded);
     connect(m_client, &ImmichClient::assetInfoLoaded,
             this, &LibraryPage::handleAssetInfoLoaded);
     connect(m_client, &ImmichClient::assetInfoFailed,
@@ -2243,7 +2241,8 @@ void LibraryPage::showThumbnailError(const QString &assetId, const QString &resu
 
 void LibraryPage::showRequestError(const QString &operation, const QString &message, bool willRetry)
 {
-    if (operation == tr("Load image"))
+    // Downloads report through their own toast.
+    if (operation == tr("Load image") || operation == tr("Download"))
         return;
     if (operation == tr("Copy")) {
         m_copyInFlightAssetId.clear();
@@ -2721,8 +2720,7 @@ void LibraryPage::promptDownload(const ImmichAsset &asset)
     download.lastDirectory = QFileInfo(path).absolutePath();
     settings.saveDownload(download);
 
-    m_status->setText(tr("Downloading %1…").arg(QFileInfo(path).fileName()));
-    m_client->downloadAsset(asset.id, path, suggestedName);
+    m_downloadJob->downloadTo(asset, path);
 }
 
 void LibraryPage::copyAsset(const ImmichAsset &asset)
@@ -2871,9 +2869,27 @@ void LibraryPage::deleteAssetPermanently(const ImmichAsset &asset)
 
 void LibraryPage::downloadAssets(const QList<ImmichAsset> &assets)
 {
-    // Placeholder until downloads run as one job with progress and Cancel.
-    if (!assets.isEmpty())
+    if (assets.isEmpty() || !m_client->isConfigured())
+        return;
+    if (assets.size() == 1) {
         downloadAsset(assets.first());
+        return;
+    }
+
+    AppSettings settings;
+    DownloadSettings download = settings.loadDownload();
+    QString directory = download.lastDirectory;
+    if (directory.isEmpty() || !QFileInfo(directory).isDir())
+        directory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+
+    const QString folder = QFileDialog::getExistingDirectory(
+        this, tr("Download %n item(s) to", nullptr, int(assets.size())), directory);
+    if (folder.isEmpty())
+        return;
+
+    download.lastDirectory = folder;
+    settings.saveDownload(download);
+    m_downloadJob->downloadInto(assets, folder);
 }
 
 void LibraryPage::trashAssets(const QList<ImmichAsset> &assets)
@@ -3060,22 +3076,6 @@ void LibraryPage::handleAssetUploaded(const QString &filePath, const QString &as
             duplicate ? tr("Duplicate skipped: %1 (%2 left)").arg(name).arg(remaining)
                       : tr("Uploaded %1 (%2 left)").arg(name).arg(remaining));
     }
-}
-
-void LibraryPage::handleDownloadProgress(const QString &assetId, qint64 bytesReceived,
-                                         qint64 bytesTotal)
-{
-    Q_UNUSED(assetId);
-    if (bytesTotal > 0) {
-        const int percent = static_cast<int>((bytesReceived * 100) / bytesTotal);
-        m_status->setText(tr("Downloading… %1%").arg(percent));
-    }
-}
-
-void LibraryPage::handleAssetDownloaded(const QString &assetId, const QString &destinationPath)
-{
-    Q_UNUSED(assetId);
-    m_status->setText(tr("Saved to %1").arg(QFileInfo(destinationPath).absoluteFilePath()));
 }
 
 bool LibraryPage::isUploadableFile(const QString &path) const

@@ -2488,19 +2488,23 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                                  const QString &suggestedFileName)
 {
     Q_UNUSED(suggestedFileName);
-    if (!ensureConfigured(tr("Download")) || destinationPath.isEmpty())
+    if (!ensureConfigured(tr("Download"))) {
+        emit downloadFailed(assetId, tr("Set the Immich server URL and API key in Settings first."));
         return;
-    if (!isValidImmichId(assetId)) {
-        emit requestFailed(tr("Download"), tr("The asset identifier is invalid."));
+    }
+    if (destinationPath.isEmpty() || !isValidImmichId(assetId)) {
+        const QString message = tr("The asset identifier is invalid.");
+        emit requestFailed(tr("Download"), message);
+        emit downloadFailed(assetId, message);
         return;
     }
 
     auto *file = new QFile(destinationPath);
     if (!file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        const QString message = file->errorString();
+        const QString message = tr("Could not write %1: %2").arg(destinationPath, file->errorString());
         delete file;
-        emit requestFailed(tr("Download"),
-                           tr("Could not write %1: %2").arg(destinationPath, message));
+        emit requestFailed(tr("Download"), message);
+        emit downloadFailed(assetId, message);
         return;
     }
 
@@ -2539,10 +2543,10 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     file->close();
                     file->remove();
                     endActiveDownload();
-                    emit requestFailed(tr("Download"),
-                                       tr("Could not write %1: %2")
-                                           .arg(destinationPath, message));
-                    emit downloadFailed(assetId, message);
+                    const QString failure =
+                        tr("Could not write %1: %2").arg(destinationPath, message);
+                    emit requestFailed(tr("Download"), failure);
+                    emit downloadFailed(assetId, failure);
                     reply->deleteLater();
                     return;
                 }
@@ -2568,10 +2572,10 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     file->close();
                     file->remove();
                     endActiveDownload();
-                    emit requestFailed(tr("Download"),
-                                       tr("Could not write %1: %2")
-                                           .arg(destinationPath, message));
-                    emit downloadFailed(assetId, message);
+                    const QString failure =
+                        tr("Could not write %1: %2").arg(destinationPath, message);
+                    emit requestFailed(tr("Download"), failure);
+                    emit downloadFailed(assetId, failure);
                     reply->deleteLater();
                     return;
                 }
