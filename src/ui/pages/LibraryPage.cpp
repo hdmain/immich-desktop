@@ -1089,7 +1089,7 @@ void LibraryPage::applySelection()
             allFavorite = false;
     }
     m_toolbar->setVisible(!selecting);
-    m_selectionBar->setVisible(selecting);
+    m_selectionBar->setActive(selecting);
     m_selectionBar->setCount(m_selection->count());
     m_selectionBar->setAllFavorite(allFavorite);
     m_selectionBar->setMode(archiveScope() ? SelectionBar::Mode::Archive

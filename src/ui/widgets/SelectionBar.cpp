@@ -2,9 +2,12 @@
 
 #include "ui/IconUtils.h"
 
+#include <QEasingCurve>
+#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -13,6 +16,8 @@ namespace Aurora {
 
 SelectionBar::SelectionBar(QWidget *parent)
     : QFrame(parent)
+    , m_opacity(new QGraphicsOpacityEffect(this))
+    , m_fade(new QPropertyAnimation(m_opacity, "opacity", this))
     , m_count(new QLabel(this))
     , m_selectAll(new QPushButton(this))
     , m_open(new QPushButton(this))
@@ -24,6 +29,15 @@ SelectionBar::SelectionBar(QWidget *parent)
     , m_restore(new QPushButton(this))
 {
     setObjectName(QStringLiteral("selectionBar"));
+    setGraphicsEffect(m_opacity);
+    m_opacity->setOpacity(0.0);
+    m_fade->setDuration(160);
+    m_fade->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_fade, &QPropertyAnimation::finished, this, [this] {
+        if (!m_active)
+            hide();
+    });
+
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(6);
@@ -84,6 +98,21 @@ void SelectionBar::setAllFavorite(bool allFavorite)
 {
     m_allFavorite = allFavorite;
     updateButtons();
+}
+
+void SelectionBar::setActive(bool active)
+{
+    if (m_active == active)
+        return;
+    m_active = active;
+    if (active) {
+        show();
+        fitDensity();
+    }
+    m_fade->stop();
+    m_fade->setStartValue(m_opacity->opacity());
+    m_fade->setEndValue(active ? 1.0 : 0.0);
+    m_fade->start();
 }
 
 void SelectionBar::resizeEvent(QResizeEvent *event)

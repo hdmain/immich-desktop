@@ -10,6 +10,7 @@ class QEnterEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
+class QPropertyAnimation;
 class QResizeEvent;
 
 namespace Aurora {
@@ -18,6 +19,7 @@ class VideoHoverPreview;
 
 class MediaTile final : public QWidget {
     Q_OBJECT
+    Q_PROPERTY(qreal selectionProgress READ selectionProgress WRITE setSelectionProgress)
 
 public:
     explicit MediaTile(const ImmichAsset &asset, QWidget *parent = nullptr);
@@ -42,6 +44,8 @@ public:
     void setSelected(bool selected);
     bool isSelected() const { return m_selected; }
     void setSelecting(bool selecting);
+    qreal selectionProgress() const { return m_selectionProgress; }
+    void setSelectionProgress(qreal progress);
     static void setSelectionColor(const QColor &color);
     static QColor selectionColor();
 
@@ -102,6 +106,8 @@ private:
     bool m_hovered = false;
     bool m_selected = false;
     bool m_selecting = false;
+    qreal m_selectionProgress = 0.0;
+    QPropertyAnimation *m_selectionAnimation = nullptr;
 };
 
 } // namespace Aurora

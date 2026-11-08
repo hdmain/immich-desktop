@@ -2,7 +2,9 @@
 
 #include <QFrame>
 
+class QGraphicsOpacityEffect;
 class QLabel;
+class QPropertyAnimation;
 class QPushButton;
 class QResizeEvent;
 class QShowEvent;
@@ -12,6 +14,7 @@ namespace Aurora {
 // Replaces a grid's toolbar while photos are selected: the count and what can be
 // done with them. Which actions show depends on the view (normal, archive, trash).
 // Labels shrink with the bar's own width: full text, short text, or icons only.
+// Appears and disappears with a short fade.
 class SelectionBar final : public QFrame {
     Q_OBJECT
 
@@ -24,6 +27,9 @@ public:
     void setCount(int count);
     // Favorite turns into "Remove from favorites" when every selected photo is one.
     void setAllFavorite(bool allFavorite);
+    // Shows or hides with a short fade; prefer this over setVisible while selecting.
+    void setActive(bool active);
+    bool isActive() const { return m_active; }
 
 signals:
     void clearRequested();
@@ -52,6 +58,9 @@ private:
     bool m_allFavorite = false;
     Density m_density = Density::Full;
     bool m_fitting = false;
+    bool m_active = false;
+    QGraphicsOpacityEffect *m_opacity;
+    QPropertyAnimation *m_fade;
     QLabel *m_count;
     QPushButton *m_selectAll;
     QPushButton *m_open;

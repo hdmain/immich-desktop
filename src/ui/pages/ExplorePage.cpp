@@ -1476,7 +1476,7 @@ void ExplorePage::applyCollectionSelection()
             allFavorite = false;
     }
     m_collectionToolbar->setVisible(!selecting);
-    m_collectionSelectionBar->setVisible(selecting);
+    m_collectionSelectionBar->setActive(selecting);
     m_collectionSelectionBar->setCount(m_collectionSelection->count());
     m_collectionSelectionBar->setAllFavorite(allFavorite);
     m_collectionSelectionBar->setMode(selectionMode());

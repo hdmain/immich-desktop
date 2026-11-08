@@ -4,6 +4,7 @@
 #include "ui/widgets/VideoHoverPreview.h"
 
 #include <QContextMenuEvent>
+#include <QEasingCurve>
 #include <QEnterEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -12,6 +13,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
+#include <QPropertyAnimation>
 #include <QResizeEvent>
 
 namespace Aurora {
@@ -131,6 +133,23 @@ void MediaTile::setSelected(bool selected)
     if (m_selected == selected)
         return;
     m_selected = selected;
+    if (!m_selectionAnimation) {
+        m_selectionAnimation = new QPropertyAnimation(this, "selectionProgress", this);
+        m_selectionAnimation->setDuration(150);
+        m_selectionAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    }
+    m_selectionAnimation->stop();
+    m_selectionAnimation->setStartValue(m_selectionProgress);
+    m_selectionAnimation->setEndValue(selected ? 1.0 : 0.0);
+    m_selectionAnimation->start();
+}
+
+void MediaTile::setSelectionProgress(qreal progress)
+{
+    progress = qBound(0.0, progress, 1.0);
+    if (qFuzzyCompare(m_selectionProgress, progress))
+        return;
+    m_selectionProgress = progress;
     update();
 }
 
@@ -280,26 +299,45 @@ void MediaTile::paintEvent(QPaintEvent *)
         painter.drawRect(rect().adjusted(1, 1, -1, -1));
     }
 
-    if (m_selected) {
-        painter.setPen(QPen(s_selectionColor, 4));
+    if (m_selectionProgress > 0.01) {
+        QColor border = s_selectionColor;
+        border.setAlphaF(m_selectionProgress);
+        painter.setPen(QPen(border, 2.0 + 2.0 * m_selectionProgress));
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(rect().adjusted(2, 2, -2, -2));
     }
     // The check circle shows on hover, and on every tile while selecting.
-    if (selectable() && (m_selected || m_selecting || m_hovered)) {
-        const QRectF circle = QRectF(checkRect()).adjusted(1, 1, -1, -1);
+    if (selectable() && (m_selectionProgress > 0.01 || m_selecting || m_hovered)) {
+        const qreal pop = 0.82 + 0.18 * m_selectionProgress;
+        QRectF circle = QRectF(checkRect()).adjusted(1, 1, -1, -1);
+        if (m_selectionProgress > 0.01) {
+            const QPointF c = circle.center();
+            circle.setSize(circle.size() * pop);
+            circle.moveCenter(c);
+        }
+        painter.setOpacity(m_selectionProgress > 0.01
+                               ? (0.35 + 0.65 * m_selectionProgress)
+                               : 1.0);
         painter.setPen(QPen(Qt::white, 2));
-        painter.setBrush(m_selected ? s_selectionColor : QColor(0, 0, 0, 90));
+        QColor fill = s_selectionColor;
+        if (m_selectionProgress <= 0.01)
+            fill = QColor(0, 0, 0, 90);
+        else
+            fill.setAlphaF(m_selectionProgress);
+        painter.setBrush(fill);
         painter.drawEllipse(circle);
-        if (m_selected) {
+        if (m_selectionProgress > 0.2) {
             QPainterPath check;
             check.moveTo(circle.left() + circle.width() * 0.28, circle.center().y());
             check.lineTo(circle.left() + circle.width() * 0.44, circle.top() + circle.height() * 0.66);
             check.lineTo(circle.left() + circle.width() * 0.72, circle.top() + circle.height() * 0.34);
-            painter.setPen(QPen(Qt::white, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QColor tick = Qt::white;
+            tick.setAlphaF(qMin(1.0, (m_selectionProgress - 0.2) / 0.8));
+            painter.setPen(QPen(tick, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             painter.setBrush(Qt::NoBrush);
             painter.drawPath(check);
         }
+        painter.setOpacity(1.0);
     }
 }
 
