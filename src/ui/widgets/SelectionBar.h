@@ -4,11 +4,14 @@
 
 class QLabel;
 class QPushButton;
+class QResizeEvent;
+class QShowEvent;
 
 namespace Aurora {
 
 // Replaces a grid's toolbar while photos are selected: the count and what can be
 // done with them. Which actions show depends on the view (normal, archive, trash).
+// Labels shrink with the bar's own width: full text, short text, or icons only.
 class SelectionBar final : public QFrame {
     Q_OBJECT
 
@@ -33,12 +36,24 @@ signals:
     void deleteRequested();
     void restoreRequested();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+
 private:
+    enum class Density { Full, Short, Icons };
+
     void updateButtons();
+    void fitDensity();
+    void applyDensity(Density density);
+    void setButtonText(QPushButton *button, const QString &visible, const QString &fullName);
 
     Mode m_mode = Mode::Normal;
     bool m_allFavorite = false;
+    Density m_density = Density::Full;
+    bool m_fitting = false;
     QLabel *m_count;
+    QPushButton *m_selectAll;
     QPushButton *m_open;
     QPushButton *m_download;
     QPushButton *m_favorite;
