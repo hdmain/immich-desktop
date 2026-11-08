@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QPixmap>
+#include <QPointer>
 #include <QSet>
 #include <QSslConfiguration>
 #include <QStringList>
@@ -120,6 +121,10 @@ public:
     void fetchAssetDetails(const QString &assetId);
     void deleteAssets(const QStringList &assetIds, bool permanent = false);
     void setFavorite(const QStringList &assetIds, bool favorite);
+    // Moves photos into or out of the archive (asset.update).
+    void setArchived(const QStringList &assetIds, bool archived);
+    // Stops a download started with downloadAsset and removes the partial file.
+    void cancelDownload(const QString &assetId);
     void restoreFromTrash(const QStringList &assetIds);
     void restoreAllFromTrash();
     void emptyTrash();
@@ -192,6 +197,10 @@ signals:
     void assetsDeleted(const QStringList &assetIds, bool permanent);
     void favoritesChanged(const QStringList &assetIds, bool favorite);
     void favoriteFailed(const QStringList &assetIds, const QString &message);
+    void archivedChanged(const QStringList &assetIds, bool archived);
+    void archiveFailed(const QStringList &assetIds, const QString &message);
+    // A download that didn't finish; message is empty when it was cancelled.
+    void downloadFailed(const QString &assetId, const QString &message);
     // assetIds is empty when everything in the trash was restored.
     void assetsRestored(const QStringList &assetIds);
     void trashEmptied();
@@ -311,6 +320,7 @@ private:
     bool m_processingUploadQueue = false;
     bool m_uploadRetryScheduled = false;
     int m_activeDownloads = 0;
+    QHash<QString, QPointer<QNetworkReply>> m_downloadReplies;
     bool m_endpointProbeInFlight = false;
     bool m_reachabilityProbeInFlight = false;
     bool m_connectionTestPending = false;

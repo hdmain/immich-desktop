@@ -89,3 +89,18 @@ qt_add_executable(ProfileTest ProfileTest.cpp ${CMAKE_SOURCE_DIR}/resources/reso
 target_link_libraries(ProfileTest PRIVATE immich_app Qt6::Test)
 add_test(NAME ProfileTest COMMAND ProfileTest)
 set_tests_properties(ProfileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(TileSelectionTest
+    TileSelectionTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/TileSelection.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/TileSelection.h
+)
+
+target_include_directories(TileSelectionTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(TileSelectionTest PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+
+add_test(NAME TileSelectionTest COMMAND TileSelectionTest)

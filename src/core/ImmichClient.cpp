@@ -2507,6 +2507,7 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
     auto *reply =
         m_network->get(authenticatedRequest(apiUrl(QStringLiteral("/assets/%1/original").arg(assetId))));
     file->setParent(reply);
+    m_downloadReplies.insert(assetId, reply);
     beginActiveDownload();
 
     connect(reply, &QNetworkReply::readyRead, this, [reply, file] {
@@ -2523,6 +2524,7 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
             });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, file, assetId, destinationPath] {
+                m_downloadReplies.remove(assetId);
                 if (reply->bytesAvailable() > 0) {
                     const QByteArray chunk = reply->readAll();
                     if (file->write(chunk) != chunk.size()) {
@@ -2540,6 +2542,7 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     emit requestFailed(tr("Download"),
                                        tr("Could not write %1: %2")
                                            .arg(destinationPath, message));
+                    emit downloadFailed(assetId, message);
                     reply->deleteLater();
                     return;
                 }
@@ -2548,8 +2551,14 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     file->close();
                     file->remove();
                     endActiveDownload();
-                    emit requestFailed(tr("Download"),
-                                       errorMessage(reply, reply->readAll()));
+                    // A cancelled download isn't an error to report.
+                    if (reply->error() == QNetworkReply::OperationCanceledError) {
+                        emit downloadFailed(assetId, {});
+                    } else {
+                        const QString message = errorMessage(reply, reply->readAll());
+                        emit requestFailed(tr("Download"), message);
+                        emit downloadFailed(assetId, message);
+                    }
                     reply->deleteLater();
                     return;
                 }
@@ -2562,6 +2571,7 @@ void ImmichClient::downloadAsset(const QString &assetId, const QString &destinat
                     emit requestFailed(tr("Download"),
                                        tr("Could not write %1: %2")
                                            .arg(destinationPath, message));
+                    emit downloadFailed(assetId, message);
                     reply->deleteLater();
                     return;
                 }
@@ -2889,6 +2899,50 @@ void ImmichClient::setFavorite(const QStringList &assetIds, bool favorite)
             emit favoritesChanged(ids, favorite);
         reply->deleteLater();
     });
+}
+
+void ImmichClient::setArchived(const QStringList &assetIds, bool archived)
+{
+    if (!ensureConfigured(tr("Archive")))
+        return;
+
+    QStringList ids;
+    QJsonArray idArray;
+    for (const QString &id : assetIds) {
+        const QString trimmed = id.trimmed();
+        if (isValidImmichId(trimmed)) {
+            ids.append(trimmed);
+            idArray.append(trimmed);
+        }
+    }
+    if (ids.isEmpty())
+        return;
+
+    const QJsonObject body{
+        {QStringLiteral("ids"), idArray},
+        {QStringLiteral("visibility"),
+         archived ? QStringLiteral("archive") : QStringLiteral("timeline")}};
+    QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/assets")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->put(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ids, archived] {
+        const QByteArray body = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status == 403)
+            emit archiveFailed(ids, tr("Archiving needs the asset.update permission on your API key."));
+        else if (reply->error() != QNetworkReply::NoError)
+            emit archiveFailed(ids, errorMessage(reply, body));
+        else
+            emit archivedChanged(ids, archived);
+        reply->deleteLater();
+    });
+}
+
+void ImmichClient::cancelDownload(const QString &assetId)
+{
+    if (QNetworkReply *reply = m_downloadReplies.value(assetId))
+        reply->abort();
 }
 
 QUrl ImmichClient::sharedLinkUrl(const QString &key) const

@@ -2,6 +2,7 @@
 
 #include "core/ImmichClient.h"
 #include "ui/BrowseSection.h"
+#include "ui/widgets/SelectionBar.h"
 
 #include <QDate>
 #include <QFrame>
@@ -31,10 +32,12 @@ class QVBoxLayout;
 namespace Aurora {
 
 class ThemeManager;
+class DayHeader;
 class MediaTile;
 class MediaViewerDialog;
 class VideoHoverPreview;
 class SortButton;
+class TileSelection;
 class TileImageScheduler;
 class ZoomSlider;
 
@@ -78,6 +81,10 @@ signals:
     void downloadRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
     void deleteRequested(const Aurora::ImmichAsset &asset);
+    // A selection: the Library downloads and deletes, asking once for the lot.
+    void downloadAssetsRequested(const QList<Aurora::ImmichAsset> &assets);
+    void trashAssetsRequested(const QList<Aurora::ImmichAsset> &assets);
+    void deleteAssetsRequested(const QList<Aurora::ImmichAsset> &assets);
     void personRequested(const Aurora::ImmichPerson &person);
     void placeRequested(const QString &city);
     void dateRequested(const QDate &date);
@@ -117,6 +124,13 @@ private slots:
     void showAssetThumbnail(const QString &assetId, const QPixmap &thumbnail);
     void showRequestError(const QString &operation, const QString &message);
     void handleAssetsDeleted(const QStringList &assetIds);
+    // Selecting photos in the collection grid.
+    QStringList collectionOrder() const;
+    QList<ImmichAsset> selectedCollectionAssets() const;
+    void applyCollectionSelection();
+    void showCollectionSelectionMenu(const QPoint &globalPos);
+    void openSelectedCollectionAssets();
+    SelectionBar::Mode selectionMode() const;
     void removeCollectionTiles(const QStringList &assetIds);
     void openPerson(const Aurora::ImmichPerson &person);
     void openPlace(const Aurora::ImmichPlace &place);
@@ -143,7 +157,7 @@ private:
 
     struct DaySection {
         QDate date;
-        QLabel *header = nullptr;
+        DayHeader *header = nullptr;
         QList<MediaTile *> tiles;
     };
 
@@ -253,6 +267,9 @@ private:
     QList<DaySection> m_collectionSections;
     QHash<QString, QPointer<MediaTile>> m_collectionTiles;
     QSet<QString> m_favoriteRequests; // Sent from tile menus, awaiting a reply.
+    TileSelection *m_collectionSelection = nullptr;
+    SelectionBar *m_collectionSelectionBar = nullptr;
+    QWidget *m_collectionToolbar = nullptr;
     TileImageScheduler *m_collectionTileImages = nullptr;
     QString m_collectionFilterKind;
     QString m_collectionFilterValue;

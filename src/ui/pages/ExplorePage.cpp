@@ -5,7 +5,10 @@
 #include "ui/GridZoom.h"
 #include "ui/IconUtils.h"
 #include "ui/TileImageScheduler.h"
+#include "ui/TileNavigation.h"
+#include "ui/TileSelection.h"
 #include "ui/widgets/FlowLayout.h"
+#include "ui/widgets/DayHeader.h"
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ScrollToTopButton.h"
@@ -21,6 +24,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
@@ -423,6 +427,67 @@ ExplorePage::ExplorePage(ThemeManager *themeManager, ImmichClient *client, QWidg
     m_collectionChips->hide();
 
     collectionRoot->addWidget(collectionToolbar);
+    m_collectionToolbar = collectionToolbar;
+    m_collectionSelection = new TileSelection(this);
+    m_collectionSelectionBar = new SelectionBar(m_collectionPage);
+    m_collectionSelectionBar->hide();
+    collectionRoot->addWidget(m_collectionSelectionBar);
+    connect(m_collectionSelection, &TileSelection::changed, this,
+            &ExplorePage::applyCollectionSelection);
+    SelectionBar *bar = m_collectionSelectionBar;
+    connect(bar, &SelectionBar::clearRequested, m_collectionSelection, &TileSelection::clear);
+    connect(bar, &SelectionBar::selectAllRequested, this,
+            [this] { m_collectionSelection->selectAll(collectionOrder()); });
+    connect(bar, &SelectionBar::openRequested, this, &ExplorePage::openSelectedCollectionAssets);
+    connect(bar, &SelectionBar::downloadRequested, this,
+            [this] { emit downloadAssetsRequested(selectedCollectionAssets()); });
+    connect(bar, &SelectionBar::favoriteRequested, this, [this](bool favorite) {
+        const QStringList ids = m_collectionSelection->ordered(collectionOrder());
+        const int count = int(ids.size());
+        if (!confirmBulkChange(this, count,
+                               favorite ? tr("Add to favorites") : tr("Remove from favorites"),
+                               favorite ? tr("Add %n photos to favorites?", nullptr, count)
+                                        : tr("Remove %n photos from favorites?", nullptr, count)))
+            return;
+        for (const QString &id : ids)
+            m_favoriteRequests.insert(id);
+        m_client->setFavorite(ids, favorite);
+    });
+    connect(bar, &SelectionBar::archiveRequested, this, [this](bool archive) {
+        const QStringList ids = m_collectionSelection->ordered(collectionOrder());
+        const int count = int(ids.size());
+        if (!confirmBulkChange(this, count,
+                               archive ? tr("Move to Archive") : tr("Move out of Archive"),
+                               archive ? tr("Move %n photos to the archive?", nullptr, count)
+                                       : tr("Move %n photos out of the archive?", nullptr, count)))
+            return;
+        m_client->setArchived(ids, archive);
+    });
+    connect(bar, &SelectionBar::trashRequested, this,
+            [this] { emit trashAssetsRequested(selectedCollectionAssets()); });
+    connect(bar, &SelectionBar::deleteRequested, this,
+            [this] { emit deleteAssetsRequested(selectedCollectionAssets()); });
+    connect(bar, &SelectionBar::restoreRequested, this, [this] {
+        m_client->restoreFromTrash(m_collectionSelection->ordered(collectionOrder()));
+    });
+    connect(m_client, &ImmichClient::archiveFailed, this,
+            [this](const QStringList &, const QString &message) {
+                if (isVisible())
+                    Toast::showMessage(this, message);
+            });
+    // Unarchived photos leave the Archive page.
+    connect(m_client, &ImmichClient::archivedChanged, this,
+            [this](const QStringList &assetIds, bool archived) {
+                if (!archived && m_collectionFilterKind == QStringLiteral("archive"))
+                    removeCollectionTiles(assetIds);
+            });
+    // Ctrl+A and Esc act on the collection grid.
+    connect(new QShortcut(QKeySequence::SelectAll, this), &QShortcut::activated, this, [this] {
+        if (m_stack->currentIndex() == static_cast<int>(Page::Collection))
+            m_collectionSelection->selectAll(collectionOrder());
+    });
+    connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated,
+            m_collectionSelection, &TileSelection::clear);
     collectionRoot->addWidget(m_collectionChips);
     collectionRoot->addWidget(m_collectionScroll, 1);
     collectionRoot->addWidget(m_collectionLoadMore);
@@ -1368,8 +1433,113 @@ void ExplorePage::handleAssetsDeleted(const QStringList &assetIds)
     removeCollectionTiles(assetIds);
 }
 
+QStringList ExplorePage::collectionOrder() const
+{
+    QStringList ids;
+    for (const DaySection &section : m_collectionSections) {
+        for (const MediaTile *tile : section.tiles)
+            ids.append(tile->asset().id);
+    }
+    return ids;
+}
+
+QList<ImmichAsset> ExplorePage::selectedCollectionAssets() const
+{
+    QList<ImmichAsset> assets;
+    for (const QString &id : m_collectionSelection->ordered(collectionOrder())) {
+        if (const MediaTile *tile = m_collectionTiles.value(id))
+            assets.append(tile->asset());
+    }
+    return assets;
+}
+
+SelectionBar::Mode ExplorePage::selectionMode() const
+{
+    if (m_collectionFilterKind == QStringLiteral("trash"))
+        return SelectionBar::Mode::Trash;
+    if (m_collectionFilterKind == QStringLiteral("archive"))
+        return SelectionBar::Mode::Archive;
+    return SelectionBar::Mode::Normal;
+}
+
+void ExplorePage::applyCollectionSelection()
+{
+    const bool selecting = !m_collectionSelection->isEmpty();
+    bool allFavorite = selecting;
+    for (const QPointer<MediaTile> &tile : std::as_const(m_collectionTiles)) {
+        if (!tile)
+            continue;
+        const bool selected = m_collectionSelection->contains(tile->asset().id);
+        tile->setSelected(selected);
+        tile->setSelecting(selecting);
+        if (selected && !tile->asset().favorite)
+            allFavorite = false;
+    }
+    m_collectionToolbar->setVisible(!selecting);
+    m_collectionSelectionBar->setVisible(selecting);
+    m_collectionSelectionBar->setCount(m_collectionSelection->count());
+    m_collectionSelectionBar->setAllFavorite(allFavorite);
+    m_collectionSelectionBar->setMode(selectionMode());
+    for (const DaySection &section : std::as_const(m_collectionSections)) {
+        if (!section.header)
+            continue;
+        bool allSelected = selecting;
+        bool any = false;
+        for (const MediaTile *tile : section.tiles) {
+            if (!tile || tile->asset().isLocalPending())
+                continue;
+            any = true;
+            allSelected = allSelected && m_collectionSelection->contains(tile->asset().id);
+        }
+        section.header->setSelecting(selecting);
+        section.header->setChecked(any && allSelected);
+    }
+}
+
+void ExplorePage::showCollectionSelectionMenu(const QPoint &globalPos)
+{
+    const QList<ImmichAsset> assets = selectedCollectionAssets();
+    SelectionBar *bar = m_collectionSelectionBar;
+    QMenu menu(this);
+    menu.addAction(tr("Open %n item(s)", nullptr, int(assets.size())), this,
+                   &ExplorePage::openSelectedCollectionAssets);
+    menu.addAction(tr("Download"), bar, &SelectionBar::downloadRequested);
+    if (selectionMode() == SelectionBar::Mode::Trash) {
+        menu.addSeparator();
+        menu.addAction(tr("Restore"), bar, &SelectionBar::restoreRequested);
+    } else {
+        bool allFavorite = !assets.isEmpty();
+        for (const ImmichAsset &asset : assets)
+            allFavorite = allFavorite && asset.favorite;
+        const bool archive = selectionMode() == SelectionBar::Mode::Archive;
+        menu.addAction(allFavorite ? tr("Remove from favorites") : tr("Add to favorites"), bar,
+                       [bar, allFavorite] { emit bar->favoriteRequested(!allFavorite); });
+        menu.addAction(archive ? tr("Move out of Archive") : tr("Move to Archive"), bar,
+                       [bar, archive] { emit bar->archiveRequested(!archive); });
+        menu.addSeparator();
+        menu.addAction(tr("Move to trash"), bar, &SelectionBar::trashRequested);
+    }
+    menu.addAction(tr("Delete permanently"), bar, &SelectionBar::deleteRequested);
+    menu.exec(globalPos);
+}
+
+void ExplorePage::openSelectedCollectionAssets()
+{
+    const QList<ImmichAsset> assets = selectedCollectionAssets();
+    // Each photo opens in its own window, so check before opening a lot of them.
+    constexpr int kAskAbove = 10;
+    if (assets.size() > kAskAbove &&
+        QMessageBox::question(this, tr("Open photos"),
+                              tr("Open %n photos in separate windows?", nullptr,
+                                 int(assets.size()))) != QMessageBox::Yes)
+        return;
+    for (const ImmichAsset &asset : assets)
+        openAsset(asset, AssetSource::Collection);
+}
+
 void ExplorePage::removeCollectionTiles(const QStringList &assetIds)
 {
+    m_collectionSelection->remove(assetIds);
     if (m_collectionHoverPreview)
         m_collectionHoverPreview->stop();
     for (const QString &assetId : assetIds) {
@@ -1396,6 +1566,7 @@ void ExplorePage::removeCollectionTiles(const QStringList &assetIds)
 
 void ExplorePage::clearCollectionTimeline()
 {
+    m_collectionSelection->clear();
     if (m_collectionHoverPreview)
         m_collectionHoverPreview->stop();
 
@@ -1426,9 +1597,27 @@ ExplorePage::DaySection *ExplorePage::sectionForDate(const QDate &date)
 
     DaySection section;
     section.date = date;
-    section.header = new QLabel(formatDayHeader(date), m_collectionHost);
+    section.header = new DayHeader(formatDayHeader(date), m_collectionHost);
     section.header->setObjectName(QStringLiteral("timelineDayHeader"));
     section.header->setProperty("section", true);
+    section.header->setSelecting(!m_collectionSelection->isEmpty());
+    // The day's circle selects all of its photos, or clears them when all are selected.
+    connect(section.header, &DayHeader::toggled, this, [this, date] {
+        for (const DaySection &day : std::as_const(m_collectionSections)) {
+            if (day.date != date)
+                continue;
+            QStringList ids;
+            bool allSelected = true;
+            for (const MediaTile *tile : day.tiles) {
+                if (!tile || tile->asset().isLocalPending())
+                    continue;
+                ids.append(tile->asset().id);
+                allSelected = allSelected && m_collectionSelection->contains(tile->asset().id);
+            }
+            m_collectionSelection->setSelected(ids, !allSelected);
+            return;
+        }
+    });
     m_collectionSections.append(section);
     return &m_collectionSections.last();
 }
@@ -1524,6 +1713,26 @@ void ExplorePage::appendCollectionAssets(const QList<ImmichAsset> &assets)
                     m_favoriteRequests.insert(asset.id);
                     m_client->setFavorite({asset.id}, favorite);
                 });
+        connect(tile, &MediaTile::selectionClicked, this,
+                [this](const ImmichAsset &asset, Qt::KeyboardModifiers modifiers) {
+                    m_collectionSelection->click(asset.id, modifiers, collectionOrder());
+                });
+        connect(tile, &MediaTile::selectionMenuRequested, this,
+                &ExplorePage::showCollectionSelectionMenu);
+        connect(tile, &MediaTile::navigationRequested, this,
+                [this, tile](int key, Qt::KeyboardModifiers modifiers) {
+                    QList<MediaTile *> tiles;
+                    for (const DaySection &section : m_collectionSections)
+                        tiles += section.tiles;
+                    MediaTile *target = neighbourTile(tiles, tile, key);
+                    if (!target)
+                        return;
+                    focusTile(target);
+                    if (modifiers & Qt::ShiftModifier)
+                        m_collectionSelection->extendTo(target->asset().id, collectionOrder(),
+                                                        tile->asset().id);
+                });
+        tile->setSelecting(!m_collectionSelection->isEmpty());
         connect(tile, &MediaTile::shareRequested, this, [this](const ImmichAsset &asset) {
             (new ShareLinkDialog(m_client, asset, this))->show();
         });

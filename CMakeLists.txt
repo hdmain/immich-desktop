@@ -83,6 +83,10 @@ set(IMMICH_SOURCES
     src/ui/MainWindowHost.h
     src/ui/TileImageScheduler.cpp
     src/ui/TileImageScheduler.h
+    src/ui/TileNavigation.cpp
+    src/ui/TileNavigation.h
+    src/ui/TileSelection.cpp
+    src/ui/TileSelection.h
     src/ui/pages/AboutPage.cpp
     src/ui/pages/AboutPage.h
     src/ui/pages/AppearancePage.cpp
@@ -111,6 +115,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/BrowseTree.h
     src/ui/widgets/ColorButton.cpp
     src/ui/widgets/ColorButton.h
+    src/ui/widgets/DayHeader.cpp
+    src/ui/widgets/DayHeader.h
     src/ui/widgets/FlowLayout.cpp
     src/ui/widgets/FlowLayout.h
     src/ui/widgets/MediaTile.cpp
@@ -120,6 +126,8 @@ set(IMMICH_SOURCES
     src/ui/widgets/MediaViewerDialog.h
     src/ui/widgets/ScrollToTopButton.cpp
     src/ui/widgets/ScrollToTopButton.h
+    src/ui/widgets/SelectionBar.cpp
+    src/ui/widgets/SelectionBar.h
     src/ui/widgets/ShareLinkDialog.cpp
     src/ui/widgets/ShareLinkDialog.h
     src/ui/widgets/SummaryTile.cpp

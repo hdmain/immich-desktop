@@ -2,12 +2,17 @@
 
 #include "core/AppSettings.h"
 #include "core/FolderSyncService.h"
+#include "core/ThemeManager.h"
 #include "ui/GridZoom.h"
 #include "ui/IconUtils.h"
 #include "ui/TileImageScheduler.h"
+#include "ui/TileNavigation.h"
+#include "ui/TileSelection.h"
+#include "ui/widgets/DayHeader.h"
 #include "ui/widgets/MediaTile.h"
 #include "ui/widgets/MediaViewerDialog.h"
 #include "ui/widgets/ScrollToTopButton.h"
+#include "ui/widgets/SelectionBar.h"
 #include "ui/widgets/ShareLinkDialog.h"
 #include "ui/widgets/SortButton.h"
 #include "ui/widgets/SummaryTile.h"
@@ -50,6 +55,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPointer>
@@ -124,6 +130,7 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     , m_layoutTimer(new QTimer(this))
     , m_visibilityTimer(new QTimer(this))
     , m_tileImages(new TileImageScheduler(client, [this] { scheduleVisibleMediaUpdate(); }, this))
+    , m_selection(new TileSelection(this))
     , m_autoCheckTimer(new QTimer(this))
     , m_searchDebounce(new QTimer(this))
 {
@@ -350,6 +357,54 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
     m_contentStack->addWidget(yearDetailPage);
 
     root->addWidget(toolbar);
+    m_toolbar = toolbar;
+    m_selectionBar = new SelectionBar(this);
+    m_selectionBar->hide();
+    root->addWidget(m_selectionBar);
+    MediaTile::setSelectionColor(m_themeManager->palette().accent);
+    connect(m_themeManager, &ThemeManager::appearanceChanged, this, [this] {
+        MediaTile::setSelectionColor(m_themeManager->palette().accent);
+    });
+    connect(m_selection, &TileSelection::changed, this, &LibraryPage::applySelection);
+    connect(m_selectionBar, &SelectionBar::clearRequested, m_selection, &TileSelection::clear);
+    connect(m_selectionBar, &SelectionBar::selectAllRequested, this,
+            [this] { m_selection->selectAll(selectableOrder()); });
+    connect(m_selectionBar, &SelectionBar::openRequested, this, &LibraryPage::openSelected);
+    connect(m_selectionBar, &SelectionBar::downloadRequested, this,
+            [this] { downloadAssets(selectedAssets()); });
+    connect(m_selectionBar, &SelectionBar::favoriteRequested, this, [this](bool favorite) {
+        const QStringList ids = m_selection->ordered(selectableOrder());
+        const int count = int(ids.size());
+        if (!confirmBulkChange(this, count,
+                               favorite ? tr("Add to favorites") : tr("Remove from favorites"),
+                               favorite ? tr("Add %n photos to favorites?", nullptr, count)
+                                        : tr("Remove %n photos from favorites?", nullptr, count)))
+            return;
+        for (const QString &id : ids)
+            m_favoriteRequests.insert(id);
+        m_client->setFavorite(ids, favorite);
+    });
+    connect(m_selectionBar, &SelectionBar::archiveRequested, this, [this](bool archive) {
+        const QStringList ids = m_selection->ordered(selectableOrder());
+        const int count = int(ids.size());
+        if (!confirmBulkChange(this, count,
+                               archive ? tr("Move to Archive") : tr("Move out of Archive"),
+                               archive ? tr("Move %n photos to the archive?", nullptr, count)
+                                       : tr("Move %n photos out of the archive?", nullptr, count)))
+            return;
+        m_client->setArchived(ids, archive);
+    });
+    connect(m_selectionBar, &SelectionBar::trashRequested, this,
+            [this] { trashAssets(selectedAssets()); });
+    connect(m_selectionBar, &SelectionBar::deleteRequested, this,
+            [this] { deleteAssetsPermanently(selectedAssets()); });
+    // Ctrl+A and Esc act on the grid; a focused text field keeps Ctrl+A for itself.
+    connect(new QShortcut(QKeySequence::SelectAll, this), &QShortcut::activated, this, [this] {
+        if (m_contentStack->currentIndex() == 0)
+            m_selection->selectAll(selectableOrder());
+    });
+    connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated,
+            m_selection, &TileSelection::clear);
     m_searchPanel = new QWidget(this);
     m_searchPanel->setObjectName(QStringLiteral("searchOptionsPanel"));
     m_searchPanel->installEventFilter(this);
@@ -600,6 +655,17 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
                 if (ours)
                     Toast::showMessage(this, message);
             });
+    connect(m_client, &ImmichClient::archiveFailed, this,
+            [this](const QStringList &, const QString &message) {
+                if (isVisible())
+                    Toast::showMessage(this, message);
+            });
+    // Archived photos leave the timeline (and unarchived ones leave an archive search).
+    connect(m_client, &ImmichClient::archivedChanged, this,
+            [this](const QStringList &assetIds, bool archived) {
+                if (archived != archiveScope())
+                    removeAssetsFromTimeline(assetIds);
+            });
     connect(m_client, &ImmichClient::favoritesChanged, this,
             [this](const QStringList &assetIds, bool favorite) {
                 for (const QString &id : assetIds)
@@ -616,6 +682,7 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
                         tile->updateAsset(asset);
                     }
                 }
+                applySelection(); // The bar's favorite button follows.
             });
     // Restored photos rejoin the timeline; reload on the next visit rather than
     // immediately, since a full Library reload can take a while.
@@ -984,6 +1051,104 @@ void LibraryPage::resetSearchFilters()
     applySearch();
 }
 
+QStringList LibraryPage::selectableOrder() const
+{
+    QStringList ids;
+    for (const DaySection &section : m_sections) {
+        for (const MediaTile *tile : section.tiles) {
+            if (tile && !tile->asset().isLocalPending())
+                ids.append(tile->asset().id);
+        }
+    }
+    return ids;
+}
+
+QList<ImmichAsset> LibraryPage::selectedAssets() const
+{
+    QList<ImmichAsset> assets;
+    for (const QString &id : m_selection->ordered(selectableOrder())) {
+        if (const MediaTile *tile = m_tilesById.value(id))
+            assets.append(tile->asset());
+    }
+    return assets;
+}
+
+bool LibraryPage::archiveScope() const
+{
+    return m_searchActive &&
+           m_searchOptions.value(QStringLiteral("visibility")).toString() == QStringLiteral("archive");
+}
+
+void LibraryPage::applySelection()
+{
+    const bool selecting = !m_selection->isEmpty();
+    bool allFavorite = selecting;
+    for (MediaTile *tile : std::as_const(m_tilesById)) {
+        const bool selected = m_selection->contains(tile->asset().id);
+        tile->setSelected(selected);
+        tile->setSelecting(selecting);
+        if (selected && !tile->asset().favorite)
+            allFavorite = false;
+    }
+    m_toolbar->setVisible(!selecting);
+    m_selectionBar->setVisible(selecting);
+    m_selectionBar->setCount(m_selection->count());
+    m_selectionBar->setAllFavorite(allFavorite);
+    m_selectionBar->setMode(archiveScope() ? SelectionBar::Mode::Archive
+                                           : SelectionBar::Mode::Normal);
+    for (const DaySection &section : std::as_const(m_sections)) {
+        if (!section.header)
+            continue;
+        bool allSelected = selecting;
+        bool any = false;
+        for (const MediaTile *tile : section.tiles) {
+            if (!tile || tile->asset().isLocalPending())
+                continue;
+            any = true;
+            allSelected = allSelected && m_selection->contains(tile->asset().id);
+        }
+        section.header->setSelecting(selecting);
+        section.header->setChecked(any && allSelected);
+    }
+}
+
+void LibraryPage::showSelectionMenu(const QPoint &globalPos)
+{
+    const QList<ImmichAsset> assets = selectedAssets();
+    bool allFavorite = !assets.isEmpty();
+    for (const ImmichAsset &asset : assets)
+        allFavorite = allFavorite && asset.favorite;
+    QMenu menu(this);
+    menu.addAction(tr("Open %n item(s)", nullptr, int(assets.size())), this,
+                   &LibraryPage::openSelected);
+    menu.addAction(tr("Download"), this, [this] { downloadAssets(selectedAssets()); });
+    menu.addAction(allFavorite ? tr("Remove from favorites") : tr("Add to favorites"),
+                   m_selectionBar, [this, allFavorite] {
+                       emit m_selectionBar->favoriteRequested(!allFavorite);
+                   });
+    menu.addAction(archiveScope() ? tr("Move out of Archive") : tr("Move to Archive"),
+                   m_selectionBar, [this] { emit m_selectionBar->archiveRequested(!archiveScope()); });
+    menu.addSeparator();
+    menu.addAction(tr("Move to trash"), this, [this] { trashAssets(selectedAssets()); });
+    menu.addAction(tr("Delete permanently"), this,
+                   [this] { deleteAssetsPermanently(selectedAssets()); });
+    menu.exec(globalPos);
+}
+
+void LibraryPage::openSelected()
+{
+    const QList<ImmichAsset> assets = selectedAssets();
+    // Each photo opens in its own window, so check before opening a lot of them.
+    constexpr int kAskAbove = 10;
+    if (assets.size() > kAskAbove &&
+        QMessageBox::question(this, tr("Open photos"),
+                              tr("Open %n photos in separate windows?", nullptr,
+                                 int(assets.size()))) != QMessageBox::Yes)
+        return;
+    for (const ImmichAsset &asset : assets)
+        openAsset(asset);
+}
+
 void LibraryPage::scrollToTop()
 {
     if (m_contentStack->currentIndex() != 0)
@@ -1177,9 +1342,27 @@ LibraryPage::DaySection *LibraryPage::sectionForDate(const QDate &date)
 
     DaySection section;
     section.date = date;
-    section.header = new QLabel(formatDayHeader(date), m_timelineHost);
+    section.header = new DayHeader(formatDayHeader(date), m_timelineHost);
     section.header->setObjectName(QStringLiteral("timelineDayHeader"));
     section.header->setProperty("section", true);
+    section.header->setSelecting(!m_selection->isEmpty());
+    // The day's circle selects all of its photos, or clears them when all are selected.
+    connect(section.header, &DayHeader::toggled, this, [this, date] {
+        for (const DaySection &day : std::as_const(m_sections)) {
+            if (day.date != date)
+                continue;
+            QStringList ids;
+            bool allSelected = true;
+            for (const MediaTile *tile : day.tiles) {
+                if (!tile || tile->asset().isLocalPending())
+                    continue;
+                ids.append(tile->asset().id);
+                allSelected = allSelected && m_selection->contains(tile->asset().id);
+            }
+            m_selection->setSelected(ids, !allSelected);
+            return;
+        }
+    });
 
     // Days follow the sort (newest first by default); unknown dates go last.
     int insertAt = m_sections.size();
@@ -1423,6 +1606,25 @@ void LibraryPage::appendAssetsToTimeline(const QList<ImmichAsset> &assets)
                     m_favoriteRequests.insert(asset.id);
                     m_client->setFavorite({asset.id}, favorite);
                 });
+        connect(tile, &MediaTile::selectionClicked, this,
+                [this](const ImmichAsset &asset, Qt::KeyboardModifiers modifiers) {
+                    m_selection->click(asset.id, modifiers, selectableOrder());
+                });
+        connect(tile, &MediaTile::selectionMenuRequested, this, &LibraryPage::showSelectionMenu);
+        connect(tile, &MediaTile::navigationRequested, this,
+                [this, tile](int key, Qt::KeyboardModifiers modifiers) {
+                    QList<MediaTile *> tiles;
+                    for (const DaySection &section : m_sections)
+                        tiles += section.tiles;
+                    MediaTile *target = neighbourTile(tiles, tile, key);
+                    if (!target)
+                        return;
+                    focusTile(target);
+                    if (modifiers & Qt::ShiftModifier)
+                        m_selection->extendTo(target->asset().id, selectableOrder(),
+                                              tile->asset().id);
+                });
+        tile->setSelecting(!m_selection->isEmpty());
     }
 
     if (!m_assets.isEmpty())
@@ -2083,6 +2285,7 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
 
 void LibraryPage::clearTimeline()
 {
+    m_selection->clear();
     // QVideoWidget is reparented onto the active tile; stop first so tile
     // deletion cannot destroy the shared preview widget out from under us.
     if (m_videoHoverPreview)
@@ -2658,21 +2861,46 @@ void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByte
 
 void LibraryPage::trashAsset(const ImmichAsset &asset)
 {
-    confirmAndDelete(asset, false);
+    confirmAndDelete({asset}, false);
 }
 
 void LibraryPage::deleteAssetPermanently(const ImmichAsset &asset)
 {
-    confirmAndDelete(asset, true);
+    confirmAndDelete({asset}, true);
 }
 
-void LibraryPage::confirmAndDelete(const ImmichAsset &asset, bool permanent)
+void LibraryPage::downloadAssets(const QList<ImmichAsset> &assets)
 {
-    if (!m_client->isConfigured() || asset.id.isEmpty())
+    // Placeholder until downloads run as one job with progress and Cancel.
+    if (!assets.isEmpty())
+        downloadAsset(assets.first());
+}
+
+void LibraryPage::trashAssets(const QList<ImmichAsset> &assets)
+{
+    confirmAndDelete(assets, false);
+}
+
+void LibraryPage::deleteAssetsPermanently(const QList<ImmichAsset> &assets)
+{
+    confirmAndDelete(assets, true);
+}
+
+void LibraryPage::confirmAndDelete(const QList<ImmichAsset> &assets, bool permanent)
+{
+    QStringList ids;
+    for (const ImmichAsset &asset : assets) {
+        if (!asset.id.isEmpty())
+            ids.append(asset.id);
+    }
+    if (!m_client->isConfigured() || ids.isEmpty())
         return;
 
-    const QString name =
-        asset.fileName.isEmpty() ? tr("this item") : QStringLiteral("“%1”").arg(asset.fileName);
+    QString name = tr("%n item(s)", nullptr, int(ids.size()));
+    if (ids.size() == 1)
+        name = assets.first().fileName.isEmpty()
+                   ? tr("this item")
+                   : QStringLiteral("“%1”").arg(assets.first().fileName);
     const QString title = permanent ? tr("Delete permanently") : tr("Move to trash");
     const QString text =
         permanent ? tr("Permanently delete %1? This cannot be undone.").arg(name)
@@ -2691,7 +2919,7 @@ void LibraryPage::confirmAndDelete(const ImmichAsset &asset, bool permanent)
         return;
 
     m_status->setText(permanent ? tr("Deleting…") : tr("Moving to trash…"));
-    m_client->deleteAssets({asset.id}, permanent);
+    m_client->deleteAssets(ids, permanent);
 }
 
 void LibraryPage::handleAssetsDeleted(const QStringList &assetIds, bool permanent)
@@ -2706,6 +2934,7 @@ void LibraryPage::removeAssetsFromTimeline(const QStringList &assetIds)
 {
     if (assetIds.isEmpty())
         return;
+    m_selection->remove(assetIds);
 
     const QSet<QString> ids(assetIds.begin(), assetIds.end());
     for (auto it = m_assets.begin(); it != m_assets.end();) {

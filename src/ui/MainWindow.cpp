@@ -133,6 +133,12 @@ MainWindow::MainWindow(ThemeManager *themeManager, UpdateManager *updateManager,
     connect(explorePage, &ExplorePage::downloadRequested, libraryPage,
             &LibraryPage::downloadAsset);
     connect(explorePage, &ExplorePage::trashRequested, libraryPage, &LibraryPage::trashAsset);
+    connect(explorePage, &ExplorePage::downloadAssetsRequested, libraryPage,
+            &LibraryPage::downloadAssets);
+    connect(explorePage, &ExplorePage::trashAssetsRequested, libraryPage,
+            &LibraryPage::trashAssets);
+    connect(explorePage, &ExplorePage::deleteAssetsRequested, libraryPage,
+            &LibraryPage::deleteAssetsPermanently);
     connect(explorePage, &ExplorePage::deleteRequested, libraryPage,
             &LibraryPage::deleteAssetPermanently);
     // Explore hosts the people, album, tag, folder and trash pages; it reports
