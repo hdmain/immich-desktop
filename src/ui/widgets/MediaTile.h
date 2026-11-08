@@ -78,7 +78,13 @@ protected:
 private:
     static QString formatDuration(const QString &raw);
     QRect checkRect() const;
+    QRect heartRect() const;
     bool selectable() const { return !m_asset.isLocalPending(); }
+    // The heart corner is free: not trashed and no sync badge in its place.
+    bool favoritable() const
+    {
+        return selectable() && !m_trashed && m_asset.localSyncState == LocalSyncState::None;
+    }
 
     VideoHoverPreview *m_hoverPreview = nullptr;
     ImmichAsset m_asset;
@@ -92,6 +98,7 @@ private:
     bool m_leftPressed = false;
     bool m_pressBecameDrag = false;
     bool m_pressOnCheck = false;
+    bool m_pressOnHeart = false;
     bool m_hovered = false;
     bool m_selected = false;
     bool m_selecting = false;
