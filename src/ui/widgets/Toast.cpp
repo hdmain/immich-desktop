@@ -34,6 +34,16 @@ void Toast::showInfo(QWidget *window, const QString &message)
     toast->show(message, QStringLiteral(":/icons/circle-check.svg"), Style::Info);
 }
 
+void Toast::showPending(QWidget *window, const QString &message, const QString &iconResource)
+{
+    if (!window)
+        return;
+    Toast *toast = find(window, Kind::Message);
+    if (!toast)
+        toast = new Toast(window->window(), Kind::Message);
+    toast->show(message, iconResource, Style::Progress);
+}
+
 void Toast::showProgress(QWidget *window, const QString &message, const QString &actionText,
                          std::function<void()> action)
 {
@@ -148,9 +158,11 @@ void Toast::show(const QString &message, const QString &iconResource, Style styl
     m_fade->setStartValue(m_fade->targetObject()->property("opacity"));
     m_fade->setEndValue(1.0);
     m_fade->start();
-    // Progress stays until finished; messages fade on their own.
-    if (m_kind == Kind::Message)
+    // Progress and pending messages stay until finished or replaced; others fade.
+    if (m_kind == Kind::Message && style != Style::Progress)
         m_timer->start();
+    else
+        m_timer->stop();
     for (Toast *other : parentWidget()->findChildren<Toast *>(QString(), Qt::FindDirectChildrenOnly))
         other->reposition();
 }

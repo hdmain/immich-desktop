@@ -643,6 +643,21 @@ LibraryPage::LibraryPage(ThemeManager *themeManager, ImmichClient *client,
             this, &LibraryPage::handleAssetInfoFailed);
     connect(m_client, &ImmichClient::assetOriginalFetched,
             this, &LibraryPage::handleAssetOriginalFetched);
+    connect(m_client, &ImmichClient::previewLoaded, this,
+            [this](const QString &assetId, const QPixmap &preview) {
+                if (m_copyFromPreview && assetId == m_copyInFlightAssetId)
+                    finishCopy(assetId, preview.toImage(), {}, {});
+            });
+    connect(m_client, &ImmichClient::imageLoadFailed, this,
+            [this](const QString &assetId, const QString &size, const QString &message) {
+                if (!m_copyFromPreview || assetId != m_copyInFlightAssetId ||
+                    size != QStringLiteral("preview"))
+                    return;
+                m_copyInFlightAssetId.clear();
+                m_copyFromPreview = false;
+                Toast::showMessage(m_copyWindow ? m_copyWindow.data() : this,
+                                   tr("Copy failed: %1").arg(message));
+            });
     connect(m_client, &ImmichClient::assetsDeleted, this, &LibraryPage::handleAssetsDeleted);
     connect(m_client, &ImmichClient::favoriteFailed, this,
             [this](const QStringList &assetIds, const QString &message) {
@@ -2247,6 +2262,8 @@ void LibraryPage::showRequestError(const QString &operation, const QString &mess
     if (operation == tr("Copy")) {
         m_copyInFlightAssetId.clear();
         m_status->setText(tr("Copy failed: %1").arg(message));
+        Toast::showMessage(m_copyWindow ? m_copyWindow.data() : this,
+                           tr("Copy failed: %1").arg(message));
         return;
     }
     if (operation == tr("Upload")) {
@@ -2730,15 +2747,26 @@ void LibraryPage::copyAsset(const ImmichAsset &asset)
         return;
     }
     if (asset.isVideo()) {
-        m_status->setText(tr("Copy works for photos , download videos instead."));
+        m_status->setText(tr("Copy works for photos; download videos instead."));
         return;
     }
 
     m_currentAsset = asset;
     m_copyInFlightAssetId = asset.id;
+    // Full size unless Settings say to copy the preview instead.
+    m_copyFromPreview = !AppSettings().loadPlayback().copyOriginal;
+    m_copyFellBack = false;
+    m_copyWindow = QApplication::activeWindow();
+    // Big originals or a slow server can take a while; don't let a paste beat it.
+    Toast::showPending(m_copyWindow ? m_copyWindow.data() : this,
+                       tr("Copying %1…").arg(asset.fileName.isEmpty() ? tr("photo") : asset.fileName),
+                       QStringLiteral(":/icons/copy.svg"));
     m_status->setText(tr("Copying %1…")
                           .arg(asset.fileName.isEmpty() ? tr("photo") : asset.fileName));
-    m_client->fetchAssetOriginal(asset.id);
+    if (m_copyFromPreview)
+        m_client->loadPreview(asset.id);
+    else
+        m_client->fetchAssetOriginal(asset.id);
 }
 
 void LibraryPage::pasteFromClipboard()
@@ -2831,18 +2859,29 @@ void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByte
 {
     if (assetId != m_copyInFlightAssetId)
         return;
-    m_copyInFlightAssetId.clear();
 
     QImage image;
     if (!image.loadFromData(bytes)) {
-        m_status->setText(tr("Could not decode image for clipboard."));
+        // Qt can't read every original (HEIC, RAW); Immich's preview is a JPEG.
+        m_copyFromPreview = true;
+        m_copyFellBack = true;
+        m_client->loadPreview(assetId);
         return;
     }
+    finishCopy(assetId, image, bytes, contentType);
+}
+
+void LibraryPage::finishCopy(const QString &assetId, const QImage &image,
+                             const QByteArray &original, const QString &contentType)
+{
+    const bool fellBack = m_copyFellBack;
+    m_copyInFlightAssetId.clear();
+    m_copyFromPreview = false;
 
     auto *mime = new QMimeData;
     mime->setImageData(image);
     if (!contentType.isEmpty())
-        mime->setData(contentType, bytes);
+        mime->setData(contentType, original);
     // Also expose PNG so more apps accept the paste.
     QByteArray pngBytes;
     QBuffer pngBuffer(&pngBytes);
@@ -2855,6 +2894,9 @@ void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByte
                              ? m_currentAsset.fileName
                              : tr("photo");
     m_status->setText(tr("Copied %1 to clipboard").arg(name));
+    Toast::showInfo(m_copyWindow ? m_copyWindow.data() : this,
+                    fellBack ? tr("Copied %1 (preview size)").arg(name)
+                                : tr("Copied %1").arg(name));
 }
 
 void LibraryPage::trashAsset(const ImmichAsset &asset)

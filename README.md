@@ -41,7 +41,7 @@
   - Optional **local-network only** mode: upload only when your Immich Local URL is reachable
   - Unsynced files show in Library immediately with an **unsaved** badge (saving / error icons while uploading)
 - **Sharing** - create and copy photo/video share links (optional password) from the context menu or media preview
-- **Upload & download** - drag-and-drop, paste, send media to the server, or save it locally (original filename suggested)
+- **Upload, download & copy** - drag-and-drop, paste, send media to the server, save it locally (original filename suggested), or copy a photo (Ctrl+C) at full size or as the preview you see
 - **Video streaming** - built-in player with seek, volume, buffering, and muted hover preview
 - **mTLS** - optional client certificate (PKCS#12 or PEM) for Immich behind a reverse proxy
 - **Offline mode** - keep browsing with a local thumbnail/disk cache; uploads queue until online

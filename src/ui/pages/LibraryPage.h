@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QList>
 #include <QMap>
+#include <QPointer>
 #include <QSet>
 #include <QWidget>
 
@@ -110,6 +111,8 @@ private slots:
     void handleAssetsDeleted(const QStringList &assetIds, bool permanent);
     void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
+    void finishCopy(const QString &assetId, const QImage &image, const QByteArray &original,
+                    const QString &contentType);
     void handleAssetOriginalFetched(const QString &assetId, const QByteArray &bytes,
                                     const QString &contentType);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -317,6 +320,9 @@ private:
     QString m_newestAssetId;
     QString m_searchQuery;
     QString m_copyInFlightAssetId;
+    bool m_copyFromPreview = false; // Copying Immich's preview rather than the original.
+    bool m_copyFellBack = false; // The original couldn't be decoded (e.g. HEIC, RAW).
+    QPointer<QWidget> m_copyWindow; // Where the copy was asked for, for its toast.
     QString m_downloadInfoPendingAssetId;
     QSet<QString> m_pasteTempFiles;
     ImmichAsset m_currentAsset;
