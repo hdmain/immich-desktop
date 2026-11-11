@@ -114,7 +114,7 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
                 if (assetIds.contains(m_asset.id))
                     Toast::showMessage(this, message);
             });
-    connect(m_copyButton, &QPushButton::clicked, this, [this] { emit copyRequested(m_asset); });
+    connect(m_copyButton, &QPushButton::clicked, this, &MediaViewerDialog::copyPhoto);
     connect(downloadButton, &QPushButton::clicked, this,
             [this] { emit downloadRequested(m_asset); });
     connect(m_shareButton, &QPushButton::clicked, this,
@@ -168,23 +168,38 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
             return;
         }
         if (m_copyButton->isVisible())
-            emit copyRequested(m_asset);
+            copyPhoto();
     });
     auto *infoShortcut = new QShortcut(QKeySequence(Qt::Key_I), this);
     connect(infoShortcut, &QShortcut::activated, m_infoButton, &QPushButton::toggle);
 
     connect(m_client, &ImmichClient::previewLoaded, this,
             [this](const QString &assetId, const QPixmap &pixmap) {
+                // Finishes a copy even if the user has stepped on since.
+                if (assetId == m_copyPendingId) {
+                    m_copyPendingId.clear();
+                    QApplication::clipboard()->setPixmap(pixmap);
+                    Toast::showInfo(this, tr("Copied %1").arg(m_copyPendingName));
+                }
                 if (assetId != m_asset.id)
                     return;
-                if (m_asset.isVideo())
+                if (m_asset.isVideo()) {
                     m_videoPlayer->setPoster(pixmap);
-                else
+                } else if (m_shownPreview.isNull()) {
+                    // A repeat of the same preview keeps the zoom.
+                    m_shownPreview = pixmap;
                     m_preview->setPixmap(pixmap);
+                }
             });
     connect(m_client, &ImmichClient::imageLoadFailed, this,
             [this](const QString &assetId, const QString &resultSize, const QString &message) {
-                if (assetId == m_asset.id && resultSize == QStringLiteral("preview"))
+                if (resultSize != QStringLiteral("preview"))
+                    return;
+                if (assetId == m_copyPendingId) {
+                    m_copyPendingId.clear();
+                    Toast::showMessage(this, tr("Copy failed: %1").arg(message));
+                }
+                if (assetId == m_asset.id)
                     m_preview->setPlaceholderText(tr("Preview unavailable\n%1").arg(message));
             });
     connect(m_client, &ImmichClient::assetsDeleted, this,
@@ -230,6 +245,7 @@ void MediaViewerDialog::setAsset(const ImmichAsset &asset, bool autoplay)
     } else {
         m_videoPlayer->stop();
         m_preview->setPixmap({});
+        m_shownPreview = QPixmap();
         m_preview->setPlaceholderText(tr("Loading preview…"));
         m_stack->setCurrentWidget(m_preview);
     }
@@ -249,6 +265,26 @@ void MediaViewerDialog::setTrashMode(bool trashMode)
     m_trashButton->setVisible(!trashMode);
     m_restoreButton->setVisible(trashMode);
     updateFavoriteButton();
+}
+
+// Copies the photo as shown (Immich's preview), so it's instant once it's on screen,
+// or asks for the original when Settings say to copy at full size.
+void MediaViewerDialog::copyPhoto()
+{
+    if (AppSettings().loadPlayback().copyOriginal) {
+        emit copyRequested(m_asset);
+        return;
+    }
+    const QString name = m_asset.fileName.isEmpty() ? tr("photo") : m_asset.fileName;
+    if (!m_shownPreview.isNull()) {
+        QApplication::clipboard()->setPixmap(m_shownPreview);
+        Toast::showInfo(this, tr("Copied %1").arg(name));
+        return;
+    }
+    m_copyPendingId = m_asset.id;
+    m_copyPendingName = name;
+    Toast::showPending(this, tr("Copying %1…").arg(name), QStringLiteral(":/icons/copy.svg"));
+    m_client->loadPreview(m_asset.id); // Joins the viewer's request, or retries one that failed.
 }
 
 void MediaViewerDialog::updateFavoriteButton()

@@ -45,6 +45,7 @@ private:
     QCheckBox *m_closeToTray;
     QCheckBox *m_autoStart;
     QCheckBox *m_hoverPreview = nullptr;
+    QCheckBox *m_copyOriginal = nullptr;
     QCheckBox *m_compactGrid;
     QCheckBox *m_rememberViewed;
     QLabel *m_cacheSizeLabel;

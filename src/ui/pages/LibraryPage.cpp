@@ -2753,7 +2753,9 @@ void LibraryPage::copyAsset(const ImmichAsset &asset)
 
     m_currentAsset = asset;
     m_copyInFlightAssetId = asset.id;
-    m_copyFromPreview = false;
+    // Full size unless Settings say to copy the preview instead.
+    m_copyFromPreview = !AppSettings().loadPlayback().copyOriginal;
+    m_copyFellBack = false;
     m_copyWindow = QApplication::activeWindow();
     // Big originals or a slow server can take a while; don't let a paste beat it.
     Toast::showPending(m_copyWindow ? m_copyWindow.data() : this,
@@ -2761,7 +2763,10 @@ void LibraryPage::copyAsset(const ImmichAsset &asset)
                        QStringLiteral(":/icons/copy.svg"));
     m_status->setText(tr("Copying %1…")
                           .arg(asset.fileName.isEmpty() ? tr("photo") : asset.fileName));
-    m_client->fetchAssetOriginal(asset.id);
+    if (m_copyFromPreview)
+        m_client->loadPreview(asset.id);
+    else
+        m_client->fetchAssetOriginal(asset.id);
 }
 
 void LibraryPage::pasteFromClipboard()
@@ -2859,6 +2864,7 @@ void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByte
     if (!image.loadFromData(bytes)) {
         // Qt can't read every original (HEIC, RAW); Immich's preview is a JPEG.
         m_copyFromPreview = true;
+        m_copyFellBack = true;
         m_client->loadPreview(assetId);
         return;
     }
@@ -2868,7 +2874,7 @@ void LibraryPage::handleAssetOriginalFetched(const QString &assetId, const QByte
 void LibraryPage::finishCopy(const QString &assetId, const QImage &image,
                              const QByteArray &original, const QString &contentType)
 {
-    const bool fromPreview = m_copyFromPreview;
+    const bool fellBack = m_copyFellBack;
     m_copyInFlightAssetId.clear();
     m_copyFromPreview = false;
 
@@ -2889,7 +2895,7 @@ void LibraryPage::finishCopy(const QString &assetId, const QImage &image,
                              : tr("photo");
     m_status->setText(tr("Copied %1 to clipboard").arg(name));
     Toast::showInfo(m_copyWindow ? m_copyWindow.data() : this,
-                    fromPreview ? tr("Copied %1 (preview size)").arg(name)
+                    fellBack ? tr("Copied %1 (preview size)").arg(name)
                                 : tr("Copied %1").arg(name));
 }
 

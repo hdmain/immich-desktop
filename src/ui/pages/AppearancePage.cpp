@@ -249,6 +249,22 @@ AppearancePage::AppearancePage(ThemeManager *themeManager, ImmichClient *client,
     playbackLayout->addWidget(m_hoverPreview);
     playbackLayout->addWidget(hoverHelp);
     playbackLayout->addWidget(snapHelp);
+    m_copyOriginal = new QCheckBox(tr("Copy photos at full size"), playbackCard);
+    m_copyOriginal->setCursor(Qt::PointingHandCursor);
+    auto *copyOriginalHelp = new QLabel(
+        tr("Copy downloads the original from Immich, which can take a moment for big photos. "
+           "Turn it off to copy the preview you see in the viewer instead, which is instant."),
+        playbackCard);
+    copyOriginalHelp->setProperty("subheading", true);
+    copyOriginalHelp->setWordWrap(true);
+    playbackLayout->addWidget(m_copyOriginal);
+    playbackLayout->addWidget(copyOriginalHelp);
+    connect(m_copyOriginal, &QCheckBox::toggled, this, [](bool enabled) {
+        AppSettings settings;
+        PlaybackSettings playback = settings.loadPlayback();
+        playback.copyOriginal = enabled;
+        settings.savePlayback(playback);
+    });
     if (qEnvironmentVariableIsEmpty("SNAP") == false) {
         m_hoverPreview->setEnabled(false);
         m_hoverPreview->setToolTip(tr("Hover preview is unavailable in the Snap build."));
@@ -482,6 +498,8 @@ void AppearancePage::syncControls()
 
     const QSignalBlocker compactGridBlocker(m_compactGrid);
     m_compactGrid->setChecked(AppSettings().loadTimeline().compactGrid);
+    const QSignalBlocker copyOriginalBlocker(m_copyOriginal);
+    m_copyOriginal->setChecked(AppSettings().loadPlayback().copyOriginal);
     const QSignalBlocker rememberViewedBlocker(m_rememberViewed);
     m_rememberViewed->setChecked(AppSettings().loadTimeline().rememberViewed);
 }

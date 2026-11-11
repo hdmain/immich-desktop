@@ -35,6 +35,7 @@ public:
     void setTrashMode(bool trashMode);
 
 signals:
+    // Copy at full size, which the page does; the preview is copied right here.
     void copyRequested(const Aurora::ImmichAsset &asset);
     void downloadRequested(const Aurora::ImmichAsset &asset);
     void trashRequested(const Aurora::ImmichAsset &asset);
@@ -52,10 +53,14 @@ private:
     void step(int direction);
     void handleAssetsDeleted(const QStringList &assetIds);
     void updateFavoriteButton();
+    void copyPhoto();
 
     ImmichClient *m_client;
     NeighborProvider m_neighbors;
     ImmichAsset m_asset;
+    QPixmap m_shownPreview; // What's on screen; Copy puts it on the clipboard.
+    QString m_copyPendingId; // Copy was asked for before the preview arrived.
+    QString m_copyPendingName;
     ImmichAsset m_previousAsset;
     ImmichAsset m_nextAsset;
     int m_lastDirection = 1;

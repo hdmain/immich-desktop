@@ -320,7 +320,8 @@ private:
     QString m_newestAssetId;
     QString m_searchQuery;
     QString m_copyInFlightAssetId;
-    bool m_copyFromPreview = false; // The original couldn't be decoded (e.g. HEIC, RAW).
+    bool m_copyFromPreview = false; // Copying Immich's preview rather than the original.
+    bool m_copyFellBack = false; // The original couldn't be decoded (e.g. HEIC, RAW).
     QPointer<QWidget> m_copyWindow; // Where the copy was asked for, for its toast.
     QString m_downloadInfoPendingAssetId;
     QSet<QString> m_pasteTempFiles;

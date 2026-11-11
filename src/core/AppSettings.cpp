@@ -422,6 +422,8 @@ PlaybackSettings AppSettings::loadPlayback() const
     PlaybackSettings result;
     result.hoverPreviewEnabled =
         m_accountSettings->value(QStringLiteral("playback/hoverPreviewEnabled"), true).toBool();
+    result.copyOriginal =
+        m_accountSettings->value(QStringLiteral("playback/copyOriginal"), true).toBool();
     return result;
 }
 
@@ -429,6 +431,7 @@ void AppSettings::savePlayback(const PlaybackSettings &playback)
 {
     m_accountSettings->setValue(QStringLiteral("playback/hoverPreviewEnabled"),
                         playback.hoverPreviewEnabled);
+    m_accountSettings->setValue(QStringLiteral("playback/copyOriginal"), playback.copyOriginal);
     m_accountSettings->sync();
 }
 

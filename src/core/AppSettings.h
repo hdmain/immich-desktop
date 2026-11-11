@@ -58,6 +58,7 @@ struct WindowSettings {
 
 struct PlaybackSettings {
     bool hoverPreviewEnabled = true;
+    bool copyOriginal = true; // Copy the full-size original; off copies the viewer's preview.
 };
 
 struct TimelineSettings {
