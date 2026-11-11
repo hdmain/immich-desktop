@@ -194,22 +194,21 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      # snapcore/action-build installs LXD via the Snap Store. Store blips show up
-      # as "unable to contact snap store"; preinstall with retries so the action
-      # finds LXD already present.
-      - name: Install LXD (retry Snap Store flakes)
+      # Build on the runner (no LXD). snapcore/action-build always does
+      # `snap install lxd`, which dies whenever the Snap Store is unreachable.
+      - name: Install snapcraft
         run: |
           set -euo pipefail
-          if snap list lxd >/dev/null 2>&1; then
-            echo "LXD already installed"
-            exit 0
-          fi
           attempt=0
-          until sudo snap install lxd; do
+          until sudo snap install snapcraft --classic; do
             attempt=$((attempt + 1))
             if [ "$attempt" -ge 5 ]; then
-              echo "snap install lxd failed after $attempt attempts" >&2
-              exit 1
+              echo "Snap Store still down; installing snapcraft from PyPI" >&2
+              sudo apt-get update
+              sudo apt-get install -y pipx
+              pipx install snapcraft
+              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+              exit 0
             fi
             echo "Snap Store unreachable; retry $attempt in $((attempt * 15))s" >&2
             sleep $((attempt * 15))
@@ -217,7 +216,23 @@ jobs:
 
       - name: Build snap
         id: build
-        uses: snapcore/action-build@v1
+        env:
+          SNAPCRAFT_BUILD_INFO: "1"
+        run: |
+          set -euo pipefail
+          rm -f ./*.snap
+          SNAPCRAFT="$(command -v snapcraft || true)"
+          if [ -z "$SNAPCRAFT" ] && [ -x /snap/bin/snapcraft ]; then
+            SNAPCRAFT=/snap/bin/snapcraft
+          fi
+          sudo "$SNAPCRAFT" pack --destructive-mode
+          SNAP_PATH="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name '*.snap' | head -n 1)"
+          if [ -z "$SNAP_PATH" ]; then
+            echo "No .snap was produced" >&2
+            exit 1
+          fi
+          echo "snap=$SNAP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Built $(basename "$SNAP_PATH")"
 
       - name: Upload snap
         uses: actions/upload-artifact@v4
@@ -249,8 +264,14 @@ jobs:
   beta:
     name: Publish beta release
     # Rolling prerelease: every push to main rebuilds installers for all
-    # platforms and replaces the GitHub "beta" release.
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # platforms and replaces the GitHub "beta" release. Snap Store outages must
+    # not block Windows/Linux beta packages.
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      needs.windows.result == 'success' &&
+      needs.linux.result == 'success'
     needs:
       - windows
       - linux
@@ -266,6 +287,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+          # Snap may be missing when the Snap Store is down.
+          pattern: '*'
 
       - name: Write beta release notes
         shell: bash
