@@ -23,6 +23,8 @@ public:
                             const QString &iconResource = QStringLiteral(":/icons/circle-alert.svg"));
     // Something finished, like a download.
     static void showInfo(QWidget *window, const QString &message);
+    // Something short is on its way (e.g. a copy); stays until the next message replaces it.
+    static void showPending(QWidget *window, const QString &message, const QString &iconResource);
     // Stays until finishProgress(); update it with setProgressText(). The action
     // button runs action (e.g. cancel) and is hidden when actionText is empty.
     static void showProgress(QWidget *window, const QString &message, const QString &actionText,
