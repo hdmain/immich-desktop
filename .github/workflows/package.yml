@@ -194,6 +194,27 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      # snapcore/action-build installs LXD via the Snap Store. Store blips show up
+      # as "unable to contact snap store"; preinstall with retries so the action
+      # finds LXD already present.
+      - name: Install LXD (retry Snap Store flakes)
+        run: |
+          set -euo pipefail
+          if snap list lxd >/dev/null 2>&1; then
+            echo "LXD already installed"
+            exit 0
+          fi
+          attempt=0
+          until sudo snap install lxd; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 5 ]; then
+              echo "snap install lxd failed after $attempt attempts" >&2
+              exit 1
+            fi
+            echo "Snap Store unreachable; retry $attempt in $((attempt * 15))s" >&2
+            sleep $((attempt * 15))
+          done
+
       - name: Build snap
         id: build
         uses: snapcore/action-build@v1
