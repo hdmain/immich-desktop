@@ -8,7 +8,10 @@
 #include "ui/widgets/VideoPlayerWidget.h"
 #include "ui/widgets/ZoomPanWidget.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QKeySequence>
 #include <QPushButton>
 #include <QShortcut>
@@ -156,6 +159,16 @@ MediaViewerDialog::MediaViewerDialog(ThemeManager *themeManager, ImmichClient *c
     connect(favoriteShortcut, &QShortcut::activated, m_favoriteButton, [this] {
         if (m_favoriteButton->isVisible())
             m_favoriteButton->click();
+    });
+    // Ctrl+C copies the photo; text selected in the info panel keeps Ctrl+C for itself.
+    auto *copyShortcut = new QShortcut(QKeySequence::Copy, this);
+    connect(copyShortcut, &QShortcut::activated, this, [this] {
+        if (auto *label = qobject_cast<QLabel *>(focusWidget()); label && label->hasSelectedText()) {
+            QApplication::clipboard()->setText(label->selectedText());
+            return;
+        }
+        if (m_copyButton->isVisible())
+            emit copyRequested(m_asset);
     });
     auto *infoShortcut = new QShortcut(QKeySequence(Qt::Key_I), this);
     connect(infoShortcut, &QShortcut::activated, m_infoButton, &QPushButton::toggle);
