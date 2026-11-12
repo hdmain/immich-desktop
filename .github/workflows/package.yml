@@ -181,6 +181,9 @@ jobs:
   snap:
     name: Snap package (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    # Snap Store outages can't install snapcraft/LXD/core24. Don't fail the
+    # whole workflow on main/PRs; tagged releases still require a successful snap.
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:
@@ -194,24 +197,24 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      # Build on the runner (no LXD). snapcore/action-build always does
-      # `snap install lxd`, which dies whenever the Snap Store is unreachable.
+      # Build on the runner (no LXD). Needs the Snap Store only for snapcraft
+      # itself (and later core24 / gnome content snaps during the pack).
       - name: Install snapcraft
         run: |
           set -euo pipefail
+          if snap list snapcraft >/dev/null 2>&1; then
+            echo "snapcraft already installed"
+            exit 0
+          fi
           attempt=0
           until sudo snap install snapcraft --classic; do
             attempt=$((attempt + 1))
-            if [ "$attempt" -ge 5 ]; then
-              echo "Snap Store still down; installing snapcraft from PyPI" >&2
-              sudo apt-get update
-              sudo apt-get install -y pipx
-              pipx install snapcraft
-              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-              exit 0
+            if [ "$attempt" -ge 4 ]; then
+              echo "::error::Snap Store unreachable after $attempt tries; cannot install snapcraft."
+              exit 1
             fi
-            echo "Snap Store unreachable; retry $attempt in $((attempt * 15))s" >&2
-            sleep $((attempt * 15))
+            echo "Snap Store unreachable; retry $attempt in $((attempt * 20))s" >&2
+            sleep $((attempt * 20))
           done
 
       - name: Build snap
@@ -221,11 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f ./*.snap
-          SNAPCRAFT="$(command -v snapcraft || true)"
-          if [ -z "$SNAPCRAFT" ] && [ -x /snap/bin/snapcraft ]; then
-            SNAPCRAFT=/snap/bin/snapcraft
-          fi
-          sudo "$SNAPCRAFT" pack --destructive-mode
+          sudo /snap/bin/snapcraft pack --destructive-mode
           SNAP_PATH="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name '*.snap' | head -n 1)"
           if [ -z "$SNAP_PATH" ]; then
             echo "No .snap was produced" >&2
