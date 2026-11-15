@@ -113,20 +113,23 @@ Plans can shift, track progress and ideas in
 
 ### Shipped
 
-- Library timeline with search, Years view, zoomable grids, progressive month loading, preview, trash, upload & download
+- Library timeline with search, Years view, zoomable grids, progressive month loading, jump-to-top, preview, trash, upload & download
 - Shared viewer with photo/video navigation and an info panel (people, places, albums, tags, folder, EXIF)
+- Copy a photo from the viewer (Ctrl+C) at full size, or the on-screen preview
 - Sidebar sections for people, favorites, archive, albums, tags, folders, and trash (view-only for now)
 - Favorites: add or remove from the viewer, a thumbnail's heart, or the right-click menu
 - Bulk actions: multi-select open, download (with progress and Cancel), favorite, archive, trash, delete, and restore
 - Sorting per view (date taken/added, size, rating, relevance, folder file orders), Shuffle, and a local Recently viewed list (can be turned off)
 - Explore: people and places as in-page galleries (Library-style person/place views)
 - Folder Sync: multiple watched local folders, LAN-only upload option, unsaved/saving/error badges in Library
+- User profiles: switch accounts; each keeps its own server, caches, upload queue, and folder sync
 - Share links with optional password; mTLS client certificates for reverse proxies
 - Custom HTTP headers for reverse-proxy authentication (e.g. Cloudflare Access)
 - Video streaming player and hover preview
-- Offline browsing via local disk cache + queued uploads when offline
+- Offline browsing via local disk cache + queued uploads when offline; optional download of every library thumbnail
 - Themes (light / dark / custom), collapsible sidebar, system tray, autostart, single-instance
-- Packaging: Windows installers, `.deb`, AppImage, Snap Store (`amd64` + `arm64`), rolling beta on every `main` push
+- Translations follow the system language or a choice in Appearance, and update from GitHub
+- Packaging: Windows installers, `.deb`, AppImage, Snap Store (`amd64` + `arm64`), Arch Linux AUR, rolling beta on every `main` push
 
 ### Near term
 
@@ -145,7 +148,6 @@ Plans can shift, track progress and ideas in
 
 ### Later
 
-- Multi-account / multi-server profiles
 - Full-resolution offline packs for selected albums
 - External editor / “open with” workflows
 - Wider Immich API parity as the server evolves
@@ -263,3 +265,9 @@ Each profile keeps its own server/local URLs, API key, HTTP headers, client cert
 ## License
 
 MIT - see [LICENSE.txt](LICENSE.txt).
+
+<p align="center">
+  <a href="https://alfahost.eu">
+    <img src="docs/alfahost-dark.png" alt="Powered by ALFAHOST.EU" width="560">
+  </a>
+</p>
