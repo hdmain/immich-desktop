@@ -1,6 +1,7 @@
 #include "core/ImmichClient.h"
 
 #include "core/CustomHeaders.h"
+#include "core/JxlDecoder.h"
 #include "core/TlsConfig.h"
 #include "core/VideoStreamServer.h"
 
@@ -199,13 +200,13 @@ QList<ImmichAsset> assetsFromBucketBody(const QByteArray &body, bool timelineOnl
     assets.reserve(ids.size());
     for (int i = 0; i < ids.size(); ++i) {
         if (timelineOnly) {
-            if (at(isTrashed, i).toBool())
-                continue;
-            if (at(status, i).toString(QStringLiteral("active")) != QStringLiteral("active"))
-                continue;
-            if (at(visibility, i).toString(QStringLiteral("timeline")) !=
-                QStringLiteral("timeline"))
-                continue;
+        if (at(isTrashed, i).toBool())
+            continue;
+        if (at(status, i).toString(QStringLiteral("active")) != QStringLiteral("active"))
+            continue;
+        if (at(visibility, i).toString(QStringLiteral("timeline")) !=
+            QStringLiteral("timeline"))
+            continue;
         }
 
         ImmichAsset asset;
@@ -1056,7 +1057,7 @@ void ImmichClient::searchAssets(int page, int pageSize, bool pollOnly, const QSt
             body.insert(mode, trimmedQuery);
         // Callers may pick an order (see searchOrder); newest first otherwise.
         if (!body.contains(QStringLiteral("order")) && !body.contains(QStringLiteral("orderBy")))
-            body.insert(QStringLiteral("order"), QStringLiteral("desc"));
+        body.insert(QStringLiteral("order"), QStringLiteral("desc"));
         body.insert(QStringLiteral("withStacked"), true);
     }
     const bool filterShape = body.contains(QStringLiteral("orderBy"));
@@ -1399,7 +1400,7 @@ void ImmichClient::searchAllPages(const QJsonObject &filter,
                     const QByteArray body = reply->readAll();
                     reply->deleteLater();
                     if (generation != m_collectionGeneration)
-                        return;
+        return;
                     if (reply->error() != QNetworkReply::NoError) {
                         emit requestFailed(tr("Load explore"), errorMessage(reply, body));
                         *fetchPage = nullptr; // Break the self-reference.
@@ -1582,9 +1583,9 @@ void ImmichClient::searchViewedFirst(
         body = flatFilter;
         body.insert(QStringLiteral("page"), history.isEmpty() ? page : page - 1);
         body.insert(QStringLiteral("size"), 80);
-        body.insert(QStringLiteral("order"), QStringLiteral("desc"));
-        body.insert(QStringLiteral("withExif"), true);
-        body.insert(QStringLiteral("withStacked"), true);
+    body.insert(QStringLiteral("order"), QStringLiteral("desc"));
+    body.insert(QStringLiteral("withExif"), true);
+    body.insert(QStringLiteral("withStacked"), true);
     }
     const bool viewedPage = body.contains(QStringLiteral("filter"));
     QNetworkRequest request = authenticatedRequest(apiUrl(QStringLiteral("/search/metadata")));
@@ -1690,6 +1691,60 @@ void ImmichClient::setAlbumOrder(const QString &albumId, bool ascending)
             emit albumOrderFailed(albumId, errorMessage(reply, body));
         else
             emit albumOrderSaved(albumId, ascending);
+    });
+}
+
+void ImmichClient::addAssetsToAlbum(const QString &albumId, const QStringList &assetIds)
+{
+    if (!ensureConfigured(tr("Add to album")) || !isValidImmichId(albumId))
+        return;
+
+    QStringList ids;
+    ids.reserve(assetIds.size());
+    for (const QString &id : assetIds) {
+        const QString trimmed = id.trimmed();
+        if (isValidImmichId(trimmed))
+            ids.append(trimmed);
+    }
+    if (ids.isEmpty()) {
+        emit addAssetsToAlbumFailed(albumId, assetIds,
+                                    tr("No valid asset identifiers were provided."));
+        return;
+    }
+
+    QJsonArray idArray;
+    for (const QString &id : ids)
+        idArray.append(id);
+    const QJsonObject body{{QStringLiteral("ids"), idArray}};
+
+    QNetworkRequest request =
+        authenticatedRequest(apiUrl(QStringLiteral("/albums/%1/assets").arg(albumId)));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    auto *reply = m_network->sendCustomRequest(request, QByteArrayLiteral("PUT"),
+                                               QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, albumId, ids] {
+        const QByteArray body = reply->readAll();
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit addAssetsToAlbumFailed(albumId, ids, errorMessage(reply, body));
+            return;
+        }
+        // Immich returns BulkIdResponseDto[]; "duplicate" means already in the album.
+        for (const QJsonValue &value : QJsonDocument::fromJson(body).array()) {
+            const QJsonObject object = value.toObject();
+            if (object.value(QStringLiteral("success")).toBool(true))
+                continue;
+            const QString error = object.value(QStringLiteral("error")).toString();
+            if (!error.isEmpty() &&
+                error.compare(QStringLiteral("duplicate"), Qt::CaseInsensitive) != 0) {
+                emit addAssetsToAlbumFailed(
+                    albumId, ids,
+                    tr("Could not add to album: %1").arg(error));
+                return;
+            }
+        }
+        emit assetsAddedToAlbum(albumId, ids);
     });
 }
 
@@ -1886,7 +1941,7 @@ void ImmichClient::fetchBrowseList(const QString &kind, const QUrl &url,
                 const QByteArray body = reply->readAll();
                 if (reply->error() == QNetworkReply::NoError) {
                     handle(body);
-                } else {
+    } else {
                     const int status =
                         reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                     emit browseListFailed(kind, status == 403);
@@ -2027,6 +2082,8 @@ QImage ImmichClient::decodeImage(const QByteArray &bytes, int maximumDimension) 
     }
 
     QImage image = reader.read();
+    if (image.isNull() && looksLikeJxl(bytes))
+        image = decodeJxl(bytes, maximumDimension);
     if (!image.isNull() &&
         (image.width() > maximumDimension || image.height() > maximumDimension)) {
         image = image.scaled(maximumDimension, maximumDimension,
@@ -2452,7 +2509,7 @@ bool ImmichClient::startUpload(const QString &filePath)
                 m_uploadQueueStore.remove(filePath);
                 persistUploadQueue();
                 const QString detail =
-                    tr("%1: %2").arg(QFileInfo(filePath).fileName(),
+                                   tr("%1: %2").arg(QFileInfo(filePath).fileName(),
                                      errorMessage(reply, body));
                 emit assetUploadFailed(filePath, detail);
                 emit requestFailed(tr("Upload"), detail);
@@ -2676,7 +2733,7 @@ void ImmichClient::requestAssetDetails(const QString &assetId)
             emit assetAlbumsFailed(assetId, status == 403);
         }
         albumsReply->deleteLater();
-    });
+            });
 }
 
 void ImmichClient::fetchAssetOriginal(const QString &assetId)
@@ -3231,7 +3288,7 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         };
 
         QByteArray bytes = fetchSize(usesPreview ? QStringLiteral("preview")
-                                                 : QStringLiteral("thumbnail"),
+                                         : QStringLiteral("thumbnail"),
                                      true);
         if (bytes.isEmpty())
             return;
@@ -3251,7 +3308,13 @@ void ImmichClient::loadImageAsync(const QString &assetId, const QString &resultS
         }
 
         if (image.isNull()) {
-            finishFail(QObject::tr("Unsupported image format."));
+            if (looksLikeJxl(bytes) && !jxlDecodingAvailable()) {
+                finishFail(QObject::tr(
+                    "JPEG XL image, but this build has no JXL decoder. "
+                    "Install libjxl or use a package that includes JPEG XL support."));
+            } else {
+                finishFail(QObject::tr("Unsupported image format."));
+            }
             return;
         }
 

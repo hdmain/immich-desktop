@@ -86,6 +86,7 @@ parts:
       - qt6-multimedia-dev
       - qt6-svg-dev
       - qt6-image-formats-plugins
+      - libjxl-dev
     stage-packages:
       - libqt6core6t64
       - libqt6gui6t64
@@ -100,6 +101,7 @@ parts:
       - qt6-wayland
       - qt6-gtk-platformtheme
       - qt6-image-formats-plugins
+      - libjxl0.7
       - gstreamer1.0-plugins-base
       - gstreamer1.0-plugins-good
       - gstreamer1.0-plugins-bad

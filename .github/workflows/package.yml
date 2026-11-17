@@ -118,6 +118,7 @@ jobs:
             qt6-translations-l10n \
             qt6-image-formats-plugins \
             qt6-multimedia-dev \
+            libjxl-dev \
             wget
 
       - name: Configure

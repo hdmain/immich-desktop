@@ -529,12 +529,31 @@ FolderSyncSettings AppSettings::loadFolderSync() const
     result.enabled = m_accountSettings->value(QStringLiteral("folderSync/enabled"), false).toBool();
     result.localNetworkOnly =
         m_accountSettings->value(QStringLiteral("folderSync/localNetworkOnly"), false).toBool();
-    if (m_accountSettings->contains(QStringLiteral("folderSync/folderPaths")))
-        result.folderPaths = m_accountSettings->value(QStringLiteral("folderSync/folderPaths")).toStringList();
-    else {
-        const QString legacyFolder = m_accountSettings->value(QStringLiteral("folderSync/folderPath")).toString().trimmed();
-        if (!legacyFolder.isEmpty())
-            result.folderPaths.append(legacyFolder);
+    if (m_accountSettings->contains(QStringLiteral("folderSync/folders"))) {
+        const QVariantList entries = m_accountSettings->value(QStringLiteral("folderSync/folders")).toList();
+        for (const QVariant &entry : entries) {
+            const QVariantMap map = entry.toMap();
+            FolderSyncFolder folder;
+            folder.path = map.value(QStringLiteral("path")).toString().trimmed();
+            folder.albumId = map.value(QStringLiteral("albumId")).toString().trimmed();
+            if (!folder.path.isEmpty())
+                result.folders.append(folder);
+        }
+    } else {
+        QStringList legacyPaths;
+        if (m_accountSettings->contains(QStringLiteral("folderSync/folderPaths")))
+            legacyPaths = m_accountSettings->value(QStringLiteral("folderSync/folderPaths")).toStringList();
+        else {
+            const QString legacyFolder =
+                m_accountSettings->value(QStringLiteral("folderSync/folderPath")).toString().trimmed();
+            if (!legacyFolder.isEmpty())
+                legacyPaths.append(legacyFolder);
+        }
+        for (const QString &path : legacyPaths) {
+            if (path.trimmed().isEmpty())
+                continue;
+            result.folders.append({path.trimmed(), {}});
+        }
     }
     return result;
 }
@@ -544,7 +563,16 @@ void AppSettings::saveFolderSync(const FolderSyncSettings &folderSync)
     m_accountSettings->setValue(QStringLiteral("folderSync/enabled"), folderSync.enabled);
     m_accountSettings->setValue(QStringLiteral("folderSync/localNetworkOnly"),
                         folderSync.localNetworkOnly);
-    m_accountSettings->setValue(QStringLiteral("folderSync/folderPaths"), folderSync.folderPaths);
+    QVariantList entries;
+    entries.reserve(folderSync.folders.size());
+    for (const FolderSyncFolder &folder : folderSync.folders) {
+        QVariantMap map;
+        map.insert(QStringLiteral("path"), folder.path);
+        map.insert(QStringLiteral("albumId"), folder.albumId);
+        entries.append(map);
+    }
+    m_accountSettings->setValue(QStringLiteral("folderSync/folders"), entries);
+    m_accountSettings->remove(QStringLiteral("folderSync/folderPaths"));
     m_accountSettings->remove(QStringLiteral("folderSync/folderPath"));
     m_accountSettings->sync();
 }

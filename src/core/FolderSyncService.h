@@ -52,6 +52,9 @@ private slots:
     void handleUploadProgress(const QString &filePath, qint64 bytesSent, qint64 bytesTotal);
     void handleAssetUploaded(const QString &filePath, const QString &assetId, bool duplicate);
     void handleUploadFailed(const QString &filePath, const QString &message);
+    void handleAssetsAddedToAlbum(const QString &albumId, const QStringList &assetIds);
+    void handleAddAssetsToAlbumFailed(const QString &albumId, const QStringList &assetIds,
+                                      const QString &message);
     void handleOnlineChanged(bool online);
     void handleConfigurationChanged(bool configured);
     void handleActiveEndpointChanged(bool usingLocal, const QString &activeUrl);
@@ -70,6 +73,7 @@ private:
     static QString localAssetId(const QString &path);
     static ImmichAsset assetFromLocalFile(const QString &path);
     bool isUnderSyncFolder(const QString &path) const;
+    QString albumIdForPath(const QString &path) const;
     bool alreadySynced(const QString &path) const;
     bool canUploadNow() const;
     void markSynced(const QString &path);
@@ -92,6 +96,8 @@ private:
     QTimer *m_stabilityTimer = nullptr;
     QHash<QString, PendingFile> m_pending;
     QSet<QString> m_queued;
+    // Uploaded assets waiting to be attached to a sync-folder album.
+    QHash<QString, QString> m_pendingAlbumByAssetId;
     QHash<QString, QString> m_syncedFingerprints;
     QHash<QString, QString> m_errors;
     QList<ImmichAsset> m_libraryPending;

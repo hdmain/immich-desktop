@@ -71,10 +71,27 @@ struct DownloadSettings {
     QString lastDirectory;
 };
 
+struct FolderSyncFolder {
+    QString path;
+    // Empty = upload to the library only; otherwise Immich album id.
+    QString albumId;
+
+    bool operator==(const FolderSyncFolder &other) const = default;
+};
+
 struct FolderSyncSettings {
     bool enabled = false;
     bool localNetworkOnly = false;
-    QStringList folderPaths;
+    QList<FolderSyncFolder> folders;
+
+    QStringList folderPaths() const
+    {
+        QStringList paths;
+        paths.reserve(folders.size());
+        for (const FolderSyncFolder &folder : folders)
+            paths.append(folder.path);
+        return paths;
+    }
 };
 
 struct SupportSettings {

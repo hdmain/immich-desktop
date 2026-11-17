@@ -88,6 +88,8 @@ public:
     bool remembersViewed() const { return m_rememberViewed; }
     // Saves an album's own newest/oldest-first order in Immich (album.update).
     void setAlbumOrder(const QString &albumId, bool ascending);
+    // Puts uploaded assets into an album (albumAsset.create). Empty ids are ignored.
+    void addAssetsToAlbum(const QString &albumId, const QStringList &assetIds);
     void loadAlbums();
     void loadTags();
     void loadFolderPaths();
@@ -148,6 +150,9 @@ signals:
                             const QList<Aurora::ImmichAsset> &assets, bool more);
     void albumOrderSaved(const QString &albumId, bool ascending);
     void albumOrderFailed(const QString &albumId, const QString &message);
+    void assetsAddedToAlbum(const QString &albumId, const QStringList &assetIds);
+    void addAssetsToAlbumFailed(const QString &albumId, const QStringList &assetIds,
+                                const QString &message);
     void activeEndpointChanged(bool usingLocal, const QString &activeUrl);
     void onlineChanged(bool online);
     void connectionTested(bool success, const QString &message);

@@ -56,7 +56,7 @@ SettingsPage::SettingsPage(ThemeManager *themeManager, UpdateManager *updateMana
     auto *connection = new ConnectionPage(immichClient, m_sections);
     connect(connection, &ConnectionPage::profilesChanged, this, &SettingsPage::profilesChanged);
     m_sections->addWidget(connection);
-    m_sections->addWidget(new SyncFolderPage(folderSync, themeManager, m_sections));
+    m_sections->addWidget(new SyncFolderPage(folderSync, immichClient, themeManager, m_sections));
     auto *appearance = new AppearancePage(themeManager, immichClient, m_sections);
     connect(appearance, &AppearancePage::languageChangeRequested,
             this, &SettingsPage::languageChangeRequested);

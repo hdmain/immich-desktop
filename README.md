@@ -192,7 +192,8 @@ _Auto-generated from `translations/immich_*.ts`. Run `python tools/update_transl
 ## Building from source
 
 Requires CMake 3.21+ and Qt 6.2+ (Core, Gui, Widgets, Network, Svg, Multimedia, LinguistTools). Install
-`qt6-imageformats` (or your distro's equivalent) at runtime so WebP thumbnails can be decoded.
+`qt6-imageformats` (or your distro's equivalent) at runtime so WebP thumbnails can be decoded. Optional
+`libjxl` / `libjxl-dev` enables JPEG XL thumbnail and preview decoding (Immich may serve JXL).
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -205,6 +206,7 @@ Options for distribution packages:
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `IMMICH_ENABLE_UPDATER` | `ON` | Built-in update checks and installs; turn off when a package manager handles updates |
+| `IMMICH_ENABLE_JXL` | `ON` | Decode JPEG XL with libjxl when the library is found at configure time |
 | `IMMICH_EXECUTABLE_NAME` | `immich` | Name of the installed executable (the `.desktop` file follows it) |
 | `IMMICH_BUILD_INFO` | empty | Shown after the version, e.g. `AUR` or `beta 1a2b3c4` → "v0.2.4 (AUR)" |
 

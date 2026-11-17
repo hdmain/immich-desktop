@@ -21,6 +21,7 @@ set(IMMICH_GITHUB_REPO "hdmain/immich-desktop" CACHE STRING
     "GitHub repository used for in-app update checks")
 # Distribution packages usually manage updates and naming themselves.
 option(IMMICH_ENABLE_UPDATER "Check GitHub for new releases and offer to install them" ON)
+option(IMMICH_ENABLE_JXL "Decode JPEG XL thumbnails/previews with libjxl when available" ON)
 set(IMMICH_EXECUTABLE_NAME "immich" CACHE STRING "File name of the installed executable")
 set(IMMICH_BUILD_INFO "" CACHE STRING
     "Shown after the version, e.g. the package source or commit (\"AUR\", \"beta 1a2b3c4\")")
@@ -43,6 +44,8 @@ set(IMMICH_SOURCES
     src/core/FolderSyncService.h
     src/core/ImmichClient.cpp
     src/core/ImmichClient.h
+    src/core/JxlDecoder.cpp
+    src/core/JxlDecoder.h
     src/core/Localization.cpp
     src/core/Localization.h
     src/core/TranslationUpdater.cpp
@@ -237,6 +240,39 @@ target_link_libraries(immich_app PUBLIC
     Qt6::Svg
     Qt6::Widgets
 )
+
+if(IMMICH_ENABLE_JXL)
+    find_package(PkgConfig QUIET)
+    set(IMMICH_HAS_LIBJXL FALSE)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBJXL QUIET IMPORTED_TARGET libjxl libjxl_threads)
+        if(TARGET PkgConfig::LIBJXL)
+            target_link_libraries(immich_app PUBLIC PkgConfig::LIBJXL)
+            target_compile_definitions(immich_app PUBLIC IMMICH_HAS_LIBJXL=1)
+            set(IMMICH_HAS_LIBJXL TRUE)
+            message(STATUS "JPEG XL: enabled (libjxl via pkg-config)")
+        endif()
+    endif()
+    if(NOT IMMICH_HAS_LIBJXL)
+        find_path(LIBJXL_INCLUDE_DIR jxl/decode.h)
+        find_library(LIBJXL_LIBRARY NAMES jxl)
+        find_library(LIBJXL_THREADS_LIBRARY NAMES jxl_threads)
+        if(LIBJXL_INCLUDE_DIR AND LIBJXL_LIBRARY)
+            target_include_directories(immich_app PUBLIC "${LIBJXL_INCLUDE_DIR}")
+            target_link_libraries(immich_app PUBLIC "${LIBJXL_LIBRARY}")
+            if(LIBJXL_THREADS_LIBRARY)
+                target_link_libraries(immich_app PUBLIC "${LIBJXL_THREADS_LIBRARY}")
+            endif()
+            target_compile_definitions(immich_app PUBLIC IMMICH_HAS_LIBJXL=1)
+            set(IMMICH_HAS_LIBJXL TRUE)
+            message(STATUS "JPEG XL: enabled (libjxl)")
+        else()
+            message(STATUS "JPEG XL: disabled (libjxl not found; thumbnails may show as unsupported)")
+        endif()
+    endif()
+else()
+    message(STATUS "JPEG XL: disabled (IMMICH_ENABLE_JXL=OFF)")
+endif()
 
 if(WIN32)
     target_link_libraries(immich_app PUBLIC crypt32 dwmapi Psapi)

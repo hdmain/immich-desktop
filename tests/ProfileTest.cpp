@@ -50,7 +50,7 @@ private slots:
         QCOMPARE(AppSettings::profiles().size(), 1);
         QCOMPARE(personal.loadImmichConnection().apiKey, QStringLiteral("old-account-key"));
         QCOMPARE(personal.loadImmichConnection().localServerUrl, QStringLiteral("http://local.example"));
-        QCOMPARE(personal.loadFolderSync().folderPaths, QStringList{"old-folder"});
+        QCOMPARE(personal.loadFolderSync().folderPaths(), QStringList{"old-folder"});
         QVERIFY(personal.loadFolderSync().enabled);
         QVERIFY(!legacy.contains("immich/apiKey"));
         const QString personalId = AppSettings::activeProfileId();
@@ -61,7 +61,7 @@ private slots:
         AppSettings work;
         QVERIFY(!work.loadImmichConnection().isConfigured());
         QVERIFY(!work.loadFolderSync().enabled);
-        QVERIFY(work.loadFolderSync().folderPaths.isEmpty());
+        QVERIFY(work.loadFolderSync().folders.isEmpty());
         QVERIFY(work.loadAppearance().minimalistUi); // Appearance is application-wide.
         QVERIFY(AppSettings::profileCacheDirectory() != personalCache);
         auto connection = work.loadImmichConnection();
@@ -77,8 +77,11 @@ private slots:
         connection.rememberKeyPassword = true;
         work.saveImmichConnection(connection);
         FolderSyncSettings sync;
-        sync.folderPaths = {QStringLiteral("work-folder")};
+        sync.folders = {{QStringLiteral("work-folder"), QStringLiteral("album-1")}};
         work.saveFolderSync(sync);
+        QCOMPARE(AppSettings().loadFolderSync().folders.size(), 1);
+        QCOMPARE(AppSettings().loadFolderSync().folders.first().path, QStringLiteral("work-folder"));
+        QCOMPARE(AppSettings().loadFolderSync().folders.first().albumId, QStringLiteral("album-1"));
         QCOMPARE(AppSettings().loadImmichConnection().apiKey, connection.apiKey);
         QCOMPARE(AppSettings().loadImmichConnection().customHeaders, connection.customHeaders);
         QCOMPARE(AppSettings().loadImmichConnection().clientCertPath, connection.clientCertPath);
@@ -90,7 +93,7 @@ private slots:
         QVERIFY(AppSettings().loadImmichConnection().keyPassword.isEmpty());
         // An existing settings object stays bound to its original profile.
         QCOMPARE(personal.loadImmichConnection().apiKey, QStringLiteral("old-account-key"));
-        QCOMPARE(personal.loadFolderSync().folderPaths, QStringList{"old-folder"});
+        QCOMPARE(personal.loadFolderSync().folderPaths(), QStringList{"old-folder"});
         QVERIFY(AppSettings::setDefaultProfile(workId));
         QVERIFY(AppSettings::setActiveProfile(personalId));
         QCOMPARE(AppSettings::defaultProfileId(), workId);

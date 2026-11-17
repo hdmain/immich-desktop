@@ -55,6 +55,10 @@ FolderSyncService::FolderSyncService(ImmichClient *client, QObject *parent)
             &FolderSyncService::handleAssetUploaded);
     connect(m_client, &ImmichClient::assetUploadFailed, this,
             &FolderSyncService::handleUploadFailed);
+    connect(m_client, &ImmichClient::assetsAddedToAlbum, this,
+            &FolderSyncService::handleAssetsAddedToAlbum);
+    connect(m_client, &ImmichClient::addAssetsToAlbumFailed, this,
+            &FolderSyncService::handleAddAssetsToAlbumFailed);
     connect(m_client, &ImmichClient::onlineChanged, this,
             &FolderSyncService::handleOnlineChanged);
     connect(m_client, &ImmichClient::configurationChanged, this,
@@ -82,24 +86,31 @@ FolderSyncSettings FolderSyncService::settings() const
 void FolderSyncService::setSettings(const FolderSyncSettings &settings)
 {
     FolderSyncSettings normalized = settings;
-    normalized.folderPaths.clear();
-    for (const auto &folder : settings.folderPaths) {
-        if (folder.trimmed().isEmpty())
+    normalized.folders.clear();
+    for (const FolderSyncFolder &folder : settings.folders) {
+        if (folder.path.trimmed().isEmpty())
             continue;
-        const QFileInfo info(QDir::cleanPath(folder.trimmed()));
-        const QString path = info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath();
+        const QFileInfo info(QDir::cleanPath(folder.path.trimmed()));
+        const QString path =
+            info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath();
+        bool duplicate = false;
+        for (const FolderSyncFolder &existing : normalized.folders) {
 #ifdef Q_OS_WIN
-        const bool duplicate = normalized.folderPaths.contains(path, Qt::CaseInsensitive);
+            if (existing.path.compare(path, Qt::CaseInsensitive) == 0) {
 #else
-        const bool duplicate = normalized.folderPaths.contains(path);
+            if (existing.path == path) {
 #endif
+                duplicate = true;
+                break;
+            }
+        }
         if (!duplicate)
-            normalized.folderPaths.append(path);
+            normalized.folders.append({path, folder.albumId.trimmed()});
     }
 
     const bool changed = normalized.enabled != m_settings.enabled ||
                          normalized.localNetworkOnly != m_settings.localNetworkOnly ||
-                         normalized.folderPaths != m_settings.folderPaths;
+                         normalized.folders != m_settings.folders;
     m_settings = normalized;
     m_store.saveFolderSync(m_settings);
     if (changed) {
@@ -109,6 +120,12 @@ void FolderSyncService::setSettings(const FolderSyncSettings &settings)
             it = isUnderSyncFolder(*it) ? std::next(it) : m_queued.erase(it);
         for (auto it = m_errors.begin(); it != m_errors.end();)
             it = isUnderSyncFolder(it.key()) ? std::next(it) : m_errors.erase(it);
+        for (auto it = m_pendingAlbumByAssetId.begin(); it != m_pendingAlbumByAssetId.end();) {
+            if (isUnderSyncFolder(it.value()))
+                ++it;
+            else
+                it = m_pendingAlbumByAssetId.erase(it);
+        }
         rebuildWatcher();
         emit settingsChanged(m_settings);
         refreshStatus();
@@ -155,7 +172,7 @@ QList<ImmichAsset> FolderSyncService::pendingLibraryAssets() const
 
 void FolderSyncService::scanNow()
 {
-    if (!m_settings.enabled || m_settings.folderPaths.isEmpty()) {
+    if (!m_settings.enabled || m_settings.folders.isEmpty()) {
         refreshStatus();
         publishLibraryPending();
         return;
@@ -209,16 +226,24 @@ void FolderSyncService::handleUploadProgress(const QString &filePath, qint64, qi
     publishLibraryPending();
 }
 
-void FolderSyncService::handleAssetUploaded(const QString &filePath, const QString &,
+void FolderSyncService::handleAssetUploaded(const QString &filePath, const QString &assetId,
                                             bool)
 {
     if (!isUnderSyncFolder(filePath))
         return;
-    m_queued.remove(filePath);
     m_pending.remove(filePath);
     m_errors.remove(filePath);
-    markSynced(filePath);
     m_lastUploadName = QFileInfo(filePath).fileName();
+    const QString albumId = albumIdForPath(filePath);
+    if (albumId.isEmpty() || assetId.isEmpty()) {
+        m_queued.remove(filePath);
+        markSynced(filePath);
+        refreshStatus();
+        publishLibraryPending();
+        return;
+    }
+    m_pendingAlbumByAssetId.insert(assetId, QFileInfo(filePath).absoluteFilePath());
+    m_client->addAssetsToAlbum(albumId, {assetId});
     refreshStatus();
     publishLibraryPending();
 }
@@ -229,6 +254,42 @@ void FolderSyncService::handleUploadFailed(const QString &filePath, const QStrin
         return;
     m_queued.remove(filePath);
     markError(filePath, message);
+    refreshStatus();
+    publishLibraryPending();
+}
+
+void FolderSyncService::handleAssetsAddedToAlbum(const QString &, const QStringList &assetIds)
+{
+    bool touched = false;
+    for (const QString &assetId : assetIds) {
+        if (!m_pendingAlbumByAssetId.contains(assetId))
+            continue;
+        const QString filePath = m_pendingAlbumByAssetId.take(assetId);
+        m_queued.remove(filePath);
+        m_errors.remove(filePath);
+        markSynced(filePath);
+        touched = true;
+    }
+    if (!touched)
+        return;
+    refreshStatus();
+    publishLibraryPending();
+}
+
+void FolderSyncService::handleAddAssetsToAlbumFailed(const QString &, const QStringList &assetIds,
+                                                    const QString &message)
+{
+    bool touched = false;
+    for (const QString &assetId : assetIds) {
+        if (!m_pendingAlbumByAssetId.contains(assetId))
+            continue;
+        const QString filePath = m_pendingAlbumByAssetId.take(assetId);
+        m_queued.remove(filePath);
+        markError(filePath, message);
+        touched = true;
+    }
+    if (!touched)
+        return;
     refreshStatus();
     publishLibraryPending();
 }
@@ -378,8 +439,8 @@ ImmichAsset FolderSyncService::assetFromLocalFile(const QString &path)
 bool FolderSyncService::isUnderSyncFolder(const QString &path) const
 {
     const QString absolute = QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath());
-    for (const QString &folder : m_settings.folderPaths) {
-        QString prefix = QDir::fromNativeSeparators(QFileInfo(folder).absoluteFilePath());
+    for (const FolderSyncFolder &folder : m_settings.folders) {
+        QString prefix = QDir::fromNativeSeparators(QFileInfo(folder.path).absoluteFilePath());
         if (!prefix.endsWith(u'/'))
             prefix += u'/';
 #ifdef Q_OS_WIN
@@ -390,6 +451,30 @@ bool FolderSyncService::isUnderSyncFolder(const QString &path) const
             return true;
     }
     return false;
+}
+
+QString FolderSyncService::albumIdForPath(const QString &path) const
+{
+    const QString absolute = QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath());
+    QString bestAlbum;
+    int bestLength = -1;
+    for (const FolderSyncFolder &folder : m_settings.folders) {
+        QString prefix = QDir::fromNativeSeparators(QFileInfo(folder.path).absoluteFilePath());
+        if (!prefix.endsWith(u'/'))
+            prefix += u'/';
+#ifdef Q_OS_WIN
+        const bool match = absolute.startsWith(prefix, Qt::CaseInsensitive);
+#else
+        const bool match = absolute.startsWith(prefix);
+#endif
+        if (!match)
+            continue;
+        if (prefix.size() > bestLength) {
+            bestLength = prefix.size();
+            bestAlbum = folder.albumId;
+        }
+    }
+    return bestAlbum;
 }
 
 bool FolderSyncService::alreadySynced(const QString &path) const
@@ -441,7 +526,8 @@ void FolderSyncService::saveSyncedState() const
         files.insert(it.key(), it.value());
 
     QJsonObject root;
-    root.insert(QStringLiteral("folders"), QJsonArray::fromStringList(m_settings.folderPaths));
+    root.insert(QStringLiteral("folders"),
+                QJsonArray::fromStringList(m_settings.folderPaths()));
     root.insert(QStringLiteral("files"), files);
 
     const QString path = m_stateFilePath;
@@ -463,14 +549,15 @@ void FolderSyncService::rebuildWatcher()
         m_watcher->removePaths(files);
 
     m_scanTimer->stop();
-    if (!m_settings.enabled || m_settings.folderPaths.isEmpty())
+    if (!m_settings.enabled || m_settings.folders.isEmpty())
         return;
     QSet<QString> watched;
-    for (const QString &folder : m_settings.folderPaths) {
-        if (!QDir(folder).exists())
+    for (const FolderSyncFolder &folder : m_settings.folders) {
+        if (!QDir(folder.path).exists())
             continue;
-        watched.insert(folder);
-        QDirIterator it(folder, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        watched.insert(folder.path);
+        QDirIterator it(folder.path, QDir::Dirs | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
         while (it.hasNext())
             watched.insert(it.next());
     }
@@ -505,15 +592,15 @@ void FolderSyncService::refreshStatus()
                   tr("Folder sync is turned off."));
         return;
     }
-    if (m_settings.folderPaths.isEmpty()) {
+    if (m_settings.folders.isEmpty()) {
         setStatus(FolderSyncUiStatus::Unsaved,
                   tr("Choose a folder to watch for photos and videos."));
         return;
     }
-    for (const auto &folder : m_settings.folderPaths) {
-        if (!QDir(folder).exists()) {
+    for (const FolderSyncFolder &folder : m_settings.folders) {
+        if (!QDir(folder.path).exists()) {
             setStatus(FolderSyncUiStatus::Error,
-                      tr("Sync folder does not exist: %1").arg(folder));
+                      tr("Sync folder does not exist: %1").arg(folder.path));
             return;
         }
     }
@@ -528,7 +615,7 @@ void FolderSyncService::refreshStatus()
                      "Files already show in Library with an unsaved badge."));
         return;
     }
-    if (!m_queued.isEmpty()) {
+    if (!m_queued.isEmpty() || !m_pendingAlbumByAssetId.isEmpty()) {
         setStatus(FolderSyncUiStatus::Saving,
                   m_lastUploadName.isEmpty()
                       ? tr("Saving to Immich…")
@@ -575,14 +662,20 @@ void FolderSyncService::setStatus(FolderSyncUiStatus status, const QString &mess
 void FolderSyncService::publishLibraryPending()
 {
     QList<ImmichAsset> pending;
-    if (m_settings.enabled && !m_settings.folderPaths.isEmpty()) {
+    if (m_settings.enabled && !m_settings.folders.isEmpty()) {
         const QStringList files = collectMediaFiles();
         pending.reserve(files.size());
         for (const QString &path : files) {
             if (alreadySynced(path))
                 continue;
             ImmichAsset asset = assetFromLocalFile(path);
-            if (m_queued.contains(path))
+            const QString absolute = QFileInfo(path).absoluteFilePath();
+            const bool albumPending =
+                std::any_of(m_pendingAlbumByAssetId.cbegin(), m_pendingAlbumByAssetId.cend(),
+                            [&absolute](const QString &pendingPath) {
+                                return pendingPath == absolute;
+                            });
+            if (m_queued.contains(path) || albumPending)
                 asset.localSyncState = LocalSyncState::Saving;
             else if (m_errors.contains(path))
                 asset.localSyncState = LocalSyncState::Error;
@@ -619,8 +712,8 @@ QStringList FolderSyncService::collectMediaFiles() const
 {
     QStringList result;
     QSet<QString> seen;
-    for (const auto &folder : m_settings.folderPaths) {
-        QDirIterator it(folder,
+    for (const FolderSyncFolder &folder : m_settings.folders) {
+        QDirIterator it(folder.path,
                     QDir::Files | QDir::Readable | QDir::NoDotAndDotDot,
                     QDirIterator::Subdirectories);
         while (it.hasNext()) {
