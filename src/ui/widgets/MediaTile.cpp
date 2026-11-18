@@ -281,7 +281,7 @@ void MediaTile::paintEvent(QPaintEvent *)
             painter.setPen(Qt::NoPen);
             painter.setBrush(QColor(0, 0, 0, m_hovered ? 150 : 110));
             painter.drawEllipse(bg);
-            const QSize logical = heart.deviceIndependentSize();
+            const QSize logical = heart.deviceIndependentSize().toSize();
             painter.drawPixmap(bg.x() + (bg.width() - logical.width()) / 2,
                                bg.y() + (bg.height() - logical.height()) / 2, heart);
         }
