@@ -88,7 +88,8 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-22.04
+            # 24.04 has libjxl-dev (needed for JPEG XL thumbnails); 22.04 does not.
+            runner: ubuntu-24.04
             linuxdeploy_arch: x86_64
           - arch: arm64
             runner: ubuntu-24.04-arm
