@@ -197,8 +197,8 @@ jobs:
         uses: actions/checkout@v4
 
       # Build on the runner (no LXD). Needs the Snap Store for snapcraft and
-      # later for core24 / gnome. On main/PRs, a Store outage skips the snap
-      # (job stays green); tagged releases still fail hard.
+      # later for core24 / gnome / gtk-common-themes. On main/PRs, a Store
+      # outage skips the snap (job stays green); tagged releases still fail hard.
       - name: Install snapcraft
         id: snapcraft
         env:
@@ -232,20 +232,57 @@ jobs:
         if: steps.snapcraft.outputs.ready == 'true'
         env:
           SNAPCRAFT_BUILD_INFO: "1"
+          REQUIRE_SNAP: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           set -euo pipefail
-          rm -f ./*.snap
-          sudo /snap/bin/snapcraft pack --destructive-mode
-          SNAP_PATH="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name '*.snap' | head -n 1)"
-          if [ -z "$SNAP_PATH" ]; then
-            echo "No .snap was produced" >&2
-            exit 1
-          fi
-          echo "snap=$SNAP_PATH" >> "$GITHUB_OUTPUT"
-          echo "Built $(basename "$SNAP_PATH")"
+          echo "built=false" >> "$GITHUB_OUTPUT"
+          is_store_error() {
+            # Snap Store flakes while installing build-snaps (core24, gnome,
+            # gtk-common-themes) look like these; real pack/compile bugs do not.
+            printf '%s' "$1" | grep -Eqi \
+              'Error installing snap|unable to contact snap store|api\.snapcraft\.io|Client\.Timeout|connection refused|connection reset|temporarily unavailable|Too Many Requests|Fetch and check assertions'
+          }
+          attempt=0
+          while true; do
+            attempt=$((attempt + 1))
+            rm -f ./*.snap
+            set +e
+            log="$(mktemp)"
+            sudo /snap/bin/snapcraft pack --destructive-mode >"$log" 2>&1
+            status=$?
+            set -e
+            cat "$log"
+            if [ "$status" -eq 0 ]; then
+              SNAP_PATH="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name '*.snap' | head -n 1)"
+              if [ -z "$SNAP_PATH" ]; then
+                echo "No .snap was produced" >&2
+                exit 1
+              fi
+              echo "snap=$SNAP_PATH" >> "$GITHUB_OUTPUT"
+              echo "built=true" >> "$GITHUB_OUTPUT"
+              echo "Built $(basename "$SNAP_PATH")"
+              exit 0
+            fi
+            output="$(cat "$log")"
+            rm -f "$log"
+            if ! is_store_error "$output"; then
+              echo "::error::snapcraft pack failed (not a Snap Store outage)."
+              exit "$status"
+            fi
+            if [ "$attempt" -ge 4 ]; then
+              if [ "$REQUIRE_SNAP" = "true" ]; then
+                echo "::error::Snap Store unreachable after $attempt pack tries."
+                exit 1
+              fi
+              echo "::warning::Snap Store unreachable while installing build-snaps after $attempt tries; skipping snap on this run."
+              exit 0
+            fi
+            echo "Snap Store flake during pack; retry $attempt in $((attempt * 20))s" >&2
+            sleep $((attempt * 20))
+          done
 
       - name: Upload snap
-        if: steps.snapcraft.outputs.ready == 'true'
+        if: steps.build.outputs.built == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: linux-snap-${{ matrix.arch }}
@@ -253,7 +290,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish snap to Snap Store (stable + all channels)
-        if: startsWith(github.ref, 'refs/tags/v') && steps.snapcraft.outputs.ready == 'true'
+        if: startsWith(github.ref, 'refs/tags/v') && steps.build.outputs.built == 'true'
         uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
@@ -265,7 +302,7 @@ jobs:
 
       - name: Publish snap to Snap Store (beta / edge)
         if: >
-          steps.snapcraft.outputs.ready == 'true' &&
+          steps.build.outputs.built == 'true' &&
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: snapcore/action-publish@v1
