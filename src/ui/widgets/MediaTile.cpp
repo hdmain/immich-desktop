@@ -174,14 +174,26 @@ QColor MediaTile::selectionColor()
     return s_selectionColor;
 }
 
+int MediaTile::overlayControlSize() const
+{
+    // ~9.5% of the short edge; clamp so dense zooms stay tappable and large
+    // tiles don't grow oversized chrome.
+    const int edge = qMin(width(), height());
+    return qBound(14, qRound(edge * 0.095), 20);
+}
+
 QRect MediaTile::checkRect() const
 {
-    return QRect(8, 8, 24, 24);
+    const int size = overlayControlSize();
+    const int margin = qMax(4, (size + 2) / 4);
+    return QRect(margin, margin, size, size);
 }
 
 QRect MediaTile::heartRect() const
 {
-    return QRect(6, height() - 28, 22, 22);
+    const int size = overlayControlSize();
+    const int margin = qMax(4, (size + 2) / 4);
+    return QRect(margin, height() - margin - size, size, size);
 }
 
 void MediaTile::setTileSize(const QSize &size)
@@ -260,15 +272,18 @@ void MediaTile::paintEvent(QPaintEvent *)
 
     // Favorites always show a filled heart; on hover an outline one offers to add it.
     if ((m_asset.favorite && !m_trashed) || (m_hovered && favoritable())) {
+        const QRect bg = heartRect();
+        const int glyph = qMax(10, qRound(bg.width() * 0.68));
         const QPixmap heart = renderSvgIcon(m_asset.favorite ? QStringLiteral(":/icons/heart-filled.svg")
                                                              : QStringLiteral(":/icons/heart.svg"),
-                                            Qt::white, QSize(16, 16), devicePixelRatioF());
+                                            Qt::white, QSize(glyph, glyph), devicePixelRatioF());
         if (!heart.isNull()) {
-            const QRect bg = heartRect();
             painter.setPen(Qt::NoPen);
             painter.setBrush(QColor(0, 0, 0, m_hovered ? 150 : 110));
             painter.drawEllipse(bg);
-            painter.drawPixmap(bg.x() + 3, bg.y() + 3, heart);
+            const QSize logical = heart.deviceIndependentSize();
+            painter.drawPixmap(bg.x() + (bg.width() - logical.width()) / 2,
+                               bg.y() + (bg.height() - logical.height()) / 2, heart);
         }
     }
 
@@ -315,10 +330,11 @@ void MediaTile::paintEvent(QPaintEvent *)
             circle.setSize(circle.size() * pop);
             circle.moveCenter(c);
         }
+        const qreal stroke = qBound(1.4, circle.width() * 0.09, 2.0);
         painter.setOpacity(m_selectionProgress > 0.01
                                ? (0.35 + 0.65 * m_selectionProgress)
                                : 1.0);
-        painter.setPen(QPen(Qt::white, 2));
+        painter.setPen(QPen(Qt::white, stroke));
         QColor fill = s_selectionColor;
         if (m_selectionProgress <= 0.01)
             fill = QColor(0, 0, 0, 90);
@@ -333,7 +349,7 @@ void MediaTile::paintEvent(QPaintEvent *)
             check.lineTo(circle.left() + circle.width() * 0.72, circle.top() + circle.height() * 0.34);
             QColor tick = Qt::white;
             tick.setAlphaF(qMin(1.0, (m_selectionProgress - 0.2) / 0.8));
-            painter.setPen(QPen(tick, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setPen(QPen(tick, stroke * 1.1, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             painter.setBrush(Qt::NoBrush);
             painter.drawPath(check);
         }

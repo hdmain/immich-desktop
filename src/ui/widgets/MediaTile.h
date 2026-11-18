@@ -81,6 +81,8 @@ protected:
 
 private:
     static QString formatDuration(const QString &raw);
+    // Check/heart control diameter, scaled to the tile (slightly smaller than before).
+    int overlayControlSize() const;
     QRect checkRect() const;
     QRect heartRect() const;
     bool selectable() const { return !m_asset.isLocalPending(); }
